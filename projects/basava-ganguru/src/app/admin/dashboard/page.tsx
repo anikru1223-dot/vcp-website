@@ -28,7 +28,6 @@ export default function AdminDashboard() {
     const [expandedPlot, setExpandedPlot] = useState<number | null>(null);
     const [plotStatuses, setPlotStatuses] = useState<PlotStatus>({});
     const [inquiries, setInquiries] = useState<Inquiry[]>([]);
-    const [selectedPlot, setSelectedPlot] = useState<number | null>(null);
 
     useEffect(() => {
         // Initialize plot statuses

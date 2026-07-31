@@ -20,10 +20,6 @@ export default function Home() {
     const [showMobileNav, setShowMobileNav] = useState(false);
     const [plotMedia, setPlotMedia] = useState<Record<number, any[]>>({});
 
-    const handlePriceChange = (min: number, max: number) => {
-        setPriceRange([min, max]);
-    };
-
     // Fetch media for selected plot
     useEffect(() => {
         if (selectedPlot && !plotMedia[selectedPlot]) {
@@ -56,6 +52,10 @@ export default function Home() {
 
     const handleDownloadBrochure = () => {
         // BrochureDownload component handles this
+    };
+
+    const handlePriceChange = (min: number, max: number) => {
+        setPriceRange([min, max]);
     };
 
     const handleInquiryClose = () => {
