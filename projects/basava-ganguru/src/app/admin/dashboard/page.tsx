@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown, Plus, Edit2, CheckCircle, AlertCircle } from 'lucide-react';
-import AdminUpload from '@/components/AdminUpload';
+import AdminUpload from '../../../components/AdminUpload';
 import plotData from '../../../../plot-dimensions.json';
 
 type Tab = 'overview' | 'plots' | 'inquiries';
