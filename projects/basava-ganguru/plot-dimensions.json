@@ -1,0 +1,298 @@
+{
+    "plots": [
+        {
+            "id": 1,
+            "number": 1,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 2,
+            "number": 2,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 3,
+            "number": 3,
+            "width": 7.6,
+            "depth": 15.0,
+            "area_sqft": 1225,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 4,
+            "number": 4,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 5,
+            "number": 5,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 6,
+            "number": 6,
+            "width": 9.5,
+            "depth": 15.0,
+            "area_sqft": 1533,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 7,
+            "number": 7,
+            "width": 12.0,
+            "depth": 12.0,
+            "area_sqft": 1544,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 8,
+            "number": 8,
+            "width": 12.0,
+            "depth": 12.0,
+            "area_sqft": 1544,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 9,
+            "number": 9,
+            "width": 12.0,
+            "depth": 12.0,
+            "area_sqft": 1544,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 10,
+            "number": 10,
+            "width": 12.0,
+            "depth": 12.0,
+            "area_sqft": 1544,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 11,
+            "number": 11,
+            "width": 9.05,
+            "depth": 14.0,
+            "area_sqft": 1440,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 12,
+            "number": 12,
+            "width": 9.35,
+            "depth": 12.0,
+            "area_sqft": 1202,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 13,
+            "number": 13,
+            "width": 9.05,
+            "depth": 16.0,
+            "area_sqft": 1582,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 14,
+            "number": 14,
+            "width": 9.0,
+            "depth": 12.0,
+            "area_sqft": 1161,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 15,
+            "number": 15,
+            "width": 10.05,
+            "depth": 16.05,
+            "area_sqft": 1629,
+            "facing": "South",
+            "status": "available"
+        },
+        {
+            "id": 16,
+            "number": 16,
+            "width": 12.0,
+            "depth": 16.05,
+            "area_sqft": 1947,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 17,
+            "number": 17,
+            "width": 12.05,
+            "depth": 16.0,
+            "area_sqft": 1955,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 18,
+            "number": 18,
+            "width": 12.0,
+            "depth": 16.0,
+            "area_sqft": 1946,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 19,
+            "number": 19,
+            "width": 10.05,
+            "depth": 16.1,
+            "area_sqft": 1639,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 20,
+            "number": 20,
+            "width": 9.0,
+            "depth": 16.05,
+            "area_sqft": 1463,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 21,
+            "number": 21,
+            "width": 9.0,
+            "depth": 12.0,
+            "area_sqft": 1161,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 22,
+            "number": 22,
+            "width": 9.05,
+            "depth": 16.0,
+            "area_sqft": 1582,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 23,
+            "number": 23,
+            "width": 9.35,
+            "depth": 12.0,
+            "area_sqft": 1202,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 24,
+            "number": 24,
+            "width": 9.05,
+            "depth": 14.0,
+            "area_sqft": 1440,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 25,
+            "number": 25,
+            "width": 10.05,
+            "depth": 12.65,
+            "area_sqft": 1272,
+            "facing": "North",
+            "status": "available"
+        },
+        {
+            "id": 26,
+            "number": 26,
+            "width": 15.1,
+            "depth": 9.0,
+            "area_sqft": 1373,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 27,
+            "number": 27,
+            "width": 15.05,
+            "depth": 9.0,
+            "area_sqft": 1368,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 28,
+            "number": 28,
+            "width": 15.0,
+            "depth": 9.0,
+            "area_sqft": 1363,
+            "facing": "East",
+            "status": "available"
+        },
+        {
+            "id": 29,
+            "number": 29,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 30,
+            "number": 30,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 31,
+            "number": 31,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "West",
+            "status": "available"
+        },
+        {
+            "id": 32,
+            "number": 32,
+            "width": 9.0,
+            "depth": 15.0,
+            "area_sqft": 1450,
+            "facing": "South",
+            "status": "available"
+        }
+    ],
+    "pricePerSqft": 2300,
+    "projectLocation": {
+        "lat": 13.9299,
+        "lng": 75.5681,
+        "name": "Basava Ganguru Residential Layout, Shivamogga, Karnataka"
+    }
+}

@@ -1,0 +1,35 @@
+{
+    "name": "basava-ganguru-residential-layout",
+    "version": "1.0.0",
+    "description": "Interactive real estate project landing page for Basava Ganguru Residential Layout",
+    "private": true,
+    "scripts": {
+        "dev": "next dev -p 3001",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint"
+    },
+    "dependencies": {
+        "next": "^15.0.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "framer-motion": "^11.0.0",
+        "@supabase/supabase-js": "^2.43.0",
+        "react-map-gl": "^7.1.0",
+        "mapbox-gl": "^3.0.0",
+        "lucide-react": "^0.394.0",
+        "typescript": "^5.3.0",
+        "tailwindcss": "^3.4.0",
+        "autoprefixer": "^10.4.0",
+        "postcss": "^8.4.0",
+        "axios": "^1.6.0",
+        "bcryptjs": "^2.4.3"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/react": "^18.0.0",
+        "@types/react-dom": "^18.0.0",
+        "eslint": "^8.50.0",
+        "eslint-config-next": "^15.0.0"
+    }
+}
