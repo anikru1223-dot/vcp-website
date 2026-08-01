@@ -76,10 +76,13 @@ const PARK_LAKE = { cx: 290, cy: 900, rx: 118, ry: 44 };
 // sanctioned drawing where the horizontal 9m road equals the two vertical 9m
 // roads. Top road lower edge = 262 (touches plot tops). Vertical roads 262->948.
 const ROADS = {
-    top: "118,226 1108,258 1108,262 118,262",          // top 12m road
-    leftV: { x: 502, y: 262, w: 58, h: 686 },             // 9m vertical (502..560)
-    rightV: { x: 786, y: 262, w: 72, h: 686 },             // 9m vertical (786..858)
-    midH: { x: 118, y: 506, w: 442, h: 58 },             // 9m horizontal — SAME 58px width, centred in corridor (506..564)
+    top: "118,222 1108,254 1108,266 118,266",          // top 12m road — deeper band, bottom 266 overlaps plot tops (262)
+    leftV: { x: 502, y: 258, w: 58, h: 690 },             // 9m vertical (502..560), starts at 258 to fuse with top road
+    rightV: { x: 786, y: 258, w: 72, h: 690 },             // 9m vertical (786..858), fused with top road
+    // Horizontal road FILLS the whole corridor 470->600 so plots 4/5/6 (bottom 470)
+    // and plots 7-10 (top 600) both touch asphalt — no green sliver. Carriageway
+    // markings (dashes/cars) stay centred; the fill removes the verge.
+    midH: { x: 118, y: 470, w: 442, h: 130 },            // asphalt corridor 470..600 (touches both plot rows)
     path: { x: 118, y: 748, w: 442, h: 30 },             // 3m pathway
 };
 
@@ -1007,11 +1010,14 @@ const css = `
 .lg-stp{ background:#9670c2; }
 
 .lm-hint{
-  position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 20px); left:50%; transform:translateX(-50%); z-index:7;
-  background:rgba(12,18,14,.8); border:1px solid var(--line-soft); color:var(--muted);
-  font-size:12.5px; padding:9px 18px; border-radius:999px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%); z-index:7;
+  background:rgba(12,18,14,.82); border:1px solid var(--line-soft); color:var(--muted);
+  font-size:12px; padding:8px 16px; border-radius:999px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   letter-spacing:.02em; box-shadow:0 8px 24px rgba(0,0,0,.4); pointer-events:none; white-space:nowrap;
+  max-width:90vw; overflow:hidden; text-overflow:ellipsis;
+  animation:lm-hintfade 6s ease forwards;
 }
+@keyframes lm-hintfade{ 0%,70%{opacity:1;} 100%{opacity:0;} }
 
 .lm-sheet{
   position:fixed; left:0; right:0; bottom:0; z-index:20;
