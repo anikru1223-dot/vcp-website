@@ -94,8 +94,6 @@ const centroid = (pts: string) => {
     return { x: x / n, y: y / n };
 };
 
-const VB = { x: 80, y: 200, w: 1090, h: 990 };
-
 const PARK_SHRUBS: number[][] = [
     [170, 890, 8, 0], [205, 858, 6, 1], [415, 890, 8, 0], [450, 860, 6, 1],
     [160, 935, 7, 1], [240, 938, 6, 0], [370, 936, 6, 1], [300, 855, 6, 0],
@@ -158,88 +156,129 @@ function Car({ x, y, a, c }: { x: number; y: number; a: number; c: string }) {
     );
 }
 
-type Transform = { scale: number; x: number; y: number };
+type ViewBox = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
+
+const BASE_VB: ViewBox = { x: 80, y: 200, w: 1090, h: 990 };
+const MIN_W = BASE_VB.w / 6;   // max zoom in  (6x)
+const MAX_W = BASE_VB.w * 1.6; // max zoom out
+
+// Rotate a screen-space delta into layout space so drag direction stays natural when rotated.
+function rotateDelta(dx: number, dy: number, deg: number): [number, number] {
+    const r = (-deg * Math.PI) / 180;
+    const cos = Math.cos(r), sin = Math.sin(r);
+    return [dx * cos - dy * sin, dx * sin + dy * cos];
+}
 
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
-    const [t, setT] = useState<Transform>({ scale: 1, x: 0, y: 0 });
+    const [view, setView] = useState<ViewBox>({ ...BASE_VB });
+    const [rot, setRot] = useState(0);
     const wrapRef = useRef<HTMLDivElement | null>(null);
-    const drag = useRef<Point | null>(null);
-    const pinch = useRef<{ d: number; m: Point } | null>(null);
+    const svgRef = useRef<SVGSVGElement | null>(null);
+    const drag = useRef<{ px: number; py: number; vx: number; vy: number } | null>(null);
+    const pinch = useRef<{ d: number } | null>(null);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
-    const clampScale = (s: number) => Math.min(4, Math.max(1, s));
 
-    const clampPan = (st: Transform): Transform => {
+    // Convert a screen (client) point to SVG-user coordinates, accounting for viewBox + letterboxing.
+    const toUser = (clientX: number, clientY: number, v: ViewBox): Point => {
         const el = wrapRef.current;
-        if (!el) return st;
-        const w = el.clientWidth, h = el.clientHeight;
-        const maxX = (st.scale - 1) * w * 0.5 + w * 0.15;
-        const maxY = (st.scale - 1) * h * 0.5 + h * 0.15;
-        return { scale: st.scale, x: Math.min(maxX, Math.max(-maxX, st.x)), y: Math.min(maxY, Math.max(-maxY, st.y)) };
+        if (!el) return { x: v.x + v.w / 2, y: v.y + v.h / 2 };
+        const rect = el.getBoundingClientRect();
+        // preserveAspectRatio="xMidYMid meet" scaling
+        const scale = Math.min(rect.width / v.w, rect.height / v.h);
+        const drawW = v.w * scale, drawH = v.h * scale;
+        const offX = (rect.width - drawW) / 2, offY = (rect.height - drawH) / 2;
+        const ux = v.x + (clientX - rect.left - offX) / scale;
+        const uy = v.y + (clientY - rect.top - offY) / scale;
+        return { x: ux, y: uy };
     };
 
-    const zoomAt = useCallback((factor: number, cx: number, cy: number) => {
-        setT((prev) => {
-            const ns = clampScale(prev.scale * factor);
-            if (ns === prev.scale) return prev;
-            const nx = cx - (cx - prev.x) * (ns / prev.scale);
-            const ny = cy - (cy - prev.y) * (ns / prev.scale);
-            return clampPan({ scale: ns, x: nx, y: ny });
+    // Zoom keeping the point under the cursor/pinch fixed.
+    const zoomAt = useCallback((factor: number, clientX: number, clientY: number) => {
+        setView((v) => {
+            let nw = v.w / factor;
+            nw = Math.min(MAX_W, Math.max(MIN_W, nw));
+            const nh = nw * (BASE_VB.h / BASE_VB.w);
+            const f = toUser(clientX, clientY, v);
+            // keep focal point stationary: new origin so f stays at same relative spot
+            const relX = (f.x - v.x) / v.w;
+            const relY = (f.y - v.y) / v.h;
+            const nx = f.x - relX * nw;
+            const ny = f.y - relY * nh;
+            return { x: nx, y: ny, w: nw, h: nh };
         });
     }, []);
 
-
     const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        const el = wrapRef.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - rect.left, e.clientY - rect.top);
+        zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
     };
 
     const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    const mid = (a: React.Touch, b: React.Touch, rect: DOMRect): Point => ({ x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top });
 
     const onTouchStart = (e: React.TouchEvent) => {
-        const el = wrapRef.current;
-        if (e.touches.length === 2 && el) {
-            const rect = el.getBoundingClientRect();
-            pinch.current = { d: dist(e.touches[0], e.touches[1]), m: mid(e.touches[0], e.touches[1], rect) };
+        if (e.touches.length === 2) {
+            pinch.current = { d: dist(e.touches[0], e.touches[1]) };
             drag.current = null;
-        } else if (e.touches.length === 1 && t.scale > 1) {
-            drag.current = { x: e.touches[0].clientX - t.x, y: e.touches[0].clientY - t.y };
+        } else if (e.touches.length === 1) {
+            drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, vx: view.x, vy: view.y };
         }
     };
     const onTouchMove = (e: React.TouchEvent) => {
         const el = wrapRef.current;
         if (e.touches.length === 2 && pinch.current && el) {
             e.preventDefault();
-            const rect = el.getBoundingClientRect();
             const nd = dist(e.touches[0], e.touches[1]);
-            const m = mid(e.touches[0], e.touches[1], rect);
-            zoomAt(nd / pinch.current.d, m.x, m.y);
+            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            zoomAt(nd / pinch.current.d, cx, cy);
             pinch.current.d = nd;
-        } else if (e.touches.length === 1 && drag.current) {
+        } else if (e.touches.length === 1 && drag.current && el) {
             e.preventDefault();
             const d = drag.current;
-            setT((p) => clampPan({ ...p, x: e.touches[0].clientX - d.x, y: e.touches[0].clientY - d.y }));
+            const rect = el.getBoundingClientRect();
+            const scale = Math.min(rect.width / view.w, rect.height / view.h);
+            let dx = (e.touches[0].clientX - d.px) / scale;
+            let dy = (e.touches[0].clientY - d.py) / scale;
+            [dx, dy] = rotateDelta(dx, dy, rot);
+            setView((v) => ({ ...v, x: d.vx - dx, y: d.vy - dy }));
         }
     };
     const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; pinch.current = null; } };
-    const onMouseDown = (e: React.MouseEvent) => { if (t.scale > 1) drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; };
-    const onMouseMove = (e: React.MouseEvent) => { const d = drag.current; if (d) setT((p) => clampPan({ ...p, x: e.clientX - d.x, y: e.clientY - d.y })); };
+
+    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, vx: view.x, vy: view.y }; };
+    const onMouseMove = (e: React.MouseEvent) => {
+        const el = wrapRef.current;
+        const d = drag.current;
+        if (!d || !el) return;
+        const rect = el.getBoundingClientRect();
+        const scale = Math.min(rect.width / view.w, rect.height / view.h);
+        let dx = (e.clientX - d.px) / scale;
+        let dy = (e.clientY - d.py) / scale;
+        [dx, dy] = rotateDelta(dx, dy, rot);
+        setView((v) => ({ ...v, x: d.vx - dx, y: d.vy - dy }));
+    };
     const onMouseUp = () => { drag.current = null; };
-    const reset = () => setT({ scale: 1, x: 0, y: 0 });
-    const btnZoom = (f: number) => { const el = wrapRef.current; if (el) zoomAt(f, el.clientWidth / 2, el.clientHeight / 2); };
+
+    const reset = () => { setView({ ...BASE_VB }); setRot(0); };
+    const btnZoom = (f: number) => {
+        const el = wrapRef.current;
+        if (el) { const r = el.getBoundingClientRect(); zoomAt(f, r.left + r.width / 2, r.top + r.height / 2); }
+    };
+    const rotate = () => setRot((r) => (r + 90) % 360);
 
     useEffect(() => {
         const el = wrapRef.current;
         if (!el) return;
         el.addEventListener("wheel", onWheel, { passive: false });
         return () => el.removeEventListener("wheel", onWheel);
-    }, [zoomAt]);
+    }, [zoomAt, view.w, view.h]);
+
+    // rotation pivot = centre of the base layout
+    const pivotX = BASE_VB.x + BASE_VB.w / 2;
+    const pivotY = BASE_VB.y + BASE_VB.h / 2;
 
     return (
         <div className="lm-root">
@@ -247,7 +286,7 @@ export default function LayoutMap() {
 
             <header className="lm-head">
                 <div className="lm-crest" aria-hidden="true">
-                    <svg viewBox="0 0 40 40" width="30" height="30">
+                    <svg viewBox="0 0 40 40" width="26" height="26">
                         <defs>
                             <linearGradient id="crestG" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#c9a24b" />
@@ -264,16 +303,10 @@ export default function LayoutMap() {
                         <rect x="22.4" y="21" width="1.3" height="1.6" fill="#0d1d3d" />
                     </svg>
                 </div>
-                <div className="lm-kicker">Vijayalaxmi C Patil · Developers &amp; Promoters</div>
-                <h1 className="lm-title">Basava Ganguru</h1>
-                <div className="lm-sub">Residential Layout · Shivamogga, Karnataka · 32 Premium Plots</div>
-                <div className="lm-rule">
-                    <span />
-                    <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true">
-                        <path d="M6 0.5 L11.5 6 L6 11.5 L0.5 6 Z" fill="#c9a24b" />
-                        <path d="M6 2.5 L9.5 6 L6 9.5 L2.5 6 Z" fill="#e7cd85" />
-                    </svg>
-                    <span />
+                <div className="lm-head-txt">
+                    <div className="lm-kicker">Vijayalaxmi C Patil</div>
+                    <h1 className="lm-title">Basava Ganguru</h1>
+                    <div className="lm-sub">Residential Layout · Shivamogga · 32 Plots</div>
                 </div>
             </header>
 
@@ -287,137 +320,145 @@ export default function LayoutMap() {
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
-                style={{ cursor: t.scale > 1 ? "grab" : "default" }}
             >
-                <div className="lm-canvas" style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
-                    <svg viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`} className="lm-svg" role="img" aria-label="Interactive residential layout map">
-                        <defs>
-                            {/* ── Plot cream, warm raised land ── */}
-                            <linearGradient id="plotFill" x1="0" y1="0" x2="0.35" y2="1">
-                                <stop offset="0" stopColor="#fdf8ec" />
-                                <stop offset="0.45" stopColor="#f2e7ca" />
-                                <stop offset="1" stopColor="#e2d2ab" />
-                            </linearGradient>
-                            <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0" stopColor="#f9e6a2" />
-                                <stop offset="1" stopColor="#dcb85a" />
-                            </linearGradient>
+                <svg
+                    ref={svgRef}
+                    viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    className="lm-svg"
+                    role="img"
+                    aria-label="Interactive residential layout map"
+                >
+                    <defs>
+                        {/* ── Plot cream, warm raised land ── */}
+                        <linearGradient id="plotFill" x1="0" y1="0" x2="0.35" y2="1">
+                            <stop offset="0" stopColor="#fdf8ec" />
+                            <stop offset="0.45" stopColor="#f2e7ca" />
+                            <stop offset="1" stopColor="#e2d2ab" />
+                        </linearGradient>
+                        <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#f9e6a2" />
+                            <stop offset="1" stopColor="#dcb85a" />
+                        </linearGradient>
 
-                            {/* land grain texture */}
-                            <pattern id="landGrain" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
-                                <rect width="14" height="14" fill="transparent" />
-                                <circle cx="3" cy="4" r="0.7" fill="#b89a5e" opacity="0.16" />
-                                <circle cx="9" cy="10" r="0.6" fill="#a98d52" opacity="0.14" />
-                                <circle cx="11" cy="3" r="0.5" fill="#c9ad70" opacity="0.12" />
-                            </pattern>
+                        {/* land grain texture */}
+                        <pattern id="landGrain" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
+                            <rect width="14" height="14" fill="transparent" />
+                            <circle cx="3" cy="4" r="0.7" fill="#b89a5e" opacity="0.16" />
+                            <circle cx="9" cy="10" r="0.6" fill="#a98d52" opacity="0.14" />
+                            <circle cx="11" cy="3" r="0.5" fill="#c9ad70" opacity="0.12" />
+                        </pattern>
 
-                            {/* ── Ground: landscaped green-earth so plots + roads pop ── */}
-                            <radialGradient id="groundFill" cx="0.42" cy="0.30" r="1.05">
-                                <stop offset="0" stopColor="#3a5f43" />
-                                <stop offset="0.55" stopColor="#2b4a35" />
-                                <stop offset="1" stopColor="#1e3626" />
-                            </radialGradient>
-                            <pattern id="groundTex" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(24)">
-                                <rect width="18" height="18" fill="transparent" />
-                                <path d="M3,14 L4,9" stroke="#4a7a54" strokeWidth="0.8" opacity="0.35" />
-                                <path d="M10,15 L11,10" stroke="#2f5539" strokeWidth="0.8" opacity="0.35" />
-                                <path d="M14,12 L14.7,8" stroke="#568a5f" strokeWidth="0.7" opacity="0.3" />
-                            </pattern>
+                        {/* ── Ground: landscaped green-earth so plots + roads pop ── */}
+                        <radialGradient id="groundFill" cx="0.42" cy="0.30" r="1.05">
+                            <stop offset="0" stopColor="#3a5f43" />
+                            <stop offset="0.55" stopColor="#2b4a35" />
+                            <stop offset="1" stopColor="#1e3626" />
+                        </radialGradient>
+                        <pattern id="groundTex" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(24)">
+                            <rect width="18" height="18" fill="transparent" />
+                            <path d="M3,14 L4,9" stroke="#4a7a54" strokeWidth="0.8" opacity="0.35" />
+                            <path d="M10,15 L11,10" stroke="#2f5539" strokeWidth="0.8" opacity="0.35" />
+                            <path d="M14,12 L14.7,8" stroke="#568a5f" strokeWidth="0.7" opacity="0.3" />
+                        </pattern>
 
-                            {/* ── Asphalt (recessed, textured) ── */}
-                            <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0" stopColor="#1c222e" />
-                                <stop offset="0.15" stopColor="#333a49" />
-                                <stop offset="0.5" stopColor="#2b323f" />
-                                <stop offset="0.85" stopColor="#333a49" />
-                                <stop offset="1" stopColor="#1c222e" />
-                            </linearGradient>
-                            <linearGradient id="asphaltV" x1="0" y1="0" x2="1" y2="0">
-                                <stop offset="0" stopColor="#1c222e" />
-                                <stop offset="0.15" stopColor="#333a49" />
-                                <stop offset="0.5" stopColor="#2b323f" />
-                                <stop offset="0.85" stopColor="#333a49" />
-                                <stop offset="1" stopColor="#1c222e" />
-                            </linearGradient>
-                            <pattern id="asphaltTex" width="10" height="10" patternUnits="userSpaceOnUse">
-                                <rect width="10" height="10" fill="transparent" />
-                                <circle cx="2" cy="3" r="0.5" fill="#4a5262" opacity="0.4" />
-                                <circle cx="7" cy="6" r="0.45" fill="#161b25" opacity="0.5" />
-                                <circle cx="5" cy="9" r="0.4" fill="#525b6d" opacity="0.3" />
-                            </pattern>
+                        {/* ── Asphalt (recessed, textured) ── */}
+                        <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#1c222e" />
+                            <stop offset="0.15" stopColor="#333a49" />
+                            <stop offset="0.5" stopColor="#2b323f" />
+                            <stop offset="0.85" stopColor="#333a49" />
+                            <stop offset="1" stopColor="#1c222e" />
+                        </linearGradient>
+                        <linearGradient id="asphaltV" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0" stopColor="#1c222e" />
+                            <stop offset="0.15" stopColor="#333a49" />
+                            <stop offset="0.5" stopColor="#2b323f" />
+                            <stop offset="0.85" stopColor="#333a49" />
+                            <stop offset="1" stopColor="#1c222e" />
+                        </linearGradient>
+                        <pattern id="asphaltTex" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <rect width="10" height="10" fill="transparent" />
+                            <circle cx="2" cy="3" r="0.5" fill="#4a5262" opacity="0.4" />
+                            <circle cx="7" cy="6" r="0.45" fill="#161b25" opacity="0.5" />
+                            <circle cx="5" cy="9" r="0.4" fill="#525b6d" opacity="0.3" />
+                        </pattern>
 
-                            {/* ── Water ── */}
-                            <radialGradient id="lakeFill" cx="0.4" cy="0.3" r="0.9">
-                                <stop offset="0" stopColor="#aee7dd" />
-                                <stop offset="0.55" stopColor="#5cb3b1" />
-                                <stop offset="1" stopColor="#357f8c" />
-                            </radialGradient>
+                        {/* ── Water ── */}
+                        <radialGradient id="lakeFill" cx="0.4" cy="0.3" r="0.9">
+                            <stop offset="0" stopColor="#aee7dd" />
+                            <stop offset="0.55" stopColor="#5cb3b1" />
+                            <stop offset="1" stopColor="#357f8c" />
+                        </radialGradient>
 
-                            {/* ── CA blue paving ── */}
-                            <linearGradient id="caFill" x1="0" y1="0" x2="0.4" y2="1">
-                                <stop offset="0" stopColor="#c8e8f5" />
-                                <stop offset="0.5" stopColor="#8fc6e0" />
-                                <stop offset="1" stopColor="#5ea0c4" />
-                            </linearGradient>
+                        {/* ── CA blue paving ── */}
+                        <linearGradient id="caFill" x1="0" y1="0" x2="0.4" y2="1">
+                            <stop offset="0" stopColor="#c8e8f5" />
+                            <stop offset="0.5" stopColor="#8fc6e0" />
+                            <stop offset="1" stopColor="#5ea0c4" />
+                        </linearGradient>
 
-                            {/* ── Grass ── */}
-                            <radialGradient id="grassFill" cx="0.45" cy="0.35" r="1.0">
-                                <stop offset="0" stopColor="#5fa64f" />
-                                <stop offset="0.6" stopColor="#4a8a3f" />
-                                <stop offset="1" stopColor="#377031" />
-                            </radialGradient>
-                            <pattern id="grassTex" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
-                                <rect width="12" height="12" fill="transparent" />
-                                <path d="M2,10 L3,5" stroke="#6bb659" strokeWidth="0.7" opacity="0.4" />
-                                <path d="M7,11 L8,6" stroke="#3f8038" strokeWidth="0.7" opacity="0.4" />
-                                <path d="M10,9 L10.6,5" stroke="#78c266" strokeWidth="0.6" opacity="0.35" />
-                            </pattern>
+                        {/* ── Grass ── */}
+                        <radialGradient id="grassFill" cx="0.45" cy="0.35" r="1.0">
+                            <stop offset="0" stopColor="#5fa64f" />
+                            <stop offset="0.6" stopColor="#4a8a3f" />
+                            <stop offset="1" stopColor="#377031" />
+                        </radialGradient>
+                        <pattern id="grassTex" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+                            <rect width="12" height="12" fill="transparent" />
+                            <path d="M2,10 L3,5" stroke="#6bb659" strokeWidth="0.7" opacity="0.4" />
+                            <path d="M7,11 L8,6" stroke="#3f8038" strokeWidth="0.7" opacity="0.4" />
+                            <path d="M10,9 L10.6,5" stroke="#78c266" strokeWidth="0.6" opacity="0.35" />
+                        </pattern>
 
-                            {/* ── STP roof ── */}
-                            <linearGradient id="stpRoof" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0" stopColor="#cba9e8" />
-                                <stop offset="1" stopColor="#9670c2" />
-                            </linearGradient>
+                        {/* ── STP roof ── */}
+                        <linearGradient id="stpRoof" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#cba9e8" />
+                            <stop offset="1" stopColor="#9670c2" />
+                        </linearGradient>
 
-                            {/* ── Gold stroke ── */}
-                            <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stopColor="#f6e6b0" />
-                                <stop offset="0.5" stopColor="#c9a24b" />
-                                <stop offset="1" stopColor="#a5802e" />
-                            </linearGradient>
+                        {/* ── Gold stroke ── */}
+                        <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stopColor="#f6e6b0" />
+                            <stop offset="0.5" stopColor="#c9a24b" />
+                            <stop offset="1" stopColor="#a5802e" />
+                        </linearGradient>
 
-                            {/* raised-land shadow (ambient occlusion) */}
-                            <filter id="plotShadow" x="-25%" y="-25%" width="150%" height="150%">
-                                <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
-                            </filter>
-                            <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
-                                <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#000" floodOpacity="0.4" />
-                            </filter>
-                            <filter id="selGlow" x="-70%" y="-70%" width="240%" height="240%">
-                                <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#f0cf78" floodOpacity="0.95" />
-                            </filter>
-                            <filter id="roadRecess" x="-30%" y="-30%" width="160%" height="160%">
-                                <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#000" floodOpacity="0.55" />
-                            </filter>
+                        {/* raised-land shadow (ambient occlusion) */}
+                        <filter id="plotShadow" x="-25%" y="-25%" width="150%" height="150%">
+                            <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
+                        </filter>
+                        <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+                            <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#000" floodOpacity="0.4" />
+                        </filter>
+                        <filter id="selGlow" x="-70%" y="-70%" width="240%" height="240%">
+                            <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#f0cf78" floodOpacity="0.95" />
+                        </filter>
+                        <filter id="roadRecess" x="-30%" y="-30%" width="160%" height="160%">
+                            <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#000" floodOpacity="0.55" />
+                        </filter>
 
-                            {/* warm sunlight wash */}
-                            <radialGradient id="sunWash" cx="0.28" cy="0.16" r="0.9">
-                                <stop offset="0" stopColor="#ffdf9e" stopOpacity="0.20" />
-                                <stop offset="0.5" stopColor="#ffd08a" stopOpacity="0.05" />
-                                <stop offset="1" stopColor="#000" stopOpacity="0" />
-                            </radialGradient>
-                            <radialGradient id="vignette" cx="0.5" cy="0.44" r="0.82">
-                                <stop offset="0" stopColor="#000" stopOpacity="0" />
-                                <stop offset="1" stopColor="#000" stopOpacity="0.42" />
-                            </radialGradient>
+                        {/* warm sunlight wash */}
+                        <radialGradient id="sunWash" cx="0.28" cy="0.16" r="0.9">
+                            <stop offset="0" stopColor="#ffdf9e" stopOpacity="0.20" />
+                            <stop offset="0.5" stopColor="#ffd08a" stopOpacity="0.05" />
+                            <stop offset="1" stopColor="#000" stopOpacity="0" />
+                        </radialGradient>
+                        <radialGradient id="vignette" cx="0.5" cy="0.44" r="0.82">
+                            <stop offset="0" stopColor="#000" stopOpacity="0" />
+                            <stop offset="1" stopColor="#000" stopOpacity="0.42" />
+                        </radialGradient>
 
-                            {/* street-light pooled glow */}
-                            <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
-                                <stop offset="0" stopColor="#ffdd93" stopOpacity="0.55" />
-                                <stop offset="0.5" stopColor="#ffc862" stopOpacity="0.18" />
-                                <stop offset="1" stopColor="#ffc862" stopOpacity="0" />
-                            </radialGradient>
-                        </defs>
+                        {/* street-light pooled glow */}
+                        <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
+                            <stop offset="0" stopColor="#ffdd93" stopOpacity="0.55" />
+                            <stop offset="0.5" stopColor="#ffc862" stopOpacity="0.18" />
+                            <stop offset="1" stopColor="#ffc862" stopOpacity="0" />
+                        </radialGradient>
+                    </defs>
+
+                    {/* Rotation group — spins all content around the layout centre (crisp, vector). */}
+                    <g transform={`rotate(${rot} ${pivotX} ${pivotY})`}>
 
                         {/* Ground plate */}
                         <polygon points={BOUNDARY} fill="url(#groundFill)" />
@@ -676,17 +717,18 @@ export default function LayoutMap() {
                         <polygon points={BOUNDARY} fill="url(#sunWash)" pointerEvents="none" />
                         <polygon points={BOUNDARY} fill="url(#vignette)" pointerEvents="none" />
 
-                        {/* compass */}
-                        <g className="lm-compass" transform="translate(1108,250)">
+                        {/* compass — counter-rotated so N always shows the layout's true north */}
+                        <g className="lm-compass" transform={`translate(1108,250) rotate(${-rot})`}>
                             <circle r="19" className="lm-comp-ring" />
                             <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" className="lm-comp-n" />
                             <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" className="lm-comp-s" />
                             <text y="-23" className="lm-comp-t">N</text>
                         </g>
-                    </svg>
-                </div>
 
-                {/* Zoom controls */}
+                    </g>{/* end rotation group */}
+                </svg>
+
+                {/* Zoom + rotate controls */}
                 <div className="lm-zoom">
                     <button onClick={() => btnZoom(1.3)} aria-label="Zoom in">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
@@ -694,8 +736,11 @@ export default function LayoutMap() {
                     <button onClick={() => btnZoom(0.77)} aria-label="Zoom out">
                         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
                     </button>
+                    <button onClick={rotate} aria-label="Rotate 90 degrees">
+                        <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
                     <button onClick={reset} aria-label="Reset view" className="lm-zoom-reset">
-                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg>
                     </button>
                 </div>
 
@@ -732,7 +777,7 @@ export default function LayoutMap() {
                 )}
             </div>
 
-            {!sel && <div className="lm-hint">Tap a plot · pinch or scroll to zoom</div>}
+            {!sel && <div className="lm-hint">Tap a plot · drag to move · pinch to zoom · ⟳ to rotate</div>}
         </div>
     );
 }
@@ -750,34 +795,39 @@ const css = `
 .lm-root{
   --navy:#0a1630; --navy2:#0d1d3d; --gold:#c9a24b; --gold-lt:#e7cd85;
   --line-soft:rgba(201,162,75,.30); --txt:#eef2fb; --muted:#9aa8c6; --ink:#33291a;
-  position:relative; min-height:100vh; width:100%;
+  position:fixed; inset:0; width:100%; height:100%; height:100dvh;
   background:
     radial-gradient(120% 80% at 26% -8%, #2a2f28 0%, #1a1e19 46%, #0f120e 100%);
   color:var(--txt); font-family:'Inter',system-ui,-apple-system,sans-serif;
-  padding:22px 14px 120px; box-sizing:border-box; overflow-x:hidden;
+  box-sizing:border-box; overflow:hidden;
 }
-.lm-head{ text-align:center; margin-bottom:16px; }
-.lm-crest{ display:flex; justify-content:center; margin-bottom:6px; filter:drop-shadow(0 2px 8px rgba(201,162,75,.35)); }
-.lm-kicker{ font-size:10.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--gold); font-weight:600; }
+/* Floating glass header overlay — does not steal map space */
+.lm-head{
+  position:absolute; top:0; left:0; right:0; z-index:6;
+  display:flex; align-items:center; gap:11px;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+  background:linear-gradient(180deg, rgba(10,16,14,.82) 0%, rgba(10,16,14,.55) 65%, transparent 100%);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  pointer-events:none;
+}
+.lm-crest{ display:flex; align-items:center; filter:drop-shadow(0 2px 8px rgba(201,162,75,.35)); }
+.lm-head-txt{ display:flex; flex-direction:column; line-height:1.05; }
+.lm-kicker{ font-size:9px; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); font-weight:600; }
 .lm-title{
-  margin:6px 0 3px; font-size:34px; line-height:1; font-weight:800; letter-spacing:-.015em;
+  margin:2px 0 1px; font-size:24px; line-height:1; font-weight:800; letter-spacing:-.015em;
   font-family:'Playfair Display','Georgia',serif;
   background:linear-gradient(180deg,#fdf5df 0%,#e7cd85 55%,#c9a24b 100%);
   -webkit-background-clip:text; background-clip:text; color:transparent;
-  text-shadow:0 2px 20px rgba(201,162,75,.18);
 }
-.lm-sub{ font-size:11.5px; color:var(--muted); letter-spacing:.06em; }
-.lm-rule{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:10px; color:var(--gold); font-size:9px; }
-.lm-rule span{ height:1px; width:54px; background:linear-gradient(90deg,transparent,var(--gold-lt),transparent); }
+.lm-sub{ font-size:10px; color:var(--muted); letter-spacing:.04em; }
 
 .lm-stage{
-  position:relative; border:1px solid var(--line-soft); border-radius:20px; overflow:hidden;
-  background:linear-gradient(180deg,#20241d,#0d100c);
-  box-shadow:0 24px 70px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
-  touch-action:none; user-select:none;
+  position:absolute; inset:0; overflow:hidden;
+  background:radial-gradient(120% 90% at 40% 20%, #23281f, #0d100c);
+  touch-action:none; user-select:none; cursor:grab;
 }
-.lm-canvas{ transform-origin:0 0; will-change:transform; }
-.lm-svg{ display:block; width:100%; height:auto; }
+.lm-stage:active{ cursor:grabbing; }
+.lm-svg{ display:block; width:100%; height:100%; }
 
 .lm-boundary-wall{ fill:none; stroke:#16281a; stroke-width:8; stroke-linejoin:round; opacity:.85; }
 .lm-boundary{ fill:none; stroke:#e05248; stroke-width:2.4; stroke-linejoin:round; opacity:.92;
@@ -843,20 +893,20 @@ const css = `
 .lm-compass .lm-comp-s{ fill:#6a7690; }
 .lm-compass .lm-comp-t{ fill:var(--gold); font-size:13px; font-weight:800; text-anchor:middle; }
 
-.lm-zoom{ position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px; z-index:3; }
+.lm-zoom{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px); bottom:calc(env(safe-area-inset-bottom,0px) + 90px); display:flex; flex-direction:column; gap:9px; z-index:8; }
 .lm-zoom button{
-  width:42px; height:42px; border-radius:12px; border:1px solid var(--line-soft);
-  background:rgba(10,22,48,.82); backdrop-filter:blur(8px); color:var(--gold);
-  font-size:20px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  box-shadow:0 6px 18px rgba(0,0,0,.45);
+  width:46px; height:46px; border-radius:13px; border:1px solid var(--line-soft);
+  background:rgba(12,18,14,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); color:var(--gold);
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px rgba(0,0,0,.5);
 }
-.lm-zoom button:active{ transform:translateY(1px); background:rgba(18,32,64,.9); }
+.lm-zoom button:active{ transform:translateY(1px); background:rgba(24,32,22,.92); }
 .lm-zoom button svg{ display:block; }
 .lm-zoom-reset{ color:var(--muted); }
 
 .lm-legend{
-  position:absolute; left:12px; bottom:12px; z-index:3; display:flex; gap:12px;
-  background:rgba(10,22,48,.78); backdrop-filter:blur(8px); border:1px solid var(--line-soft);
+  position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px); bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:8; display:flex; gap:12px; flex-wrap:wrap; max-width:60vw;
+  background:rgba(12,18,14,.74); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--line-soft);
   border-radius:12px; padding:8px 12px; font-size:11px; color:var(--muted);
 }
 .lm-legend span{ display:flex; align-items:center; gap:5px; }
@@ -867,10 +917,10 @@ const css = `
 .lg-stp{ background:#9670c2; }
 
 .lm-hint{
-  position:fixed; bottom:26px; left:50%; transform:translateX(-50%);
-  background:rgba(10,22,48,.85); border:1px solid var(--line-soft); color:var(--muted);
-  font-size:13px; padding:9px 18px; border-radius:999px; backdrop-filter:blur(8px);
-  letter-spacing:.02em; box-shadow:0 8px 24px rgba(0,0,0,.4); pointer-events:none;
+  position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 20px); left:50%; transform:translateX(-50%); z-index:7;
+  background:rgba(12,18,14,.8); border:1px solid var(--line-soft); color:var(--muted);
+  font-size:12.5px; padding:9px 18px; border-radius:999px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  letter-spacing:.02em; box-shadow:0 8px 24px rgba(0,0,0,.4); pointer-events:none; white-space:nowrap;
 }
 
 .lm-sheet{
@@ -898,9 +948,8 @@ const css = `
 .lm-cta:active{ transform:translateY(1px); }
 
 @media (min-width:640px){
-  .lm-root{ padding:34px 24px 120px; max-width:660px; margin:0 auto; }
-  .lm-title{ font-size:44px; }
-  .lm-sheet{ max-width:660px; margin:0 auto; }
+  .lm-title{ font-size:30px; }
+  .lm-sheet{ max-width:460px; left:auto; right:24px; bottom:24px; border-radius:20px; }
 }
 @media (prefers-reduced-motion:reduce){
   .lm-sheet{ transition:none; }
