@@ -160,8 +160,11 @@ type ViewBox = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
 
 const BASE_VB: ViewBox = { x: 80, y: 200, w: 1090, h: 990 };
-const MIN_W = BASE_VB.w / 6;   // max zoom in  (6x)
-const MAX_W = BASE_VB.w * 1.6; // max zoom out
+const ASPECT = BASE_VB.h / BASE_VB.w;
+const MIN_W = BASE_VB.w / 8;   // max zoom in  (8x)
+const MAX_W = BASE_VB.w * 1.7; // max zoom out
+const pivotX = BASE_VB.x + BASE_VB.w / 2;
+const pivotY = BASE_VB.y + BASE_VB.h / 2;
 
 // Rotate a screen-space delta into layout space so drag direction stays natural when rotated.
 function rotateDelta(dx: number, dy: number, deg: number): [number, number] {
@@ -172,113 +175,200 @@ function rotateDelta(dx: number, dy: number, deg: number): [number, number] {
 
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
+    // Displayed state (what renders) — eased toward the target each frame.
     const [view, setView] = useState<ViewBox>({ ...BASE_VB });
     const [rot, setRot] = useState(0);
+
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
+    const rotGRef = useRef<SVGGElement | null>(null);
+    const compassRef = useRef<SVGGElement | null>(null);
+
+    // Target state the animation eases toward.
+    const target = useRef<{ view: ViewBox; rot: number }>({ view: { ...BASE_VB }, rot: 0 });
+    // Live "current" copy the loop mutates (avoids stale closures).
+    const cur = useRef<{ view: ViewBox; rot: number }>({ view: { ...BASE_VB }, rot: 0 });
+    const raf = useRef<number | null>(null);
+    const animating = useRef(false);
+
+    // Gesture refs
     const drag = useRef<{ px: number; py: number; vx: number; vy: number } | null>(null);
-    const pinch = useRef<{ d: number } | null>(null);
+    const gesture = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
 
-    // Convert a screen (client) point to SVG-user coordinates, accounting for viewBox + letterboxing.
+    // Paint straight to the DOM (bypasses React re-render → 60fps during motion).
+    const paint = (v: ViewBox, r: number) => {
+        if (svgRef.current) svgRef.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+        if (rotGRef.current) rotGRef.current.setAttribute("transform", `rotate(${r} ${pivotX} ${pivotY})`);
+        if (compassRef.current) compassRef.current.setAttribute("transform", `translate(1108,250) rotate(${-r})`);
+    };
+
+    // ── Animation loop: ease cur → target, paint DOM, sync React at rest ──
+    const tick = useCallback(() => {
+        const c = cur.current, t = target.current;
+        const eV = c.view, tV = t.view;
+        const k = 0.2; // easing (higher = snappier)
+        eV.x += (tV.x - eV.x) * k;
+        eV.y += (tV.y - eV.y) * k;
+        eV.w += (tV.w - eV.w) * k;
+        eV.h += (tV.h - eV.h) * k;
+        let dr = t.rot - c.rot;
+        while (dr > 180) dr -= 360;
+        while (dr < -180) dr += 360;
+        c.rot += dr * k;
+
+        const done =
+            Math.abs(tV.x - eV.x) < 0.08 && Math.abs(tV.y - eV.y) < 0.08 &&
+            Math.abs(tV.w - eV.w) < 0.08 && Math.abs(tV.h - eV.h) < 0.08 &&
+            Math.abs(dr) < 0.08;
+
+        if (done) {
+            c.view = { ...tV }; c.rot = t.rot;
+            paint(tV, t.rot);
+            setView({ ...tV }); setRot(t.rot); // sync React once, at rest
+            animating.current = false;
+            raf.current = null;
+            return;
+        }
+        paint(eV, c.rot);
+        raf.current = requestAnimationFrame(tick);
+    }, []);
+
+    const startAnim = useCallback(() => {
+        if (!animating.current) {
+            animating.current = true;
+            raf.current = requestAnimationFrame(tick);
+        }
+    }, [tick]);
+
+    // Direct manipulation (finger drag/pinch/twist): paint instantly, keep target synced.
+    const setNow = useCallback((v: ViewBox, r?: number) => {
+        if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
+        animating.current = false;
+        cur.current.view = { ...v };
+        if (r !== undefined) cur.current.rot = r;
+        target.current.view = { ...v };
+        if (r !== undefined) target.current.rot = r;
+        paint(v, r !== undefined ? r : cur.current.rot);
+    }, []);
+
+    // Commit the live DOM-driven state back into React (call on gesture end).
+    const commit = useCallback(() => {
+        setView({ ...cur.current.view });
+        setRot(cur.current.rot);
+    }, []);
+
+    // Convert a screen point to SVG-user coords (meet letterboxing).
     const toUser = (clientX: number, clientY: number, v: ViewBox): Point => {
         const el = wrapRef.current;
         if (!el) return { x: v.x + v.w / 2, y: v.y + v.h / 2 };
         const rect = el.getBoundingClientRect();
-        // preserveAspectRatio="xMidYMid meet" scaling
         const scale = Math.min(rect.width / v.w, rect.height / v.h);
-        const drawW = v.w * scale, drawH = v.h * scale;
-        const offX = (rect.width - drawW) / 2, offY = (rect.height - drawH) / 2;
-        const ux = v.x + (clientX - rect.left - offX) / scale;
-        const uy = v.y + (clientY - rect.top - offY) / scale;
-        return { x: ux, y: uy };
+        const offX = (rect.width - v.w * scale) / 2, offY = (rect.height - v.h * scale) / 2;
+        return { x: v.x + (clientX - rect.left - offX) / scale, y: v.y + (clientY - rect.top - offY) / scale };
     };
 
-    // Zoom keeping the point under the cursor/pinch fixed.
-    const zoomAt = useCallback((factor: number, clientX: number, clientY: number) => {
-        setView((v) => {
-            let nw = v.w / factor;
-            nw = Math.min(MAX_W, Math.max(MIN_W, nw));
-            const nh = nw * (BASE_VB.h / BASE_VB.w);
-            const f = toUser(clientX, clientY, v);
-            // keep focal point stationary: new origin so f stays at same relative spot
-            const relX = (f.x - v.x) / v.w;
-            const relY = (f.y - v.y) / v.h;
-            const nx = f.x - relX * nw;
-            const ny = f.y - relY * nh;
-            return { x: nx, y: ny, w: nw, h: nh };
-        });
-    }, []);
+    const clampW = (w: number) => Math.min(MAX_W, Math.max(MIN_W, w));
+
+    // Compute a zoomed viewBox around a focal client point (no state write).
+    const zoomedView = (base: ViewBox, factor: number, clientX: number, clientY: number): ViewBox => {
+        const nw = clampW(base.w / factor);
+        const nh = nw * ASPECT;
+        const f = toUser(clientX, clientY, base);
+        const relX = (f.x - base.x) / base.w;
+        const relY = (f.y - base.y) / base.h;
+        return { x: f.x - relX * nw, y: f.y - relY * nh, w: nw, h: nh };
+    };
+
+    // Smooth (animated) zoom toward target — used by wheel + buttons.
+    const smoothZoom = (factor: number, clientX: number, clientY: number) => {
+        target.current.view = zoomedView(target.current.view, factor, clientX, clientY);
+        startAnim();
+    };
 
     const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+        smoothZoom(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.clientX, e.clientY);
     };
 
     const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const angle = (a: React.Touch, b: React.Touch) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI;
 
     const onTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 2) {
-            pinch.current = { d: dist(e.touches[0], e.touches[1]) };
+            gesture.current = {
+                d: dist(e.touches[0], e.touches[1]),
+                ang: angle(e.touches[0], e.touches[1]),
+                cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                cy: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+            };
             drag.current = null;
         } else if (e.touches.length === 1) {
-            drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, vx: view.x, vy: view.y };
+            drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, vx: cur.current.view.x, vy: cur.current.view.y };
         }
     };
+
     const onTouchMove = (e: React.TouchEvent) => {
         const el = wrapRef.current;
-        if (e.touches.length === 2 && pinch.current && el) {
+        if (e.touches.length === 2 && gesture.current && el) {
             e.preventDefault();
+            const g = gesture.current;
             const nd = dist(e.touches[0], e.touches[1]);
+            const na = angle(e.touches[0], e.touches[1]);
             const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
             const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            zoomAt(nd / pinch.current.d, cx, cy);
-            pinch.current.d = nd;
+
+            // pinch-zoom around gesture centre (instant, no lag)
+            const zv = zoomedView(cur.current.view, nd / g.d, cx, cy);
+            // twist-rotate by the change in finger angle
+            const nrot = cur.current.rot + (na - g.ang);
+            setNow(zv, nrot);
+
+            g.d = nd; g.ang = na; g.cx = cx; g.cy = cy;
         } else if (e.touches.length === 1 && drag.current && el) {
             e.preventDefault();
             const d = drag.current;
             const rect = el.getBoundingClientRect();
-            const scale = Math.min(rect.width / view.w, rect.height / view.h);
+            const scale = Math.min(rect.width / cur.current.view.w, rect.height / cur.current.view.h);
             let dx = (e.touches[0].clientX - d.px) / scale;
             let dy = (e.touches[0].clientY - d.py) / scale;
-            [dx, dy] = rotateDelta(dx, dy, rot);
-            setView((v) => ({ ...v, x: d.vx - dx, y: d.vy - dy }));
+            [dx, dy] = rotateDelta(dx, dy, cur.current.rot);
+            setNow({ ...cur.current.view, x: d.vx - dx, y: d.vy - dy });
         }
     };
-    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; pinch.current = null; } };
+    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; commit(); } };
 
-    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, vx: view.x, vy: view.y }; };
+    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, vx: cur.current.view.x, vy: cur.current.view.y }; };
     const onMouseMove = (e: React.MouseEvent) => {
         const el = wrapRef.current;
         const d = drag.current;
         if (!d || !el) return;
         const rect = el.getBoundingClientRect();
-        const scale = Math.min(rect.width / view.w, rect.height / view.h);
+        const scale = Math.min(rect.width / cur.current.view.w, rect.height / cur.current.view.h);
         let dx = (e.clientX - d.px) / scale;
         let dy = (e.clientY - d.py) / scale;
-        [dx, dy] = rotateDelta(dx, dy, rot);
-        setView((v) => ({ ...v, x: d.vx - dx, y: d.vy - dy }));
+        [dx, dy] = rotateDelta(dx, dy, cur.current.rot);
+        setNow({ ...cur.current.view, x: d.vx - dx, y: d.vy - dy });
     };
-    const onMouseUp = () => { drag.current = null; };
+    const onMouseUp = () => { if (drag.current) { drag.current = null; commit(); } };
 
-    const reset = () => { setView({ ...BASE_VB }); setRot(0); };
+    const reset = () => { target.current = { view: { ...BASE_VB }, rot: 0 }; startAnim(); };
     const btnZoom = (f: number) => {
         const el = wrapRef.current;
-        if (el) { const r = el.getBoundingClientRect(); zoomAt(f, r.left + r.width / 2, r.top + r.height / 2); }
+        if (el) { const r = el.getBoundingClientRect(); smoothZoom(f, r.left + r.width / 2, r.top + r.height / 2); }
     };
-    const rotate = () => setRot((r) => (r + 90) % 360);
+    const rotate = () => { target.current.rot = Math.round((target.current.rot + 90) / 90) * 90; startAnim(); };
 
     useEffect(() => {
         const el = wrapRef.current;
         if (!el) return;
         el.addEventListener("wheel", onWheel, { passive: false });
-        return () => el.removeEventListener("wheel", onWheel);
-    }, [zoomAt, view.w, view.h]);
-
-    // rotation pivot = centre of the base layout
-    const pivotX = BASE_VB.x + BASE_VB.w / 2;
-    const pivotY = BASE_VB.y + BASE_VB.h / 2;
+        return () => {
+            el.removeEventListener("wheel", onWheel);
+            if (raf.current) cancelAnimationFrame(raf.current);
+        };
+    }, []);
 
     return (
         <div className="lm-root">
@@ -458,7 +548,7 @@ export default function LayoutMap() {
                     </defs>
 
                     {/* Rotation group — spins all content around the layout centre (crisp, vector). */}
-                    <g transform={`rotate(${rot} ${pivotX} ${pivotY})`}>
+                    <g ref={rotGRef} transform={`rotate(${rot} ${pivotX} ${pivotY})`}>
 
                         {/* Ground plate */}
                         <polygon points={BOUNDARY} fill="url(#groundFill)" />
@@ -718,7 +808,7 @@ export default function LayoutMap() {
                         <polygon points={BOUNDARY} fill="url(#vignette)" pointerEvents="none" />
 
                         {/* compass — counter-rotated so N always shows the layout's true north */}
-                        <g className="lm-compass" transform={`translate(1108,250) rotate(${-rot})`}>
+                        <g ref={compassRef} className="lm-compass" transform={`translate(1108,250) rotate(${-rot})`}>
                             <circle r="19" className="lm-comp-ring" />
                             <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" className="lm-comp-n" />
                             <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" className="lm-comp-s" />
@@ -777,7 +867,7 @@ export default function LayoutMap() {
                 )}
             </div>
 
-            {!sel && <div className="lm-hint">Tap a plot · drag to move · pinch to zoom · ⟳ to rotate</div>}
+            {!sel && <div className="lm-hint">Drag to move · pinch to zoom · twist to rotate</div>}
         </div>
     );
 }
