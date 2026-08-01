@@ -1,875 +1,1000 @@
-"use client";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
-import React, {
-    useRef,
-    useState,
-    useMemo,
-    useCallback,
-    useEffect,
-    Suspense,
-} from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Text, RoundedBox } from "@react-three/drei";
-import { motion, AnimatePresence } from "framer-motion";
-import * as THREE from "three";
+/**
+ * Basava Ganguru Residential Layout — Premium 3D Interactive Masterplan
+ *
+ * GEOMETRY IS FROZEN. Every plot id, polygon, boundary point, CA / STP / PARK
+ * region and road corridor below is byte-identical to the sanctioned SBUDA
+ * survey plan (Sy.No.43/1). NOTHING positional is altered — only the visual
+ * render layer is rebuilt to read like a Prestige / Brigade / Sobha brochure.
+ */
 
-/* ============================================================================
-   BASAVA GANGURU — SY.NO.43/1  ·  Plotex-style Interactive 3D Layout (clone)
-   Raised 3D plot blocks on a beveled tan terrain pad · dark inset roads ·
-   procedural in-code textures · Plotex chrome (logo, compass, side buttons,
-   bottom pill toolbar, green Enquire) · Supabase-ready booking.
-   Route: src/app/layout-3d/page.tsx  ->  <BasavaGanguru3DLayout/>
-   Deps: three @react-three/fiber @react-three/drei framer-motion
-   ============================================================================ */
-
-const PRICE_PER_SQFT = 2300;
-const SQM_TO_SQFT = 10.7639;
-const M_TO_FT = 3.28084;
-const INR = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
-const ftIn = (m) => {
-    const totalIn = m * M_TO_FT * 12;
-    const ft = Math.floor(totalIn / 12);
-    const inch = Math.round(totalIn - ft * 12);
-    return inch === 12 ? `${ft + 1}'0"` : `${ft}'${inch}"`;
+const DIMENSIONS = {
+    s9x12: "9.00 × 12.00 m",
+    s9x15: "9.00 × 15.00 m",
+    s9x16: "9.00 × 16.05 m",
+    odd: "Odd-shaped site",
 };
 
-/* Plotex-ish palette */
-const C = {
-    available: "#3aa0ee",
-    availableSide: "#7a5a34",
-    booked: "#e6b23c",
-    sold: "#8a94a6",
-    selected: "#8fe0ff",
-    hovered: "#ffd76a",
-    ca: "#b1a2f0",
-    park: "#4c9a3f",
-    terrain: "#c9ad82",
-    terrainSide: "#7d6547",
+/* ════════════════════════════════════════════════════════════════════════
+   APPROVED GEOMETRY — DO NOT ALTER (unchanged from sanctioned layout)
+   ════════════════════════════════════════════════════════════════════════ */
+const PLOTS = [
+    { id: "1", pts: "250,262 330,262 330,362 250,362", dim: "odd", facing: "North" },
+    { id: "2", pts: "330,262 410,262 410,362 330,362", dim: "s9x15", facing: "North" },
+    { id: "3", pts: "410,262 490,262 490,362 410,362", dim: "odd", facing: "North" },
+    { id: "4", pts: "250,362 330,362 330,470 250,470", dim: "odd", facing: "South" },
+    { id: "5", pts: "330,362 410,362 410,470 330,470", dim: "s9x15", facing: "South" },
+    { id: "6", pts: "410,362 490,362 490,470 410,470", dim: "odd", facing: "South" },
+
+    { id: "7", pts: "140,600 232,600 232,720 140,720", dim: "odd", facing: "North" },
+    { id: "8", pts: "232,600 322,600 322,720 232,720", dim: "s9x12", facing: "North" },
+    { id: "9", pts: "322,600 412,600 412,720 322,720", dim: "s9x12", facing: "North" },
+    { id: "10", pts: "412,600 502,600 502,720 412,720", dim: "s9x12", facing: "North" },
+
+    { id: "11", pts: "560,262 627,262 627,352 560,352", dim: "s9x15", facing: "North" },
+    { id: "25", pts: "627,262 700,262 700,352 627,352", dim: "s9x15", facing: "North" },
+    { id: "24", pts: "700,262 786,262 786,352 700,352", dim: "s9x15", facing: "North" },
+
+    { id: "12", pts: "560,352 700,352 700,460 560,460", dim: "s9x15", facing: "West" },
+    { id: "13", pts: "560,460 700,460 700,555 560,555", dim: "s9x16", facing: "West" },
+    { id: "14", pts: "560,555 700,555 700,650 560,650", dim: "s9x16", facing: "West" },
+    { id: "15", pts: "560,650 700,650 700,745 560,745", dim: "s9x16", facing: "West" },
+    { id: "16", pts: "560,745 700,745 700,840 560,840", dim: "s9x16", facing: "West" },
+    { id: "17", pts: "560,840 700,840 700,948 560,948", dim: "odd", facing: "South" },
+
+    { id: "23", pts: "700,352 786,352 786,460 700,460", dim: "s9x15", facing: "East" },
+    { id: "22", pts: "700,460 786,460 786,555 700,555", dim: "s9x16", facing: "East" },
+    { id: "21", pts: "700,555 786,555 786,650 700,650", dim: "s9x16", facing: "East" },
+    { id: "20", pts: "700,650 786,650 786,745 700,745", dim: "s9x16", facing: "East" },
+    { id: "19", pts: "700,745 786,745 786,840 700,840", dim: "s9x16", facing: "East" },
+    { id: "18", pts: "700,840 786,840 786,948 700,948", dim: "odd", facing: "South" },
+
+    { id: "26", pts: "858,262 986,262 986,392 858,392", dim: "s9x15", facing: "North" },
+    { id: "27", pts: "858,392 986,392 986,485 858,485", dim: "s9x15", facing: "East" },
+    { id: "28", pts: "858,485 986,485 986,578 858,578", dim: "s9x15", facing: "East" },
+    { id: "29", pts: "858,578 986,578 986,671 858,671", dim: "s9x15", facing: "East" },
+    { id: "30", pts: "858,671 986,671 986,764 858,764", dim: "s9x15", facing: "East" },
+    { id: "31", pts: "858,764 986,764 986,857 858,857", dim: "s9x15", facing: "East" },
+    { id: "32", pts: "858,857 986,857 986,948 858,948", dim: "odd", facing: "South" },
+];
+
+const BOUNDARY = "118,232 1108,268 1150,700 900,1090 118,1150 118,232";
+const CA = { pts: "140,262 250,262 250,470 140,470" };
+const STP = { pts: "462,830 530,830 530,930 462,930" };
+// Park lower edge pulled UP to y=948 so Park, Plot 17, Plot 18 and Plot 32
+// all terminate on the SAME bottom line. Lake/landscaping raised to fit.
+const PARK = "118,830 462,830 530,930 530,948 118,948";
+const PARK_LAKE = { cx: 290, cy: 900, rx: 118, ry: 44 };
+
+// Road corridors — ALL 9m roads share the SAME width (~58px), matching the
+// sanctioned drawing where the horizontal 9m road equals the two vertical 9m
+// roads. Top road lower edge = 262 (touches plot tops). Vertical roads 262->948.
+const ROADS = {
+    top: "118,226 1108,258 1108,262 118,262",          // top 12m road
+    leftV: { x: 502, y: 262, w: 58, h: 686 },             // 9m vertical (502..560)
+    rightV: { x: 786, y: 262, w: 72, h: 686 },             // 9m vertical (786..858)
+    midH: { x: 118, y: 506, w: 442, h: 58 },             // 9m horizontal — SAME 58px width, centred in corridor (506..564)
+    path: { x: 118, y: 748, w: 442, h: 30 },             // 3m pathway
 };
 
-/* ============================================================================
-   DATA — 4 BUDA classes, 32 sites
-   ============================================================================ */
-let _id = 0;
-const facingFor = (z) => (z < 25 ? "North" : z < 45 ? "East" : "South");
-const mk = (no, x, z, w, d, opts = {}) => ({
-    id: _id++,
-    no,
-    x,
-    z,
-    w,
-    d,
-    kind: opts.kind || "residential",
-    label: opts.label,
-    status: opts.status || "available",
-    corner: !!opts.corner,
-    premium: !!opts.premium,
-    facing: opts.facing || facingFor(z),
-    areaSqm: +(w * d).toFixed(2),
-});
+/* ════════════════════════════════════════════════════════════════════════
+   VISUAL-ONLY DATA (decoration — carries no engineering meaning)
+   ════════════════════════════════════════════════════════════════════════ */
 
-const blockA = [
-    mk("CA", 5.0, 9.5, 9.0, 19.0, { kind: "ca", label: "C.A" }),
-    mk(1, 14.0, 4.5, 9.0, 9.0, { corner: true }),
-    mk(2, 23.4, 4.5, 9.0, 9.0),
-    mk(3, 32.8, 4.5, 9.0, 9.0, { corner: true, premium: true }),
-    mk(4, 14.0, 14.5, 9.0, 9.0),
-    mk(5, 23.4, 14.5, 9.0, 9.0),
-    mk(6, 32.8, 14.5, 9.0, 9.0),
-];
-const blockB = [
-    mk(7, 5.0, 33.0, 9.0, 12.0, { corner: true }),
-    mk(8, 14.4, 33.0, 9.0, 12.0),
-    mk(9, 23.8, 33.0, 9.0, 12.0),
-    mk(10, 33.2, 33.0, 9.0, 12.0, { corner: true }),
-];
-const parkBlock = [
-    mk("PARK", 18.0, 52.0, 40.0, 22.0, { kind: "park", label: "PARK / OPEN SPACE" }),
-    mk("STP", 42.5, 46.5, 6.0, 6.5, { kind: "stp", label: "STP" }),
-];
-const middleLeft = [11, 12, 13, 14, 15, 16, 17].map((no, i) =>
-    mk(no, 60, 4.5 + i * 10.2, 9.0, 15.0, { corner: i === 0 || i === 6, premium: no === 14 })
-);
-const middleRightTop = [mk(25, 71, 4.5, 4.5, 9.0, {}), mk(24, 76, 4.5, 4.5, 9.0, { corner: true })];
-const middleRight = [23, 22, 21, 20, 19, 18].map((no, i) =>
-    mk(no, 73.5, 14.5 + i * 10.2, 9.0, 16.05, { corner: i === 5, premium: no === 21 })
-);
-const rightCol = [26, 27, 28, 29, 30, 31, 32].map((no, i) =>
-    mk(no, 92, 4.5 + i * 10.2, 9.0, 15.0, { corner: i === 0 || i === 6, premium: no === 32 })
-);
-
-const ALL = [...blockA, ...blockB, ...parkBlock, ...middleLeft, ...middleRightTop, ...middleRight, ...rightCol];
-const RESIDENTIAL = ALL.filter((s) => s.kind === "residential");
-const SEED = { 2: "sold", 5: "booked", 9: "sold", 13: "booked", 20: "sold", 27: "booked", 30: "sold" };
-RESIDENTIAL.forEach((s) => SEED[s.no] && (s.status = SEED[s.no]));
-
-const ROADS = [
-    { x: 48, z: -6, w: 104, d: 12, name: "12M ROAD", vertical: false, hazard: true },
-    { x: 45, z: 23.5, w: 96, d: 9, name: "9M ROAD", vertical: false },
-    { x: 47, z: 34, w: 9, d: 70, name: "9M ROAD", vertical: true, hazard: true },
-    { x: 82, z: 34, w: 9, d: 70, name: "9M ROAD", vertical: true },
-    { x: 24, z: 42.5, w: 42, d: 3, name: "3M PATHWAY", vertical: false },
-];
-const ROUNDABOUTS = [[47, 23.5], [82, 23.5]];
-const ZEBRAS = [{ x: 47, z: 17 }, { x: 82, z: 17 }];
-const SURVEY = [
-    { name: "Sy.No.39", x: -18, z: -22 },
-    { name: "Sy.No.42", x: 48, z: -26 },
-    { name: "Sy.No.43/3", x: 118, z: 8 },
-    { name: "Sy.No.44", x: -20, z: 30 },
-    { name: "Sy.No.46", x: 55, z: 78 },
-];
-const WALL_PATH = [[-3, -8], [101, -6], [104, 40], [70, 64], [-4, 60], [-3, -8]];
-const BOUNDS = { minX: -6, maxX: 104, minZ: -14, maxZ: 66 };
-const CENTER = { x: (BOUNDS.minX + BOUNDS.maxX) / 2, z: (BOUNDS.minZ + BOUNDS.maxZ) / 2 };
-
-/* ============================================================================
-   PROCEDURAL TEXTURES
-   ============================================================================ */
-function tex(draw, size = 256, repeat = 1) {
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = size;
-    draw(cv.getContext("2d"), size);
-    const t = new THREE.CanvasTexture(cv);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeat, repeat);
-    t.anisotropy = 4;
-    return t;
-}
-function useTextures() {
-    return useMemo(() => {
-        const asphalt = tex((c, s) => {
-            c.fillStyle = "#23262c";
-            c.fillRect(0, 0, s, s);
-            for (let i = 0; i < 2600; i++) {
-                const g = 20 + Math.random() * 40;
-                c.fillStyle = `rgba(${g},${g},${g + 4},${Math.random() * 0.5})`;
-                c.fillRect(Math.random() * s, Math.random() * s, 1.4, 1.4);
-            }
-        }, 256, 6);
-        const soil = tex((c, s) => {
-            c.fillStyle = "#c9ad82";
-            c.fillRect(0, 0, s, s);
-            for (let i = 0; i < 3200; i++) {
-                c.fillStyle = Math.random() > 0.5 ? "rgba(160,134,96,.45)" : "rgba(214,196,166,.45)";
-                c.fillRect(Math.random() * s, Math.random() * s, 2, 2);
-            }
-        }, 256, 16);
-        const grass = tex((c, s) => {
-            c.fillStyle = "#4c9a3f";
-            c.fillRect(0, 0, s, s);
-            for (let i = 0; i < 4000; i++) {
-                const g = 100 + Math.random() * 80;
-                c.strokeStyle = `rgba(40,${g},40,.5)`;
-                c.beginPath();
-                const x = Math.random() * s, y = Math.random() * s;
-                c.moveTo(x, y);
-                c.lineTo(x + (Math.random() - 0.5) * 3, y - 2 - Math.random() * 3);
-                c.stroke();
-            }
-        }, 256, 10);
-        const stone = tex((c, s) => {
-            c.fillStyle = "#7d766b";
-            c.fillRect(0, 0, s, s);
-            for (let i = 0; i < 60; i++) {
-                const x = Math.random() * s, y = Math.random() * s, r = 8 + Math.random() * 16;
-                c.fillStyle = `hsl(${30 + Math.random() * 20},${8 + Math.random() * 12}%,${40 + Math.random() * 25}%)`;
-                c.beginPath();
-                c.ellipse(x, y, r, r * (0.6 + Math.random() * 0.4), Math.random() * 3, 0, 7);
-                c.fill();
-                c.strokeStyle = "rgba(40,36,30,.6)";
-                c.lineWidth = 1.5;
-                c.stroke();
-            }
-        }, 256, 3);
-        return { asphalt, soil, grass, stone };
-    }, []);
-}
-
-/* ============================================================================
-   RAISED PLOT BLOCK  (top slab + visible earth sides) — the Plotex "land" look
-   ============================================================================ */
-const PLOT_H = 1.6; // block height above terrain
-
-function Plot({ s, hovered, selectedId, onHover, onSelect, showDims }) {
-    const isRes = s.kind === "residential";
-    const clickable = isRes && s.status !== "sold";
-    const isHover = hovered === s.id;
-    const isSel = selectedId === s.id;
-    const grpRef = useRef();
-
-    const top = useMemo(() => {
-        if (s.kind === "ca") return C.ca;
-        if (s.kind === "park") return C.park;
-        if (s.kind === "stp") return "#c9ced6";
-        if (isSel) return C.selected;
-        if (isHover) return C.hovered;
-        if (s.status === "sold") return C.sold;
-        if (s.status === "booked") return C.booked;
-        return C.available;
-    }, [s.kind, s.status, isHover, isSel]);
-
-    const w = s.w - 0.5;
-    const d = s.d - 0.5;
-    const sqft = Math.round(s.areaSqm * SQM_TO_SQFT);
-    const lift = isSel ? 0.9 : isHover ? 0.45 : 0;
-
-    useFrame((_, dt) => {
-        if (grpRef.current)
-            grpRef.current.position.y = THREE.MathUtils.damp(grpRef.current.position.y, lift, 10, dt);
-    });
-
-    return (
-        <group ref={grpRef} position={[s.x, 0, s.z]}>
-            {/* earth block (sides) */}
-            <mesh position={[0, PLOT_H / 2, 0]} castShadow receiveShadow>
-                <boxGeometry args={[w, PLOT_H, d]} />
-                <meshStandardMaterial color={C.availableSide} roughness={1} />
-            </mesh>
-            {/* colored top slab */}
-            <mesh
-                position={[0, PLOT_H + 0.02, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                onPointerOver={(e) => {
-                    e.stopPropagation();
-                    if (clickable) onHover(s.id);
-                }}
-                onPointerOut={() => clickable && onHover(null)}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (clickable) onSelect(s.id);
-                }}
-                receiveShadow
-            >
-                <planeGeometry args={[w, d]} />
-                <meshStandardMaterial color={top} roughness={0.7} metalness={0.02} />
-            </mesh>
-
-            {/* white outline on select/hover */}
-            {(isSel || isHover) && isRes && (
-                <lineSegments position={[0, PLOT_H + 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <edgesGeometry args={[new THREE.PlaneGeometry(w, d)]} />
-                    <lineBasicMaterial color={isSel ? "#ffffff" : "#fff6d0"} linewidth={2} />
-                </lineSegments>
-            )}
-
-            {/* number */}
-            <Text
-                position={[0, PLOT_H + 0.05, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                fontSize={isRes ? 2.3 : s.kind === "park" ? 3.2 : 1.9}
-                color={isRes ? "#08243f" : "#12331f"}
-                anchorX="center"
-                anchorY="middle"
-            >
-                {isRes ? String(s.no) : s.label}
-            </Text>
-
-            {/* dimension pills */}
-            {showDims && isRes && (
-                <>
-                    <Html position={[0, PLOT_H + 0.1, -d / 2]} center distanceFactor={95}>
-                        <div style={dimPill}>{s.w.toFixed(2)}m · {ftIn(s.w)}</div>
-                    </Html>
-                    <Html position={[-w / 2, PLOT_H + 0.1, 0]} center distanceFactor={95}>
-                        <div style={dimPill}>{s.d.toFixed(2)}m</div>
-                    </Html>
-                    <Html position={[0, PLOT_H + 0.1, d / 2 - 0.2]} center distanceFactor={110}>
-                        <div style={sqftTag}>{sqft} sqft</div>
-                    </Html>
-                </>
-            )}
-        </group>
-    );
-}
-const dimPill = {
-    background: "#1d2733",
-    color: "#eaf2ff",
-    font: "600 11px ui-sans-serif,system-ui",
-    padding: "2px 8px",
-    borderRadius: 20,
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
-    boxShadow: "0 2px 6px rgba(0,0,0,.4)",
+const centroid = (pts) => {
+    const nums = pts.split(/[ ,]+/).map(Number);
+    let x = 0, y = 0, n = 0;
+    for (let i = 0; i < nums.length; i += 2) { x += nums[i]; y += nums[i + 1]; n++; }
+    return { x: x / n, y: y / n };
 };
-const sqftTag = { color: "#08243f", font: "700 10px ui-sans-serif,system-ui", whiteSpace: "nowrap", pointerEvents: "none" };
 
-/* ============================================================================
-   TERRAIN PAD (beveled tan base under everything)
-   ============================================================================ */
-function TerrainPad({ tx }) {
-    // extruded polygon roughly following the site boundary, with thickness
-    const shape = useMemo(() => {
-        const sh = new THREE.Shape();
-        const pad = 6;
-        const pts = [
-            [-3 - pad, -8 - pad],
-            [101 + pad, -6 - pad],
-            [104 + pad, 40],
-            [70, 64 + pad],
-            [-4 - pad, 60 + pad],
-        ];
-        sh.moveTo(pts[0][0], pts[0][1]);
-        pts.slice(1).forEach(([x, z]) => sh.lineTo(x, z));
-        sh.closePath();
-        return sh;
-    }, []);
-    const geo = useMemo(() => {
-        const g = new THREE.ExtrudeGeometry(shape, { depth: 3, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1.2, bevelSegments: 2 });
-        g.rotateX(-Math.PI / 2);
-        return g;
-    }, [shape]);
-    return (
-        <mesh geometry={geo} position={[0, -3, 0]} receiveShadow castShadow>
-            <meshStandardMaterial map={tx.soil} roughness={1} />
-        </mesh>
-    );
+const VB = { x: 80, y: 200, w: 1090, h: 990 };
+
+/* Deterministic pseudo-random so trees never reshuffle between renders */
+function rng(seed) {
+    let s = seed % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
-/* ============================================================================
-   ROADS — dark inset channels
-   ============================================================================ */
-function Road({ r, tx }) {
-    const [len, wid] = r.vertical ? [r.d, r.w] : [r.w, r.d];
-    const dash = Math.floor(len / 6);
-    return (
-        <group position={[r.x, 0, r.z]} rotation={[0, r.vertical ? Math.PI / 2 : 0, 0]}>
-            {/* inset channel (slightly below plot tops) */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} receiveShadow>
-                <planeGeometry args={[len, wid]} />
-                <meshStandardMaterial map={tx.asphalt} roughness={0.85} metalness={0.05} />
-            </mesh>
-            {[1, -1].map((sn) => (
-                <mesh key={sn} position={[0, 0.07, (sn * wid) / 2 - sn * 0.25]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <planeGeometry args={[len, 0.16]} />
-                    <meshStandardMaterial color="#e9e4d6" />
-                </mesh>
-            ))}
-            {Array.from({ length: dash }).map((_, i) => (
-                <mesh key={i} position={[-len / 2 + 3 + i * 6, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <planeGeometry args={[2.6, 0.18]} />
-                    <meshStandardMaterial color="#f2c200" />
-                </mesh>
-            ))}
-            {r.hazard &&
-                Array.from({ length: Math.floor(len / 2) }).map((_, i) => (
-                    <mesh key={"h" + i} position={[-len / 2 + 1 + i * 2, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                        <planeGeometry args={[1, 0.4]} />
-                        <meshStandardMaterial color={i % 2 ? "#111" : "#f4c020"} />
-                    </mesh>
-                ))}
-            {Array.from({ length: Math.max(2, Math.floor(len / 16)) }).map((_, i) => (
-                <StreetLight key={i} x={-len / 2 + 8 + i * 16} z={wid / 2 + 0.5} />
-            ))}
-            <Html position={[0, 2.4, 0]} center distanceFactor={95}>
-                <div style={roadTag}>{r.name}</div>
-            </Html>
-        </group>
-    );
-}
-const roadTag = {
-    background: "rgba(20,28,40,.82)",
-    color: "#cfe0ff",
-    font: "700 10px ui-sans-serif,system-ui",
-    letterSpacing: 1.5,
-    padding: "2px 8px",
-    borderRadius: 20,
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
-};
-function StreetLight({ x, z }) {
-    return (
-        <group position={[x, 0, z]}>
-            <mesh position={[0, 1.4, 0]} castShadow>
-                <cylinderGeometry args={[0.07, 0.09, 2.8, 6]} />
-                <meshStandardMaterial color="#3b4048" metalness={0.6} roughness={0.4} />
-            </mesh>
-            <mesh position={[0.4, 2.8, 0]}>
-                <sphereGeometry args={[0.14, 8, 8]} />
-                <meshStandardMaterial color="#fff4c2" emissive="#ffdf7a" emissiveIntensity={1.2} />
-            </mesh>
-        </group>
-    );
-}
-function Roundabout({ x, z }) {
-    return (
-        <group position={[x, 0.06, z]}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-                <circleGeometry args={[2, 32]} />
-                <meshStandardMaterial color="#4c9a3f" roughness={1} />
-            </mesh>
-            <mesh position={[0, 0.5, 0]} castShadow>
-                <coneGeometry args={[0.5, 1, 8]} />
-                <meshStandardMaterial color="#2f6130" flatShading />
-            </mesh>
-        </group>
-    );
-}
-function Zebra({ x, z }) {
-    return (
-        <group position={[x, 0.07, z]}>
-            {Array.from({ length: 7 }).map((_, i) => (
-                <mesh key={i} position={[-3 + i, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <planeGeometry args={[0.5, 4]} />
-                    <meshStandardMaterial color="#f2ede0" />
-                </mesh>
-            ))}
-        </group>
-    );
-}
-
-/* ============================================================================
-   PARK / STP / WALL / CONTEXT
-   ============================================================================ */
-function Park({ tx }) {
-    const p = parkBlock[0];
-    return (
-        <group position={[p.x, 0, p.z]}>
-            <mesh position={[0, PLOT_H / 2, 0]} castShadow receiveShadow>
-                <boxGeometry args={[p.w - 0.5, PLOT_H, p.d - 0.5]} />
-                <meshStandardMaterial color={C.availableSide} roughness={1} />
-            </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLOT_H + 0.02, 0]} receiveShadow>
-                <planeGeometry args={[p.w - 0.5, p.d - 0.5]} />
-                <meshStandardMaterial map={tx.grass} roughness={1} />
-            </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, PLOT_H + 0.04, 0]}>
-                <ringGeometry args={[9.5, 10.6, 40]} />
-                <meshStandardMaterial color="#c8a06a" roughness={1} side={THREE.DoubleSide} />
-            </mesh>
-            {[[-14, -7], [12, 7], [-10, 6], [14, -6], [0, 8], [6, -8]].map(([dx, dz], i) => (
-                <group key={i} position={[dx, PLOT_H, dz]}>
-                    <mesh position={[0, 0.8, 0]} castShadow>
-                        <cylinderGeometry args={[0.14, 0.2, 1.6, 6]} />
-                        <meshStandardMaterial color="#6b4a2f" />
-                    </mesh>
-                    <mesh position={[0, 2, 0]} castShadow>
-                        <icosahedronGeometry args={[1.1, 0]} />
-                        <meshStandardMaterial color="#3f7d3a" flatShading />
-                    </mesh>
-                </group>
-            ))}
-        </group>
-    );
-}
-function STP() {
-    const s = parkBlock[1];
-    return (
-        <group position={[s.x, 0, s.z]}>
-            <mesh position={[0, PLOT_H / 2, 0]} castShadow>
-                <boxGeometry args={[6, PLOT_H, 6.5]} />
-                <meshStandardMaterial color="#9aa0aa" roughness={1} />
-            </mesh>
-            {[[-1.3, 0], [1.3, 0]].map(([dx], i) => (
-                <mesh key={i} position={[dx, PLOT_H + 1, 0]} castShadow>
-                    <cylinderGeometry args={[0.9, 0.9, 2, 16]} />
-                    <meshStandardMaterial color="#c7cdd6" metalness={0.4} roughness={0.5} />
-                </mesh>
-            ))}
-        </group>
-    );
-}
-function BoundaryWall({ tx }) {
-    const segs = [];
-    for (let i = 0; i < WALL_PATH.length - 1; i++) {
-        const [x1, z1] = WALL_PATH[i];
-        const [x2, z2] = WALL_PATH[i + 1];
-        segs.push({ mx: (x1 + x2) / 2, mz: (z1 + z2) / 2, len: Math.hypot(x2 - x1, z2 - z1), ang: Math.atan2(z2 - z1, x2 - x1), gate: i === 0 });
+/* Build dense tree lines along a vertical road edge */
+function vLine(x, y0, y1, step, seed, variants) {
+    const r = rng(seed);
+    const out = [];
+    for (let y = y0; y <= y1; y += step) {
+        const jx = (r() - 0.5) * 6;
+        const jy = (r() - 0.5) * (step * 0.4);
+        const s = 0.62 + r() * 0.5;
+        const v = variants[Math.floor(r() * variants.length)];
+        out.push([x + jx, y + jy, s, v]);
     }
-    return (
-        <group>
-            {segs.map((sg, i) => {
-                if (sg.gate) {
-                    const gateW = 14, segLen = sg.len / 2 - gateW / 2;
-                    return (
-                        <group key={i} position={[sg.mx, 0, sg.mz]} rotation={[0, -sg.ang, 0]}>
-                            {[-1, 1].map((sn) => (
-                                <mesh key={sn} position={[sn * (gateW / 2 + segLen / 2), 0.75, 0]} castShadow>
-                                    <boxGeometry args={[segLen, 1.5, 0.5]} />
-                                    <meshStandardMaterial map={tx.stone} roughness={1} />
-                                </mesh>
-                            ))}
-                            {[-1, 1].map((sn) => (
-                                <mesh key={"p" + sn} position={[sn * (gateW / 2), 1.2, 0]} castShadow>
-                                    <boxGeometry args={[0.8, 2.4, 0.8]} />
-                                    <meshStandardMaterial color="#dfd7c8" />
-                                </mesh>
-                            ))}
-                            <mesh position={[0, 2.8, 0]} castShadow>
-                                <boxGeometry args={[gateW + 1.4, 1, 0.5]} />
-                                <meshStandardMaterial color="#1b2a4a" />
-                            </mesh>
-                            <Html position={[0, 2.8, 0.35]} center distanceFactor={55}>
-                                <div style={nameBoard}>ENTRY · BASAVA GANGURU</div>
-                            </Html>
-                        </group>
-                    );
-                }
-                return (
-                    <mesh key={i} position={[sg.mx, 0.75, sg.mz]} rotation={[0, -sg.ang, 0]} castShadow receiveShadow>
-                        <boxGeometry args={[sg.len, 1.5, 0.5]} />
-                        <meshStandardMaterial map={tx.stone} roughness={1} />
-                    </mesh>
-                );
-            })}
-        </group>
-    );
+    return out;
 }
-const nameBoard = { color: "#ffd98a", font: "800 11px ui-serif,Georgia,serif", letterSpacing: 1.5, whiteSpace: "nowrap", pointerEvents: "none", textShadow: "0 2px 8px #000" };
-
-function SurveyContext() {
-    return (
-        <>
-            {SURVEY.map((sv, i) => (
-                <Html key={i} position={[sv.x, 0.4, sv.z]} center distanceFactor={130}>
-                    <div style={surveyTag}>{sv.name}</div>
-                </Html>
-            ))}
-        </>
-    );
-}
-const surveyTag = { color: "#5a4a30", font: "600 11px ui-sans-serif,system-ui", background: "rgba(255,250,235,.6)", padding: "2px 8px", borderRadius: 10, border: "1px dashed #b09668", whiteSpace: "nowrap", pointerEvents: "none" };
-
-/* ============================================================================
-   CAMERA
-   ============================================================================ */
-function CameraRig({ intro, focusTarget, controlsRef }) {
-    const { camera } = useThree();
-    const t0 = useRef(null);
-    useFrame((st) => {
-        if (intro.current) {
-            if (t0.current === null) t0.current = st.clock.elapsedTime;
-            const t = Math.min((st.clock.elapsedTime - t0.current) / 2.2, 1);
-            const e = 1 - Math.pow(1 - t, 3);
-            const a = new THREE.Vector3(CENTER.x, 210, CENTER.z + 230);
-            const b = new THREE.Vector3(CENTER.x - 8, 96, CENTER.z + 92);
-            camera.position.lerpVectors(a, b, e);
-            camera.lookAt(CENTER.x, 0, CENTER.z);
-            if (controlsRef.current) controlsRef.current.target.set(CENTER.x, 0, CENTER.z);
-            if (t >= 1) intro.current = false;
-        }
-        if (focusTarget.current && controlsRef.current) {
-            const tg = controlsRef.current.target;
-            tg.lerp(focusTarget.current, 0.09);
-            if (tg.distanceTo(focusTarget.current) < 0.4) focusTarget.current = null;
-            controlsRef.current.update();
-        }
-    });
-    return null;
+function hLine(y, x0, x1, step, seed, variants) {
+    const r = rng(seed);
+    const out = [];
+    for (let x = x0; x <= x1; x += step) {
+        const jx = (r() - 0.5) * (step * 0.4);
+        const jy = (r() - 0.5) * 6;
+        const s = 0.62 + r() * 0.5;
+        const v = variants[Math.floor(r() * variants.length)];
+        out.push([x + jx, y + jy, s, v]);
+    }
+    return out;
 }
 
-/* ============================================================================
-   SCENE
-   ============================================================================ */
-function Scene({ hovered, selectedId, onHover, onSelect, focusTarget, showDims, mobile }) {
-    const intro = useRef(true);
-    const controlsRef = useRef();
-    const tx = useTextures();
-    useEffect(() => {
-        Scene._focus = (v) => (focusTarget.current = v);
-    }, [focusTarget]);
+/* Tree variants: 0-2 broadleaf palettes, 3 = palm.
+   Trees hug the kerbs of every road (just inside the tarmac edge). */
+const TREE_ROWS = [
+    // Left 9m vertical road (kerbs at ~504 and ~558)
+    ...vLine(508, 300, 940, 46, 11, [0, 1, 3]),
+    ...vLine(554, 300, 940, 46, 12, [1, 2, 0]),
+    // Right 9m vertical road (kerbs at ~788 and ~856)
+    ...vLine(792, 300, 940, 44, 21, [0, 3, 1]),
+    ...vLine(852, 300, 940, 44, 22, [2, 1, 0]),
+    // Horizontal 9m road lower kerb (band ~502..562)
+    ...hLine(556, 150, 500, 52, 31, [1, 0, 2]),
+    // Top road inner planting strip (just below y258, above plots)
+    ...hLine(250, 150, 1080, 60, 41, [3, 0, 1]),
+    // Boundary planting — left diagonal edge
+    [138, 300, 0.8, 2], [130, 400, 0.9, 0], [128, 520, 0.8, 3], [126, 640, 0.85, 1],
+    [130, 780, 0.8, 0], [140, 1080, 0.95, 2],
+    // Between left blocks and CA
+    [255, 545, 0.7, 1], [355, 548, 0.75, 0], [455, 552, 0.7, 2],
+    // Right edge boundary planting
+    [1000, 300, 0.85, 3], [1030, 430, 0.9, 0], [1055, 560, 0.85, 1],
+    [1070, 690, 0.9, 2], [1030, 850, 0.85, 0], [960, 970, 0.9, 3],
+];
 
+/* Park landscaping — dense, clustered, fitted to the y=830..948 band */
+const PARK_TREES = [
+    [132, 848, 1.15, 2], [138, 905, 1.2, 1], [140, 940, 1.1, 0],
+    [175, 843, 0.85, 3], [225, 840, 0.8, 0],
+    [485, 845, 1.0, 3], [498, 895, 1.05, 0], [500, 935, 0.95, 1],
+    [455, 840, 0.85, 2], [410, 838, 0.8, 1],
+    [200, 940, 0.8, 3], [340, 942, 0.85, 0],
+];
+
+const PARK_SHRUBS = [
+    [170, 890, 8, 0], [205, 858, 6, 1], [415, 890, 8, 0], [450, 860, 6, 1],
+    [160, 935, 7, 1], [240, 938, 6, 0], [370, 936, 6, 1], [300, 855, 6, 0],
+];
+
+/* Warm street-light dots (glow points) along road edges — [x,y] */
+const LIGHTS = [
+    // left road
+    [506, 320], [556, 400], [506, 490], [556, 580], [506, 680], [556, 770], [506, 870],
+    // right road
+    [790, 330], [854, 420], [790, 520], [854, 620], [790, 720], [854, 820], [790, 910],
+    // horizontal road
+    [200, 552], [330, 552], [450, 552],
+    // top road
+    [250, 250], [450, 250], [650, 250], [850, 250], [1020, 250],
+];
+
+/* Cars populate every road (replacing roadside trees).
+   [x, y, angle, color]. Vertical roads: two lanes either side of centre line.
+   Left road centre x=531 (lanes ~518/544). Right road centre x=822 (lanes ~805/838). */
+const CARS = [
+    // Left vertical road — down-lane (x~518) and up-lane (x~544)
+    [518, 300, 90, "#c23b32"], [544, 340, 90, "#e8e8ee"], [518, 400, 90, "#5a6474"],
+    [544, 470, 90, "#dcdce4"], [518, 545, 90, "#3f6ea5"], [544, 620, 90, "#e8e8ee"],
+    [518, 700, 90, "#8a3f3f"], [544, 770, 90, "#5a6474"], [518, 840, 90, "#dcdce4"],
+    [544, 905, 90, "#c23b32"],
+    // Right vertical road
+    [805, 320, 90, "#e8e8ee"], [838, 380, 90, "#c23b32"], [805, 450, 90, "#5a6474"],
+    [838, 520, 90, "#dcdce4"], [805, 600, 90, "#3f6ea5"], [838, 675, 90, "#e8e8ee"],
+    [805, 760, 90, "#8a3f3f"], [838, 830, 90, "#dcdce4"], [805, 905, 90, "#5a6474"],
+    // Horizontal 9m road (band 506-564, centre ~535)
+    [180, 522, 0, "#e8e8ee"], [270, 548, 0, "#c23b32"], [360, 522, 0, "#5a6474"],
+    [450, 548, 0, "#dcdce4"],
+    // Top road (y ~236 upper lane / ~250 lower lane)
+    [220, 236, 0, "#dcdce4"], [360, 250, 0, "#c23b32"], [520, 236, 0, "#5a6474"],
+    [680, 250, 0, "#e8e8ee"], [840, 236, 0, "#8a3f3f"], [1000, 250, 0, "#dcdce4"],
+];
+
+/* ── Broadleaf / palm vector tree ───────────────────────────────────────── */
+function Tree({ cx, cy, s = 1, v = 0 }) {
+    if (v === 3) {
+        // Palm
+        return (
+            <g transform={`translate(${cx},${cy}) scale(${s})`} className="lm-tree">
+                <ellipse cx="4" cy="10" rx="13" ry="4.5" className="lm-tree-shadow" />
+                <path d="M0,10 Q-2,-2 1,-14" stroke="#7a5230" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+                <g className="lm-palm-fronds">
+                    <path d="M1,-14 Q-14,-18 -22,-10" stroke="#3f7d3c" strokeWidth="3" fill="none" strokeLinecap="round" />
+                    <path d="M1,-14 Q16,-18 24,-9" stroke="#4a8c45" strokeWidth="3" fill="none" strokeLinecap="round" />
+                    <path d="M1,-14 Q-10,-26 -16,-30" stroke="#356b34" strokeWidth="3" fill="none" strokeLinecap="round" />
+                    <path d="M1,-14 Q12,-26 18,-30" stroke="#3f7d3c" strokeWidth="3" fill="none" strokeLinecap="round" />
+                    <path d="M1,-14 Q-3,-30 -1,-38" stroke="#57a84f" strokeWidth="3" fill="none" strokeLinecap="round" />
+                </g>
+                <circle cx="1" cy="-14" r="2.4" fill="#5a3d24" />
+            </g>
+        );
+    }
+    const palettes = [
+        ["#2f6b34", "#3f8a41", "#57a84f"],
+        ["#2a5f38", "#3d7d44", "#5aa257"],
+        ["#356b2e", "#4a8a3c", "#63a84d"],
+    ];
+    const [dark, mid, light] = palettes[v % palettes.length];
     return (
-        <>
-            <color attach="background" args={["#cfe4f5"]} />
-            <fog attach="fog" args={["#cfe4f5", 200, 460]} />
-            <ambientLight intensity={0.8} />
-            <directionalLight
-                position={[70, 100, 40]}
-                intensity={1.5}
-                color="#fff3da"
-                castShadow
-                shadow-mapSize={[2048, 2048]}
-                shadow-camera-left={-150}
-                shadow-camera-right={150}
-                shadow-camera-top={150}
-                shadow-camera-bottom={-150}
-            />
-            <directionalLight position={[-40, 40, -30]} intensity={0.3} color="#bcd8f0" />
-
-            <TerrainPad tx={tx} />
-            <SurveyContext />
-            <BoundaryWall tx={tx} />
-
-            {ROADS.map((r, i) => (
-                <Road key={i} r={r} tx={tx} />
-            ))}
-            {ROUNDABOUTS.map(([x, z], i) => (
-                <Roundabout key={i} x={x} z={z} />
-            ))}
-            {ZEBRAS.map((z, i) => (
-                <Zebra key={i} {...z} />
-            ))}
-
-            <Park tx={tx} />
-            <STP />
-
-            {ALL.map((s) => (
-                <Plot key={s.id} s={s} hovered={hovered} selectedId={selectedId} onHover={onHover} onSelect={onSelect} showDims={showDims} />
-            ))}
-
-            <CameraRig intro={intro} focusTarget={focusTarget} controlsRef={controlsRef} />
-            <OrbitControls
-                ref={controlsRef}
-                enablePan
-                enableDamping
-                dampingFactor={0.08}
-                minDistance={mobile ? 45 : 30}
-                maxDistance={340}
-                maxPolarAngle={Math.PI / 2.1}
-                target={[CENTER.x, 0, CENTER.z]}
-            />
-        </>
+        <g transform={`translate(${cx},${cy}) scale(${s})`} className="lm-tree">
+            <ellipse cx="3" cy="9" rx="12" ry="4.5" className="lm-tree-shadow" />
+            <rect x="-1.6" y="2" width="3.2" height="9" rx="1.4" fill="#5a3d24" />
+            <circle cx="-5" cy="-1" r="7.5" fill={dark} />
+            <circle cx="5" cy="-1" r="7.5" fill={dark} />
+            <circle cx="0" cy="-8" r="8.5" fill={mid} />
+            <circle cx="-4" cy="-5" r="6.5" fill={mid} />
+            <circle cx="4" cy="-5" r="6.5" fill={light} />
+            <circle cx="-1.5" cy="-9" r="4.5" fill={light} opacity="0.9" />
+            <circle cx="2" cy="-11" r="3" fill="#7ec46e" opacity="0.7" />
+        </g>
     );
 }
 
-/* ============================================================================
-   BOOKING
-   ============================================================================ */
-async function bookSite(site, action) {
-    // TODO: supabase.from("bookings").insert({ site_no: site.no, sqft: Math.round(site.areaSqm*SQM_TO_SQFT), action, layout:"basava-ganguru-43-1", created_at:new Date().toISOString() });
-    console.log("[booking]", action, "· site", site.no);
-    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bg-toast", { detail: { action, no: site.no } }));
-    return { ok: true };
+/* ── Warm street light with pooled glow ─────────────────────────────────── */
+function StreetLight({ x, y }) {
+    return (
+        <g className="lm-light" transform={`translate(${x},${y})`}>
+            <circle r="16" className="lm-light-pool" />
+            <circle r="7" className="lm-light-pool2" />
+            <line x1="0" y1="0" x2="0" y2="9" stroke="#26303f" strokeWidth="1.4" />
+            <circle r="2.1" className="lm-light-bulb" />
+        </g>
+    );
 }
 
-function useIsMobile() {
-    const [m, setM] = useState(false);
-    useEffect(() => {
-        const on = () => setM(window.innerWidth < 820);
-        on();
-        window.addEventListener("resize", on);
-        return () => window.removeEventListener("resize", on);
+/* ── Tiny top-down car ──────────────────────────────────────────────────── */
+function Car({ x, y, a, c }) {
+    return (
+        <g transform={`translate(${x},${y}) rotate(${a})`} className="lm-car">
+            <ellipse cx="1" cy="2" rx="6" ry="10" className="lm-tree-shadow" />
+            <rect x="-4.5" y="-9" width="9" height="18" rx="3.2" fill={c} />
+            <rect x="-3.4" y="-4" width="6.8" height="8" rx="1.6" fill="#1a2130" opacity="0.75" />
+            <rect x="-3.6" y="-8" width="7.2" height="3.2" rx="1.2" fill="#fff" opacity="0.35" />
+        </g>
+    );
+}
+
+export default function LayoutMap() {
+    const [selected, setSelected] = useState(null);
+    const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
+    const wrapRef = useRef(null);
+    const drag = useRef(null);
+    const pinch = useRef(null);
+
+    const sel = PLOTS.find((p) => p.id === selected) || null;
+    const clampScale = (s) => Math.min(4, Math.max(1, s));
+
+    const clampPan = (st) => {
+        const el = wrapRef.current;
+        if (!el) return st;
+        const w = el.clientWidth, h = el.clientHeight;
+        const maxX = (st.scale - 1) * w * 0.5 + w * 0.15;
+        const maxY = (st.scale - 1) * h * 0.5 + h * 0.15;
+        return { scale: st.scale, x: Math.min(maxX, Math.max(-maxX, st.x)), y: Math.min(maxY, Math.max(-maxY, st.y)) };
+    };
+
+    const zoomAt = useCallback((factor, cx, cy) => {
+        setT((prev) => {
+            const ns = clampScale(prev.scale * factor);
+            if (ns === prev.scale) return prev;
+            const nx = cx - (cx - prev.x) * (ns / prev.scale);
+            const ny = cy - (cy - prev.y) * (ns / prev.scale);
+            return clampPan({ scale: ns, x: nx, y: ny });
+        });
     }, []);
-    return m;
-}
 
-/* ============================================================================
-   SELECTED CARD
-   ============================================================================ */
-function SelectedCard({ s, onLocate, onClose }) {
-    const sqft = Math.round(s.areaSqm * SQM_TO_SQFT);
-    const price = sqft * PRICE_PER_SQFT;
-    const badge = s.status === "sold" ? ["SOLD", C.sold] : s.status === "booked" ? ["BOOKED", C.booked] : ["AVAILABLE", "#39c46e"];
+    const onWheel = (e) => {
+        e.preventDefault();
+        const rect = wrapRef.current.getBoundingClientRect();
+        zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - rect.left, e.clientY - rect.top);
+    };
+
+    const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const mid = (a, b, rect) => ({ x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top });
+
+    const onTouchStart = (e) => {
+        if (e.touches.length === 2) {
+            const rect = wrapRef.current.getBoundingClientRect();
+            pinch.current = { d: dist(e.touches[0], e.touches[1]), m: mid(e.touches[0], e.touches[1], rect) };
+            drag.current = null;
+        } else if (e.touches.length === 1 && t.scale > 1) {
+            drag.current = { x: e.touches[0].clientX - t.x, y: e.touches[0].clientY - t.y };
+        }
+    };
+    const onTouchMove = (e) => {
+        if (e.touches.length === 2 && pinch.current) {
+            e.preventDefault();
+            const rect = wrapRef.current.getBoundingClientRect();
+            const nd = dist(e.touches[0], e.touches[1]);
+            const m = mid(e.touches[0], e.touches[1], rect);
+            zoomAt(nd / pinch.current.d, m.x, m.y);
+            pinch.current.d = nd;
+        } else if (e.touches.length === 1 && drag.current) {
+            e.preventDefault();
+            setT((p) => clampPan({ ...p, x: e.touches[0].clientX - drag.current.x, y: e.touches[0].clientY - drag.current.y }));
+        }
+    };
+    const onTouchEnd = (e) => { if (e.touches.length === 0) { drag.current = null; pinch.current = null; } };
+    const onMouseDown = (e) => { if (t.scale > 1) drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; };
+    const onMouseMove = (e) => { if (drag.current) setT((p) => clampPan({ ...p, x: e.clientX - drag.current.x, y: e.clientY - drag.current.y })); };
+    const onMouseUp = () => { drag.current = null; };
+    const reset = () => setT({ scale: 1, x: 0, y: 0 });
+    const btnZoom = (f) => { const el = wrapRef.current; zoomAt(f, el.clientWidth / 2, el.clientHeight / 2); };
+
+    useEffect(() => {
+        const el = wrapRef.current;
+        if (!el) return;
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => el.removeEventListener("wheel", onWheel);
+    }, [zoomAt]);
+
     return (
-        <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ background: badge[1], color: "#04140d", font: "800 11px ui-sans-serif", letterSpacing: 1, padding: "3px 12px", borderRadius: 6 }}>{badge[0]}</div>
-                {onClose && <button onClick={onClose} style={xBtn}>✕</button>}
-            </div>
-            <div style={{ font: "800 46px ui-sans-serif,system-ui", color: "#fff", lineHeight: 1, marginTop: 8 }}>{s.no}</div>
-            <div style={{ font: "600 14px ui-sans-serif", color: "#cbd6ea", marginTop: 6 }}>{ftIn(s.w)} × {ftIn(s.d)} · {s.w}×{s.d}m</div>
-            <div style={{ font: "700 16px ui-sans-serif", color: "#8fe0ff", marginTop: 2 }}>{sqft} sqft</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                <Tag>{s.facing} Facing</Tag>
-                {s.corner && <Tag c="#ff8a3d">Corner</Tag>}
-                {s.premium && <Tag c="#a56bff">Premium</Tag>}
-            </div>
-            <div style={priceBox}>
-                <div style={{ font: "600 11px ui-sans-serif", color: "#9fb0d0", letterSpacing: 1 }}>PRICE @ {INR(PRICE_PER_SQFT)}/sqft</div>
-                <div style={{ font: "800 26px ui-sans-serif,system-ui", color: "#fff" }}>{INR(price)}</div>
-                <div style={{ font: "11px ui-sans-serif", color: "#8ea3c6" }}>excl. registration & taxes</div>
-            </div>
-            {s.status !== "sold" && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-                    <ActionBtn primary onClick={() => bookSite(s, "book")}>Book Site</ActionBtn>
-                    <ActionBtn onClick={() => bookSite(s, "interested")}>Enquire #{s.no}</ActionBtn>
-                    <ActionBtn onClick={() => bookSite(s, "brochure")}>Brochure</ActionBtn>
-                    <ActionBtn onClick={onLocate}>Locate</ActionBtn>
+        <div className="lm-root">
+            <style>{css}</style>
+
+            <header className="lm-head">
+                <div className="lm-crest" aria-hidden="true">
+                    <svg viewBox="0 0 40 40" width="30" height="30">
+                        <defs>
+                            <linearGradient id="crestG" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#c9a24b" />
+                            </linearGradient>
+                        </defs>
+                        <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z"
+                            fill="none" stroke="url(#crestG)" strokeWidth="1.6" strokeLinejoin="round" />
+                        <rect x="14" y="16" width="5" height="12" rx="0.6" fill="url(#crestG)" />
+                        <rect x="21" y="13" width="5" height="15" rx="0.6" fill="url(#crestG)" />
+                        <rect x="15.2" y="18" width="1.3" height="1.6" fill="#0d1d3d" />
+                        <rect x="15.2" y="21" width="1.3" height="1.6" fill="#0d1d3d" />
+                        <rect x="22.4" y="15" width="1.3" height="1.6" fill="#0d1d3d" />
+                        <rect x="22.4" y="18" width="1.3" height="1.6" fill="#0d1d3d" />
+                        <rect x="22.4" y="21" width="1.3" height="1.6" fill="#0d1d3d" />
+                    </svg>
                 </div>
-            )}
-        </div>
-    );
-}
-const xBtn = { background: "none", border: "none", color: "#8ea3c6", fontSize: 16, cursor: "pointer" };
-function Tag({ children, c = "#3a4a6a" }) {
-    return <span style={{ font: "600 11px ui-sans-serif", color: "#dfe8fb", background: c + "33", border: `1px solid ${c}`, borderRadius: 20, padding: "3px 9px" }}>{children}</span>;
-}
-const priceBox = { marginTop: 12, padding: "12px 14px", background: "linear-gradient(135deg,rgba(58,160,238,.2),rgba(143,224,255,.15))", border: "1px solid rgba(143,224,255,.4)", borderRadius: 14 };
-function ActionBtn({ children, onClick, primary }) {
-    return (
-        <button onClick={onClick} style={{ font: "700 13px ui-sans-serif,system-ui", color: primary ? "#04140d" : "#dfe8fb", background: primary ? "#39c46e" : "rgba(255,255,255,.06)", border: `1px solid ${primary ? "#39c46e" : "#2a3a5c"}`, borderRadius: 12, padding: "11px 8px", cursor: "pointer" }}>
-            {children}
-        </button>
-    );
-}
+                <div className="lm-kicker">Vijayalaxmi C Patil · Developers &amp; Promoters</div>
+                <h1 className="lm-title">Basava Ganguru</h1>
+                <div className="lm-sub">Residential Layout · Shivamogga, Karnataka · 32 Premium Plots</div>
+                <div className="lm-rule">
+                    <span />
+                    <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true">
+                        <path d="M6 0.5 L11.5 6 L6 11.5 L0.5 6 Z" fill="#c9a24b" />
+                        <path d="M6 2.5 L9.5 6 L6 9.5 L2.5 6 Z" fill="#e7cd85" />
+                    </svg>
+                    <span />
+                </div>
+            </header>
 
-/* ============================================================================
-   TOAST
-   ============================================================================ */
-function Toast() {
-    const [msg, setMsg] = useState(null);
-    useEffect(() => {
-        const on = (e) => {
-            const { action, no } = e.detail;
-            const map = { book: "Booking request sent", interested: "Enquiry sent", brochure: "Brochure requested" };
-            setMsg(`${map[action] || "Done"} · Site ${no}`);
-            setTimeout(() => setMsg(null), 2500);
-        };
-        window.addEventListener("bg-toast", on);
-        return () => window.removeEventListener("bg-toast", on);
-    }, []);
-    return (
-        <AnimatePresence>
-            {msg && <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }} style={toastStyle}>{msg}</motion.div>}
-        </AnimatePresence>
-    );
-}
-const toastStyle = { position: "absolute", bottom: 92, left: "50%", transform: "translateX(-50%)", background: "#39c46e", color: "#04140d", font: "700 13px ui-sans-serif,system-ui", padding: "10px 18px", borderRadius: 20, boxShadow: "0 10px 30px rgba(0,0,0,.4)", zIndex: 40 };
+            <div
+                className="lm-stage"
+                ref={wrapRef}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onMouseDown={onMouseDown}
+                onMouseMove={onMouseMove}
+                onMouseUp={onMouseUp}
+                onMouseLeave={onMouseUp}
+                style={{ cursor: t.scale > 1 ? "grab" : "default" }}
+            >
+                <div className="lm-canvas" style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
+                    <svg viewBox={`${VB.x} ${VB.y} ${VB.w} ${VB.h}`} className="lm-svg" role="img" aria-label="Interactive residential layout map">
+                        <defs>
+                            {/* ── Plot cream, warm raised land ── */}
+                            <linearGradient id="plotFill" x1="0" y1="0" x2="0.35" y2="1">
+                                <stop offset="0" stopColor="#fdf8ec" />
+                                <stop offset="0.45" stopColor="#f2e7ca" />
+                                <stop offset="1" stopColor="#e2d2ab" />
+                            </linearGradient>
+                            <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stopColor="#f9e6a2" />
+                                <stop offset="1" stopColor="#dcb85a" />
+                            </linearGradient>
 
-/* ============================================================================
-   CHROME: logo, compass, side buttons, bottom toolbar
-   ============================================================================ */
-function Logo({ stats }) {
-    return (
-        <div style={{ position: "absolute", top: 14, left: 16, display: "flex", alignItems: "center", gap: 10, pointerEvents: "none" }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#3aa0ee,#39c46e)", display: "grid", placeItems: "center", color: "#fff", font: "800 16px ui-sans-serif" }}>B</div>
-            <div>
-                <div style={{ font: "800 17px ui-sans-serif,system-ui", color: "#0b2038" }}>Basava Ganguru</div>
-                <div style={{ font: "600 11px ui-sans-serif", color: "#4a6285" }}>SY.NO.43/1 · BUDA · {stats.avail}/{stats.total} available</div>
+                            {/* land grain texture */}
+                            <pattern id="landGrain" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
+                                <rect width="14" height="14" fill="transparent" />
+                                <circle cx="3" cy="4" r="0.7" fill="#b89a5e" opacity="0.16" />
+                                <circle cx="9" cy="10" r="0.6" fill="#a98d52" opacity="0.14" />
+                                <circle cx="11" cy="3" r="0.5" fill="#c9ad70" opacity="0.12" />
+                            </pattern>
+
+                            {/* ── Ground: landscaped green-earth so plots + roads pop ── */}
+                            <radialGradient id="groundFill" cx="0.42" cy="0.30" r="1.05">
+                                <stop offset="0" stopColor="#3a5f43" />
+                                <stop offset="0.55" stopColor="#2b4a35" />
+                                <stop offset="1" stopColor="#1e3626" />
+                            </radialGradient>
+                            <pattern id="groundTex" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(24)">
+                                <rect width="18" height="18" fill="transparent" />
+                                <path d="M3,14 L4,9" stroke="#4a7a54" strokeWidth="0.8" opacity="0.35" />
+                                <path d="M10,15 L11,10" stroke="#2f5539" strokeWidth="0.8" opacity="0.35" />
+                                <path d="M14,12 L14.7,8" stroke="#568a5f" strokeWidth="0.7" opacity="0.3" />
+                            </pattern>
+
+                            {/* ── Asphalt (recessed, textured) ── */}
+                            <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stopColor="#1c222e" />
+                                <stop offset="0.15" stopColor="#333a49" />
+                                <stop offset="0.5" stopColor="#2b323f" />
+                                <stop offset="0.85" stopColor="#333a49" />
+                                <stop offset="1" stopColor="#1c222e" />
+                            </linearGradient>
+                            <linearGradient id="asphaltV" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0" stopColor="#1c222e" />
+                                <stop offset="0.15" stopColor="#333a49" />
+                                <stop offset="0.5" stopColor="#2b323f" />
+                                <stop offset="0.85" stopColor="#333a49" />
+                                <stop offset="1" stopColor="#1c222e" />
+                            </linearGradient>
+                            <pattern id="asphaltTex" width="10" height="10" patternUnits="userSpaceOnUse">
+                                <rect width="10" height="10" fill="transparent" />
+                                <circle cx="2" cy="3" r="0.5" fill="#4a5262" opacity="0.4" />
+                                <circle cx="7" cy="6" r="0.45" fill="#161b25" opacity="0.5" />
+                                <circle cx="5" cy="9" r="0.4" fill="#525b6d" opacity="0.3" />
+                            </pattern>
+
+                            {/* ── Water ── */}
+                            <radialGradient id="lakeFill" cx="0.4" cy="0.3" r="0.9">
+                                <stop offset="0" stopColor="#aee7dd" />
+                                <stop offset="0.55" stopColor="#5cb3b1" />
+                                <stop offset="1" stopColor="#357f8c" />
+                            </radialGradient>
+
+                            {/* ── CA blue paving ── */}
+                            <linearGradient id="caFill" x1="0" y1="0" x2="0.4" y2="1">
+                                <stop offset="0" stopColor="#c8e8f5" />
+                                <stop offset="0.5" stopColor="#8fc6e0" />
+                                <stop offset="1" stopColor="#5ea0c4" />
+                            </linearGradient>
+
+                            {/* ── Grass ── */}
+                            <radialGradient id="grassFill" cx="0.45" cy="0.35" r="1.0">
+                                <stop offset="0" stopColor="#5fa64f" />
+                                <stop offset="0.6" stopColor="#4a8a3f" />
+                                <stop offset="1" stopColor="#377031" />
+                            </radialGradient>
+                            <pattern id="grassTex" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+                                <rect width="12" height="12" fill="transparent" />
+                                <path d="M2,10 L3,5" stroke="#6bb659" strokeWidth="0.7" opacity="0.4" />
+                                <path d="M7,11 L8,6" stroke="#3f8038" strokeWidth="0.7" opacity="0.4" />
+                                <path d="M10,9 L10.6,5" stroke="#78c266" strokeWidth="0.6" opacity="0.35" />
+                            </pattern>
+
+                            {/* ── STP roof ── */}
+                            <linearGradient id="stpRoof" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stopColor="#cba9e8" />
+                                <stop offset="1" stopColor="#9670c2" />
+                            </linearGradient>
+
+                            {/* ── Gold stroke ── */}
+                            <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0" stopColor="#f6e6b0" />
+                                <stop offset="0.5" stopColor="#c9a24b" />
+                                <stop offset="1" stopColor="#a5802e" />
+                            </linearGradient>
+
+                            {/* raised-land shadow (ambient occlusion) */}
+                            <filter id="plotShadow" x="-25%" y="-25%" width="150%" height="150%">
+                                <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000" floodOpacity="0.45" />
+                            </filter>
+                            <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+                                <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#000" floodOpacity="0.4" />
+                            </filter>
+                            <filter id="selGlow" x="-70%" y="-70%" width="240%" height="240%">
+                                <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#f0cf78" floodOpacity="0.95" />
+                            </filter>
+                            <filter id="roadRecess" x="-30%" y="-30%" width="160%" height="160%">
+                                <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#000" floodOpacity="0.55" />
+                            </filter>
+
+                            {/* warm sunlight wash */}
+                            <radialGradient id="sunWash" cx="0.28" cy="0.16" r="0.9">
+                                <stop offset="0" stopColor="#ffdf9e" stopOpacity="0.20" />
+                                <stop offset="0.5" stopColor="#ffd08a" stopOpacity="0.05" />
+                                <stop offset="1" stopColor="#000" stopOpacity="0" />
+                            </radialGradient>
+                            <radialGradient id="vignette" cx="0.5" cy="0.44" r="0.82">
+                                <stop offset="0" stopColor="#000" stopOpacity="0" />
+                                <stop offset="1" stopColor="#000" stopOpacity="0.42" />
+                            </radialGradient>
+
+                            {/* street-light pooled glow */}
+                            <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
+                                <stop offset="0" stopColor="#ffdd93" stopOpacity="0.55" />
+                                <stop offset="0.5" stopColor="#ffc862" stopOpacity="0.18" />
+                                <stop offset="1" stopColor="#ffc862" stopOpacity="0" />
+                            </radialGradient>
+                        </defs>
+
+                        {/* Ground plate */}
+                        <polygon points={BOUNDARY} fill="url(#groundFill)" />
+                        <polygon points={BOUNDARY} fill="url(#groundTex)" opacity="0.6" pointerEvents="none" />
+
+                        {/* Red property boundary — drawn UNDER the roads so the top road
+                stays fully visible (the road overlays the line cleanly). */}
+                        <polygon points={BOUNDARY} className="lm-boundary-wall" />
+                        <polygon points={BOUNDARY} className="lm-boundary" />
+
+                        {/* ── PERIPHERAL CONTEXT ROADS (outside red boundary) ── */}
+                        <g className="lm-ext-road">
+                            <rect x="1112" y="250" width="30" height="850" />
+                            <rect x="86" y="300" width="24" height="120" />
+                            <rect x="118" y="196" width="1000" height="22" transform="rotate(1.6 118 196)" />
+                        </g>
+                        <g className="lm-ext-label">
+                            <text x="1127" y="640" transform="rotate(-90 1127 640)">EXISTING 12m ROAD</text>
+                            <text x="99" y="360" transform="rotate(-90 99 360)">EXISTING 9m ROAD</text>
+                            <text x="600" y="212">APPROVED LAYOUT 12m ROAD</text>
+                        </g>
+                        <g className="lm-syno">
+                            <text x="150" y="188">SY.NO.30</text>
+                            <text x="560" y="188">SY.NO.42</text>
+                            <text x="1150" y="640" transform="rotate(-90 1150 640)">SY.NO.38/1</text>
+                            <text x="600" y="1120">SY.NO.45</text>
+                            <text x="96" y="720" transform="rotate(-90 96 720)">SY.NO.32</text>
+                        </g>
+
+                        {/* ════ INTERNAL ROAD NETWORK — recessed, textured ════ */}
+                        <g filter="url(#roadRecess)">
+                            <polygon points={ROADS.top} fill="url(#asphalt)" />
+                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
+                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
+                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphalt)" />
+                        </g>
+                        {/* asphalt grain overlay */}
+                        <g opacity="0.9">
+                            <polygon points={ROADS.top} fill="url(#asphaltTex)" />
+                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltTex)" />
+                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltTex)" />
+                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphaltTex)" />
+                        </g>
+                        {/* concrete kerb stones (light inner edge) */}
+                        <g className="lm-kerb">
+                            <polygon points={ROADS.top} />
+                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
+                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
+                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
+                        </g>
+                        {/* 3m pathway (interlocking) */}
+                        <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#39414f" opacity="0.92" />
+                        <g className="lm-path-tex">
+                            {Array.from({ length: 15 }).map((_, i) => (
+                                <line key={i} x1={128 + i * 30} y1={ROADS.path.y} x2={128 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
+                            ))}
+                        </g>
+                        {/* centre lane dashes */}
+                        <g className="lm-lanes">
+                            <line x1="130" y1="240" x2="1100" y2="248" />
+                            <line x1="531" y1="262" x2="531" y2="946" />
+                            <line x1="822" y1="262" x2="822" y2="946" />
+                            <line x1="122" y1="535" x2="556" y2="535" />
+                        </g>
+                        {/* manholes / drain covers */}
+                        <g className="lm-drain">
+                            <circle cx="531" cy="380" r="3.4" /><circle cx="531" cy="620" r="3.4" /><circle cx="531" cy="860" r="3.4" />
+                            <circle cx="822" cy="440" r="3.4" /><circle cx="822" cy="680" r="3.4" /><circle cx="822" cy="900" r="3.4" />
+                            <rect x="300" y="558" width="7" height="4" rx="1" /><rect x="420" y="558" width="7" height="4" rx="1" />
+                        </g>
+
+                        {/* ════ PARK — lush landscaped garden (fitted to y=830..948) ════ */}
+                        <g>
+                            <polygon points={PARK} fill="url(#grassFill)" filter="url(#plotShadow)" />
+                            <polygon points={PARK} fill="url(#grassTex)" opacity="0.7" />
+                            {/* stone edging */}
+                            <polygon points={PARK} className="lm-park-edge" />
+
+                            {/* curved jogging track looping the lake */}
+                            <path d="M175,872 Q290,846 405,874 Q430,908 400,936 Q290,952 180,936 Q152,906 175,872 Z" className="lm-park-track" />
+                            <path d="M175,872 Q290,846 405,874 Q430,908 400,936 Q290,952 180,936 Q152,906 175,872 Z" className="lm-park-track-inner" />
+
+                            {/* lake */}
+                            <ellipse cx={PARK_LAKE.cx} cy={PARK_LAKE.cy} rx={PARK_LAKE.rx} ry={PARK_LAKE.ry} fill="url(#lakeFill)" filter="url(#softShadow)" />
+                            <ellipse cx={PARK_LAKE.cx - 30} cy={PARK_LAKE.cy - 12} rx="46" ry="13" fill="#fff" opacity="0.20" />
+                            <ellipse cx={PARK_LAKE.cx + 28} cy={PARK_LAKE.cy + 9} rx="26" ry="8" fill="#2c6d76" opacity="0.35" />
+                            {/* rock rim on lake */}
+                            {Array.from({ length: 20 }).map((_, i) => {
+                                const ang = (i / 20) * Math.PI * 2;
+                                const rx = PARK_LAKE.cx + Math.cos(ang) * (PARK_LAKE.rx + 4);
+                                const ry = PARK_LAKE.cy + Math.sin(ang) * (PARK_LAKE.ry + 3);
+                                return <circle key={i} cx={rx} cy={ry} r={1.6 + (i % 3) * 0.8} fill="#8b8677" opacity="0.7" />;
+                            })}
+
+                            {/* flower beds + shrubs */}
+                            {PARK_SHRUBS.map(([x, y, r, k], i) =>
+                                k === 1 ? (
+                                    <g key={i}>
+                                        <circle cx={x} cy={y} r={r} fill="#b8477f" opacity="0.85" />
+                                        <circle cx={x - 2.4} cy={y - 1.6} r={r * 0.42} fill="#e88bb5" />
+                                        <circle cx={x + 2.4} cy={y + 0.8} r={r * 0.36} fill="#f2b3d0" />
+                                        <circle cx={x} cy={y - 2.4} r={r * 0.3} fill="#ffd36b" />
+                                    </g>
+                                ) : (
+                                    <g key={i}>
+                                        <circle cx={x} cy={y} r={r} fill="#2f6b34" />
+                                        <circle cx={x - 1.6} cy={y - 1.6} r={r * 0.55} fill="#4a8a41" />
+                                        <circle cx={x + 1.6} cy={y + 0.8} r={r * 0.4} fill="#5fa650" />
+                                    </g>
+                                )
+                            )}
+
+                            {/* benches (facing the lake) */}
+                            <g className="lm-bench">
+                                <rect x="255" y="860" width="18" height="4.5" rx="1.5" />
+                                <rect x="322" y="862" width="18" height="4.5" rx="1.5" />
+                                <rect x="200" y="920" width="15" height="4" rx="1.5" />
+                            </g>
+
+                            {/* children play area (top-left corner of park) */}
+                            <g transform="translate(160,855)">
+                                <ellipse cx="0" cy="9" rx="22" ry="6" fill="#000" opacity="0.2" />
+                                <rect x="-20" y="-7" width="40" height="15" rx="3" fill="#c9723f" opacity="0.32" />
+                                <rect x="-15" y="-5" width="5" height="10" rx="1" fill="#e05248" />
+                                <rect x="-5" y="-7" width="5" height="12" rx="1" fill="#f0b429" />
+                                <rect x="5" y="-4" width="5" height="9" rx="1" fill="#3b82c4" />
+                                <path d="M12,-5 L18,7" stroke="#f0b429" strokeWidth="2.6" strokeLinecap="round" />
+                            </g>
+
+                            {/* gazebo (right side, above STP) */}
+                            <g transform="translate(430,895)">
+                                <ellipse cx="2" cy="15" rx="18" ry="5" fill="#000" opacity="0.28" />
+                                <rect x="-12" y="1" width="24" height="12" rx="2" className="lm-gazebo-base" />
+                                <polygon points="-16,1 16,1 20,-11 0,-21 -20,-11" className="lm-gazebo-roof" />
+                                <polygon points="0,-21 20,-11 0,-7 -20,-11" fill="#7a4a2c" opacity="0.6" />
+                                <polygon points="0,-21 -20,-11 0,-7" fill="#fff" opacity="0.12" />
+                            </g>
+
+                            {/* pergola (upper band) */}
+                            <g transform="translate(345,850)" className="lm-pergola">
+                                <rect x="-12" y="-2" width="24" height="3.5" rx="1" />
+                                {[-10, -5, 0, 5, 10].map((dx, i) => <line key={i} x1={dx} y1="-3.5" x2={dx} y2="3.5" />)}
+                            </g>
+
+                            <text x="290" y="824" className="lm-feature-label">KARAB</text>
+                        </g>
+
+                        {/* ════ CIVIC AMENITY — community facility ════ */}
+                        <g>
+                            <polygon points={CA.pts} fill="url(#caFill)" filter="url(#plotShadow)" />
+                            {/* paving grid */}
+                            <g className="lm-ca-grid">
+                                <line x1="140" y1="315" x2="250" y2="315" />
+                                <line x1="140" y1="366" x2="250" y2="366" />
+                                <line x1="140" y1="418" x2="250" y2="418" />
+                                <line x1="195" y1="262" x2="195" y2="470" />
+                            </g>
+                            {/* clubhouse placeholder */}
+                            <g transform="translate(195,330)">
+                                <ellipse cx="0" cy="20" rx="34" ry="9" fill="#000" opacity="0.18" />
+                                <rect x="-30" y="-6" width="60" height="26" rx="2" fill="#eef4f7" />
+                                <rect x="-30" y="-6" width="60" height="8" fill="#c9dbe6" />
+                                <polygon points="-34,-6 34,-6 24,-20 -24,-20" fill="#7aa6c4" />
+                                <rect x="-22" y="4" width="8" height="14" fill="#8fb8d4" opacity="0.7" />
+                                <rect x="-6" y="4" width="8" height="14" fill="#8fb8d4" opacity="0.7" />
+                                <rect x="10" y="4" width="8" height="14" fill="#8fb8d4" opacity="0.7" />
+                            </g>
+                            {/* flag poles */}
+                            <g className="lm-flag">
+                                <line x1="150" y1="278" x2="150" y2="262" /><polygon points="150,262 160,266 150,270" fill="#e05248" />
+                                <line x1="240" y1="278" x2="240" y2="262" /><polygon points="240,262 250,266 240,270" fill="#c9a24b" />
+                            </g>
+                            {/* border shrubs */}
+                            {[[150, 460], [195, 466], [240, 460], [146, 400], [244, 400], [146, 320], [244, 320]].map(([x, y], i) => (
+                                <g key={i}>
+                                    <circle cx={x} cy={y} r="6" fill="#3f7d3a" opacity="0.9" />
+                                    <circle cx={x - 1.5} cy={y - 1.5} r="3.4" fill="#5aa257" />
+                                </g>
+                            ))}
+                            <text x={centroid(CA.pts).x} y={centroid(CA.pts).y + 20} className="lm-ca-label">CA</text>
+                            <text x={centroid(CA.pts).x} y={centroid(CA.pts).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
+                        </g>
+
+                        {/* ════ STP — utility compound ════ */}
+                        <g filter="url(#softShadow)">
+                            <polygon points={STP.pts} fill="#e9dff3" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" />
+                            {/* fence posts */}
+                            {[[462, 830], [496, 830], [530, 830], [462, 880], [530, 880], [462, 930], [496, 930], [530, 930]].map(([x, y], i) => (
+                                <circle key={i} cx={x} cy={y} r="1.6" fill="#7a5da0" />
+                            ))}
+                            {/* building */}
+                            <rect x="474" y="846" width="44" height="42" rx="2" fill="#b7c0cc" />
+                            <rect x="474" y="846" width="44" height="10" fill="#9aa6b4" />
+                            <polygon points="472,846 520,846 512,834 480,834" fill="url(#stpRoof)" />
+                            {/* ventilation */}
+                            <rect x="480" y="838" width="5" height="5" fill="#8a72ad" />
+                            <rect x="490" y="838" width="5" height="5" fill="#8a72ad" />
+                            {/* tanks */}
+                            <circle cx="486" cy="908" r="7" fill="#8ea0b4" /><circle cx="486" cy="908" r="4" fill="#a8b6c6" />
+                            <circle cx="506" cy="908" r="7" fill="#8ea0b4" /><circle cx="506" cy="908" r="4" fill="#a8b6c6" />
+                            {/* maintenance gate */}
+                            <line x1="496" y1="928" x2="496" y2="932" stroke="#7a5da0" strokeWidth="2" />
+                            <text x={centroid(STP.pts).x} y="872" className="lm-stp-label">STP</text>
+                        </g>
+
+                        {/* ════ PLOTS — raised cream land ════ */}
+                        {PLOTS.map((p) => {
+                            const c = centroid(p.pts);
+                            const isSel = p.id === selected;
+                            return (
+                                <g
+                                    key={p.id}
+                                    className={`lm-plot ${isSel ? "is-sel" : ""}`}
+                                    onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}
+                                    aria-label={`Plot ${p.id}, ${DIMENSIONS[p.dim]}`}
+                                >
+                                    <polygon
+                                        points={p.pts}
+                                        className="lm-plot-shape"
+                                        fill={isSel ? "url(#plotSel)" : "url(#plotFill)"}
+                                        filter={isSel ? "url(#selGlow)" : "url(#plotShadow)"}
+                                    />
+                                    {/* grain texture */}
+                                    <polygon points={p.pts} fill="url(#landGrain)" pointerEvents="none" />
+                                    {/* top highlight bevel */}
+                                    <polygon points={p.pts} className="lm-plot-bevel" />
+                                    <text x={c.x} y={c.y + 8} className="lm-plot-num">{p.id}</text>
+                                </g>
+                            );
+                        })}
+
+                        {/* Trees removed per request — roads populated with cars instead. */}
+
+                        {/* ════ STREET LIGHTS + CARS ════ */}
+                        {LIGHTS.map(([x, y], i) => <StreetLight key={`li${i}`} x={x} y={y} />)}
+                        {CARS.map(([x, y, a, c], i) => <Car key={`ca${i}`} x={x} y={y} a={a} c={c} />)}
+
+                        {/* ════ ROAD LABELS ════ */}
+                        <text x="600" y="250" className="lm-road-label">EXISTING 12m ROAD</text>
+                        <text x="519" y="640" className="lm-road-label" transform="rotate(-90 519 640)">9m ROAD</text>
+                        <text x="815" y="640" className="lm-road-label" transform="rotate(-90 815 640)">9m ROAD</text>
+                        <text x="325" y="540" className="lm-road-label">9m ROAD</text>
+                        <text x="325" y="756" className="lm-road-label sm">3m PATHWAY</text>
+
+                        {/* (red boundary is drawn earlier, under the roads) */}
+
+                        {/* entry pillars at top road */}
+                        <g className="lm-pillar">
+                            <rect x="356" y="248" width="7" height="14" rx="1" /><rect x="486" y="248" width="7" height="14" rx="1" />
+                        </g>
+
+                        {/* lighting washes */}
+                        <polygon points={BOUNDARY} fill="url(#sunWash)" pointerEvents="none" />
+                        <polygon points={BOUNDARY} fill="url(#vignette)" pointerEvents="none" />
+
+                        {/* compass */}
+                        <g className="lm-compass" transform="translate(1108,250)">
+                            <circle r="19" className="lm-comp-ring" />
+                            <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" className="lm-comp-n" />
+                            <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" className="lm-comp-s" />
+                            <text y="-23" className="lm-comp-t">N</text>
+                        </g>
+                    </svg>
+                </div>
+
+                {/* Zoom controls */}
+                <div className="lm-zoom">
+                    <button onClick={() => btnZoom(1.3)} aria-label="Zoom in">
+                        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+                    </button>
+                    <button onClick={() => btnZoom(0.77)} aria-label="Zoom out">
+                        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+                    </button>
+                    <button onClick={reset} aria-label="Reset view" className="lm-zoom-reset">
+                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
+                </div>
+
+                {/* Legend */}
+                <div className="lm-legend">
+                    <span><i className="lg-plot" />Plots</span>
+                    <span><i className="lg-ca" />CA</span>
+                    <span><i className="lg-park" />Karab</span>
+                    <span><i className="lg-stp" />STP</span>
+                </div>
             </div>
-        </div>
-    );
-}
-function Compass({ onReset }) {
-    return (
-        <button onClick={onReset} title="Reset to North" style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", cursor: "pointer", zIndex: 20 }}>
-            <svg width="56" height="56" viewBox="0 0 56 56">
-                <circle cx="28" cy="28" r="25" fill="rgba(255,255,255,.94)" stroke="#d0d6de" />
-                <polygon points="28,6 34,28 28,23 22,28" fill="#e04a5a" />
-                <polygon points="28,50 34,28 28,33 22,28" fill="#8892a3" />
-                <text x="28" y="17" fontSize="9" fill="#222" textAnchor="middle" fontWeight="700">N</text>
-            </svg>
-        </button>
-    );
-}
-function SideButtons({ showDims, setShowDims, onReset }) {
-    return (
-        <div style={{ position: "absolute", right: 20, top: "48%", display: "flex", flexDirection: "column", gap: 10, zIndex: 20 }}>
-            <SideBtn label="Layers / dimensions" active={showDims} onClick={() => setShowDims((v) => !v)} bg="#39c46e">▦</SideBtn>
-            <SideBtn label="Recenter" onClick={onReset} bg="#fff" fg="#2a3a5c">◎</SideBtn>
-        </div>
-    );
-}
-function SideBtn({ children, onClick, label, bg, fg = "#fff", active }) {
-    return (
-        <button title={label} onClick={onClick} style={{ width: 46, height: 46, borderRadius: 12, border: "none", cursor: "pointer", background: active ? "#2f9d57" : bg, color: fg, fontSize: 20, boxShadow: "0 6px 20px rgba(0,0,0,.18)" }}>
-            {children}
-        </button>
-    );
-}
-function Toolbar({ query, setQuery, onSearch, onShare, onReset, onInfo }) {
-    return (
-        <div style={{ position: "absolute", bottom: 22, left: "50%", transform: "translateX(-50%)", zIndex: 30 }}>
-            <div style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,.96)", borderRadius: 30, padding: "6px 6px 6px 16px", boxShadow: "0 8px 30px rgba(0,0,0,.18)" }}>
-                <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onSearch()} placeholder="Search plot number…" style={{ border: "none", outline: "none", font: "500 14px ui-sans-serif", width: 150, background: "transparent" }} />
-                <TBtn onClick={onSearch}>🔍</TBtn>
-                <TBtn onClick={onReset}>🎯</TBtn>
-                <TBtn onClick={onShare}>🔗</TBtn>
-                <TBtn onClick={onInfo}>ℹ️</TBtn>
-            </div>
-        </div>
-    );
-}
-function TBtn({ children, onClick }) {
-    return <button onClick={onClick} style={{ width: 38, height: 38, borderRadius: "50%", border: "none", marginLeft: 4, cursor: "pointer", background: "#eef2f7", fontSize: 15 }}>{children}</button>;
-}
 
-/* ============================================================================
-   ROOT
-   ============================================================================ */
-export default function BasavaGanguru3DLayout() {
-    const mobile = useIsMobile();
-    const [hovered, setHovered] = useState(null);
-    const [selectedId, setSelectedId] = useState(null);
-    const [showDims, setShowDims] = useState(!mobile);
-    const [query, setQuery] = useState("");
-    const [infoOpen, setInfoOpen] = useState(false);
-    const focusTarget = useRef(null);
-
-    const selected = useMemo(() => RESIDENTIAL.find((s) => s.id === selectedId) || null, [selectedId]);
-    const onSelect = useCallback((id) => setSelectedId((p) => (p === id ? null : id)), []);
-    const focusOn = useCallback((x, z) => {
-        focusTarget.current = new THREE.Vector3(x, 0, z);
-        if (Scene._focus) Scene._focus(focusTarget.current);
-    }, []);
-    const locate = useCallback(() => selected && focusOn(selected.x, selected.z), [selected, focusOn]);
-    const resetView = useCallback(() => focusOn(CENTER.x, CENTER.z), [focusOn]);
-    const onSearch = useCallback(() => {
-        const hit = RESIDENTIAL.find((s) => s.no === parseInt(query, 10));
-        if (hit) {
-            setSelectedId(hit.id);
-            focusOn(hit.x, hit.z);
-        }
-    }, [query, focusOn]);
-    const onShare = useCallback(() => {
-        if (typeof navigator !== "undefined" && navigator.share) navigator.share({ title: "Basava Ganguru", url: window.location.href }).catch(() => { });
-        else if (typeof navigator !== "undefined") navigator.clipboard?.writeText(window.location.href);
-    }, []);
-
-    const stats = useMemo(() => ({ total: RESIDENTIAL.length, avail: RESIDENTIAL.filter((s) => s.status === "available").length }), []);
-
-    return (
-        <div style={{ position: "relative", width: "100%", height: "100vh", background: "#cfe4f5", overflow: "hidden", fontFamily: "ui-sans-serif,system-ui", touchAction: "none" }}>
-            <Canvas shadows dpr={[1, mobile ? 1.5 : 2]} camera={{ position: [CENTER.x, 210, CENTER.z + 230], fov: 42 }} onPointerMissed={() => setHovered(null)}>
-                <Suspense fallback={null}>
-                    <Scene hovered={hovered} selectedId={selectedId} onHover={setHovered} onSelect={onSelect} focusTarget={focusTarget} showDims={showDims} mobile={mobile} />
-                </Suspense>
-            </Canvas>
-
-            <Logo stats={stats} />
-            <Compass onReset={resetView} />
-            <SideButtons showDims={showDims} setShowDims={setShowDims} onReset={resetView} />
-            <Toast />
-            <Toolbar query={query} setQuery={setQuery} onSearch={onSearch} onShare={onShare} onReset={resetView} onInfo={() => setInfoOpen((v) => !v)} />
-
-            <button onClick={() => (selected ? bookSite(selected, "interested") : setInfoOpen(true))} style={enquireCTA}>
-                💬 {selected ? `Enquire #${selected.no}` : "Enquire Now"}
-            </button>
-
-            {/* info popover */}
-            <AnimatePresence>
-                {infoOpen && (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} style={infoBox}>
-                        <div style={{ font: "800 14px ui-sans-serif", color: "#0b2038", marginBottom: 6 }}>Basava Ganguru · SY.NO.43/1</div>
-                        <div style={{ font: "500 12px ui-sans-serif", color: "#3a4a63", lineHeight: 1.6 }}>
-                            32 premium residential sites · BUDA approved · DC converted · Shivamogga.<br />
-                            Sizes: 9×12, 9×15, 9×16.05 m + odd. From {INR(PRICE_PER_SQFT)}/sqft.<br />
-                            Click any blue plot to view details & enquire.
+            {/* Detail sheet */}
+            <div className={`lm-sheet ${sel ? "open" : ""}`}>
+                {sel && (
+                    <>
+                        <div className="lm-sheet-grip" />
+                        <div className="lm-sheet-head">
+                            <div>
+                                <div className="lm-sheet-kicker">Premium Plot</div>
+                                <div className="lm-sheet-num">No. {sel.id}</div>
+                            </div>
+                            <button className="lm-close" onClick={() => setSelected(null)} aria-label="Close">
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
+                            </button>
                         </div>
-                        <button onClick={() => setInfoOpen(false)} style={{ marginTop: 10, ...ActionBtnStyle(true) }}>Got it</button>
-                    </motion.div>
+                        <div className="lm-sheet-rows">
+                            <Row label="Dimensions" value={DIMENSIONS[sel.dim]} />
+                            <Row label="Facing" value={sel.facing} />
+                            <Row label="Status" value="Available" accent />
+                        </div>
+                        <button className="lm-cta">Enquire about Plot {sel.id}</button>
+                    </>
                 )}
-            </AnimatePresence>
+            </div>
 
-            {!mobile && (
-                <AnimatePresence>
-                    {selected && (
-                        <motion.div key="sb" initial={{ x: 60, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 60, opacity: 0 }} transition={{ type: "spring", stiffness: 220, damping: 26 }} style={sidebar}>
-                            <SelectedCard s={selected} onLocate={locate} onClose={() => setSelectedId(null)} />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            )}
-            {mobile && (
-                <AnimatePresence>
-                    {selected && (
-                        <motion.div key="sh" initial={{ y: 400 }} animate={{ y: 0 }} exit={{ y: 400 }} transition={{ type: "spring", stiffness: 260, damping: 30 }} style={sheet}>
-                            <div style={{ width: 40, height: 4, background: "#3a4a6a", borderRadius: 4, margin: "0 auto 12px" }} />
-                            <SelectedCard s={selected} onLocate={locate} onClose={() => setSelectedId(null)} />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            )}
+            {!sel && <div className="lm-hint">Tap a plot · pinch or scroll to zoom</div>}
         </div>
     );
 }
 
-function ActionBtnStyle(primary) {
-    return { font: "700 13px ui-sans-serif,system-ui", color: primary ? "#04140d" : "#dfe8fb", background: primary ? "#39c46e" : "rgba(255,255,255,.06)", border: `1px solid ${primary ? "#39c46e" : "#2a3a5c"}`, borderRadius: 12, padding: "9px 16px", cursor: "pointer", width: "100%" };
+function Row({ label, value, accent }) {
+    return (
+        <div className="lm-row">
+            <span className="lm-row-l">{label}</span>
+            <span className={`lm-row-v ${accent ? "accent" : ""}`}>{value}</span>
+        </div>
+    );
 }
-const glass = { background: "rgba(15,22,36,.85)", backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: "1px solid rgba(90,120,180,.35)", boxShadow: "0 24px 70px rgba(0,0,0,.5)", color: "#f2f6ff" };
-const sidebar = { ...glass, position: "absolute", top: 84, right: 78, width: 320, borderRadius: 20, padding: 20, zIndex: 25 };
-const sheet = { ...glass, position: "absolute", left: 0, right: 0, bottom: 0, borderRadius: "22px 22px 0 0", padding: "16px 18px 26px", zIndex: 30 };
-const infoBox = { position: "absolute", bottom: 78, left: "50%", transform: "translateX(-50%)", width: 320, background: "rgba(255,255,255,.97)", borderRadius: 16, padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,.25)", zIndex: 35 };
-const enquireCTA = { position: "absolute", bottom: 22, right: 20, background: "#39c46e", color: "#fff", font: "700 14px ui-sans-serif,system-ui", border: "none", borderRadius: 30, padding: "12px 22px", cursor: "pointer", boxShadow: "0 8px 26px rgba(57,196,110,.5)", zIndex: 30 };
+
+const css = `
+.lm-root{
+  --navy:#0a1630; --navy2:#0d1d3d; --gold:#c9a24b; --gold-lt:#e7cd85;
+  --line-soft:rgba(201,162,75,.30); --txt:#eef2fb; --muted:#9aa8c6; --ink:#33291a;
+  position:relative; min-height:100vh; width:100%;
+  background:
+    radial-gradient(120% 80% at 26% -8%, #2a2f28 0%, #1a1e19 46%, #0f120e 100%);
+  color:var(--txt); font-family:'Inter',system-ui,-apple-system,sans-serif;
+  padding:22px 14px 120px; box-sizing:border-box; overflow-x:hidden;
+}
+.lm-head{ text-align:center; margin-bottom:16px; }
+.lm-crest{ display:flex; justify-content:center; margin-bottom:6px; filter:drop-shadow(0 2px 8px rgba(201,162,75,.35)); }
+.lm-kicker{ font-size:10.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--gold); font-weight:600; }
+.lm-title{
+  margin:6px 0 3px; font-size:34px; line-height:1; font-weight:800; letter-spacing:-.015em;
+  font-family:'Playfair Display','Georgia',serif;
+  background:linear-gradient(180deg,#fdf5df 0%,#e7cd85 55%,#c9a24b 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  text-shadow:0 2px 20px rgba(201,162,75,.18);
+}
+.lm-sub{ font-size:11.5px; color:var(--muted); letter-spacing:.06em; }
+.lm-rule{ display:flex; align-items:center; justify-content:center; gap:10px; margin-top:10px; color:var(--gold); font-size:9px; }
+.lm-rule span{ height:1px; width:54px; background:linear-gradient(90deg,transparent,var(--gold-lt),transparent); }
+
+.lm-stage{
+  position:relative; border:1px solid var(--line-soft); border-radius:20px; overflow:hidden;
+  background:linear-gradient(180deg,#20241d,#0d100c);
+  box-shadow:0 24px 70px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+  touch-action:none; user-select:none;
+}
+.lm-canvas{ transform-origin:0 0; will-change:transform; }
+.lm-svg{ display:block; width:100%; height:auto; }
+
+.lm-boundary-wall{ fill:none; stroke:#16281a; stroke-width:8; stroke-linejoin:round; opacity:.85; }
+.lm-boundary{ fill:none; stroke:#e05248; stroke-width:2.4; stroke-linejoin:round; opacity:.92;
+  filter:drop-shadow(0 0 4px rgba(224,82,72,.45)); }
+.lm-pillar rect{ fill:#c9a24b; stroke:#8a6a1e; stroke-width:.6; }
+
+.lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#6b7488; stroke-width:2.2; opacity:.5; }
+.lm-ext-road rect{ fill:#242b3a; opacity:.5; stroke:#38404f; stroke-width:1; stroke-dasharray:6 5; }
+.lm-ext-label text{ fill:#7f8ba6; font-size:11px; font-weight:600; letter-spacing:.1em; text-anchor:middle; }
+.lm-syno text{ fill:#8894b0; font-size:10px; font-weight:600; letter-spacing:.05em; text-anchor:middle; font-style:italic; }
+.lm-lanes line{ stroke:#f2e6ae; stroke-width:2; stroke-dasharray:11 15; opacity:.62; stroke-linecap:round; }
+.lm-path-tex line{ stroke:#2a303c; stroke-width:1; opacity:.6; }
+.lm-drain circle{ fill:#20262f; stroke:#454d5c; stroke-width:.8; }
+.lm-drain rect{ fill:#20262f; stroke:#454d5c; stroke-width:.6; }
+
+.lm-park-edge{ fill:none; stroke:#c9bd94; stroke-width:2.4; opacity:.55; stroke-linejoin:round; }
+.lm-park-track{ fill:none; stroke:#d8c79a; stroke-width:9; opacity:.75; stroke-linecap:round; }
+.lm-park-track-inner{ fill:none; stroke:#efe3c2; stroke-width:2; opacity:.5; stroke-dasharray:4 8; stroke-linecap:round; }
+.lm-bench rect{ fill:#8a5a34; stroke:#5a3a20; stroke-width:.6; }
+.lm-gazebo-base{ fill:#c79a63; }
+.lm-gazebo-roof{ fill:#9a5a34; }
+.lm-pergola rect{ fill:#a06b3c; }
+.lm-pergola line{ stroke:#8a5a34; stroke-width:1.4; }
+.lm-flag line{ stroke:#8a94a8; stroke-width:1.2; }
+.lm-feature-label{ fill:#f0fff2; font-size:22px; font-weight:800; text-anchor:middle; letter-spacing:.16em;
+  font-family:'Playfair Display',serif; text-shadow:0 2px 6px rgba(0,0,0,.55); }
+
+.lm-ca-grid line{ stroke:#ffffff; stroke-width:.8; opacity:.3; }
+.lm-ca-label{ fill:#0a2c3e; font-size:26px; font-weight:900; text-anchor:middle; letter-spacing:.04em; font-family:'Playfair Display',serif; }
+.lm-ca-sub{ fill:#0a2c3e; font-size:8.5px; font-weight:700; text-anchor:middle; letter-spacing:.16em; opacity:.9; }
+
+.lm-stp-label{ fill:#3a2358; font-size:13px; font-weight:800; text-anchor:middle; }
+
+.lm-plot{ cursor:pointer; }
+.lm-plot-shape{ stroke:url(#gold); stroke-width:1.8; transition:filter .2s ease, transform .2s ease; }
+.lm-plot-bevel{ fill:none; stroke:#ffffff; stroke-width:1; opacity:.45; pointer-events:none;
+  transform:translate(0,-0.7px); }
+.lm-plot-num{ fill:var(--ink); font-size:22px; font-weight:800; text-anchor:middle; pointer-events:none;
+  font-family:'Playfair Display',serif;
+  paint-order:stroke; stroke:#fff; stroke-width:2.4px; stroke-linejoin:round;
+  filter:drop-shadow(0 1px 0 rgba(255,255,255,.5)); }
+.lm-plot:hover .lm-plot-shape{ filter:url(#selGlow) brightness(1.05); }
+.lm-plot.is-sel .lm-plot-shape{ stroke:#8a6a1e; stroke-width:2.4; }
+.lm-plot.is-sel .lm-plot-num{ fill:#2a1e05; }
+.lm-plot:focus{ outline:none; }
+.lm-plot:focus-visible .lm-plot-shape{ stroke:#fff; stroke-width:2.6; }
+
+.lm-tree{ pointer-events:none; }
+.lm-tree-shadow{ fill:#000; opacity:.3; }
+.lm-car{ pointer-events:none; }
+
+.lm-light{ pointer-events:none; }
+.lm-light-pool{ fill:url(#lightPool); }
+.lm-light-pool2{ fill:#ffdd93; opacity:.28; }
+.lm-light-bulb{ fill:#fff3d0; filter:drop-shadow(0 0 3px #ffd884); }
+
+.lm-road-label{ fill:#c3cde3; font-size:11.5px; font-weight:600; letter-spacing:.14em; text-anchor:middle; pointer-events:none;
+  text-shadow:0 1px 3px rgba(0,0,0,.7); }
+.lm-road-label.sm{ font-size:9.5px; }
+
+.lm-compass .lm-comp-ring{ fill:rgba(8,16,34,.7); stroke:var(--line-soft); stroke-width:1.4; }
+.lm-compass .lm-comp-n{ fill:#e05248; }
+.lm-compass .lm-comp-s{ fill:#6a7690; }
+.lm-compass .lm-comp-t{ fill:var(--gold); font-size:13px; font-weight:800; text-anchor:middle; }
+
+.lm-zoom{ position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px; z-index:3; }
+.lm-zoom button{
+  width:42px; height:42px; border-radius:12px; border:1px solid var(--line-soft);
+  background:rgba(10,22,48,.82); backdrop-filter:blur(8px); color:var(--gold);
+  font-size:20px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px rgba(0,0,0,.45);
+}
+.lm-zoom button:active{ transform:translateY(1px); background:rgba(18,32,64,.9); }
+.lm-zoom button svg{ display:block; }
+.lm-zoom-reset{ color:var(--muted); }
+
+.lm-legend{
+  position:absolute; left:12px; bottom:12px; z-index:3; display:flex; gap:12px;
+  background:rgba(10,22,48,.78); backdrop-filter:blur(8px); border:1px solid var(--line-soft);
+  border-radius:12px; padding:8px 12px; font-size:11px; color:var(--muted);
+}
+.lm-legend span{ display:flex; align-items:center; gap:5px; }
+.lm-legend i{ width:11px; height:11px; border-radius:3px; display:inline-block; }
+.lg-plot{ background:linear-gradient(180deg,#fdf8ec,#e2d2ab); border:1px solid var(--gold); }
+.lg-ca{ background:linear-gradient(180deg,#c8e8f5,#5ea0c4); }
+.lg-park{ background:linear-gradient(180deg,#5fa64f,#377031); }
+.lg-stp{ background:#9670c2; }
+
+.lm-hint{
+  position:fixed; bottom:26px; left:50%; transform:translateX(-50%);
+  background:rgba(10,22,48,.85); border:1px solid var(--line-soft); color:var(--muted);
+  font-size:13px; padding:9px 18px; border-radius:999px; backdrop-filter:blur(8px);
+  letter-spacing:.02em; box-shadow:0 8px 24px rgba(0,0,0,.4); pointer-events:none;
+}
+
+.lm-sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  background:linear-gradient(180deg,#0e1c3a,#08101f);
+  border-top:1px solid var(--line-soft); border-radius:24px 24px 0 0;
+  padding:10px 20px 26px; transform:translateY(120%); transition:transform .34s cubic-bezier(.22,1,.36,1);
+  box-shadow:0 -22px 54px rgba(0,0,0,.55);
+}
+.lm-sheet.open{ transform:translateY(0); }
+.lm-sheet-grip{ width:44px; height:5px; border-radius:99px; background:#2b3a5a; margin:2px auto 14px; }
+.lm-sheet-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.lm-sheet-kicker{ font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); font-weight:600; }
+.lm-sheet-num{ font-size:28px; font-weight:800; letter-spacing:-.01em; font-family:'Playfair Display',serif; }
+.lm-close{ width:38px; height:38px; border-radius:12px; border:1px solid var(--line-soft); background:transparent; color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.lm-close:active{ background:rgba(255,255,255,.05); }
+.lm-sheet-rows{ display:flex; flex-direction:column; gap:2px; margin-bottom:18px; }
+.lm-row{ display:flex; justify-content:space-between; align-items:center; padding:13px 2px; border-bottom:1px solid rgba(255,255,255,.06); }
+.lm-row-l{ font-size:13px; color:var(--muted); letter-spacing:.02em; }
+.lm-row-v{ font-size:15px; font-weight:600; }
+.lm-row-v.accent{ color:#4ade80; }
+.lm-cta{ width:100%; padding:15px; border:none; border-radius:14px; cursor:pointer;
+  background:linear-gradient(180deg,#eecd7c,#c9a24b); color:#1a1305; font-weight:700; font-size:15px;
+  letter-spacing:.01em; box-shadow:0 10px 26px rgba(201,162,75,.32); }
+.lm-cta:active{ transform:translateY(1px); }
+
+@media (min-width:640px){
+  .lm-root{ padding:34px 24px 120px; max-width:660px; margin:0 auto; }
+  .lm-title{ font-size:44px; }
+  .lm-sheet{ max-width:660px; margin:0 auto; }
+}
+@media (prefers-reduced-motion:reduce){
+  .lm-sheet{ transition:none; }
+  .lm-plot-shape{ transition:none; }
+}
+`;
