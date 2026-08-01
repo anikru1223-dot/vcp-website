@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useRef, useCallback, useEffect } from "react";
 
 /**
@@ -16,10 +18,13 @@ const DIMENSIONS = {
     odd: "Odd-shaped site",
 };
 
+type DimKey = keyof typeof DIMENSIONS;
+type Plot = { id: string; pts: string; dim: DimKey; facing: string };
+
 /* ════════════════════════════════════════════════════════════════════════
    APPROVED GEOMETRY — DO NOT ALTER (unchanged from sanctioned layout)
    ════════════════════════════════════════════════════════════════════════ */
-const PLOTS = [
+const PLOTS: Plot[] = [
     { id: "1", pts: "250,262 330,262 330,362 250,362", dim: "odd", facing: "North" },
     { id: "2", pts: "330,262 410,262 410,362 330,362", dim: "s9x15", facing: "North" },
     { id: "3", pts: "410,262 490,262 490,362 410,362", dim: "odd", facing: "North" },
@@ -82,7 +87,7 @@ const ROADS = {
    VISUAL-ONLY DATA (decoration — carries no engineering meaning)
    ════════════════════════════════════════════════════════════════════════ */
 
-const centroid = (pts) => {
+const centroid = (pts: string) => {
     const nums = pts.split(/[ ,]+/).map(Number);
     let x = 0, y = 0, n = 0;
     for (let i = 0; i < nums.length; i += 2) { x += nums[i]; y += nums[i + 1]; n++; }
@@ -91,78 +96,13 @@ const centroid = (pts) => {
 
 const VB = { x: 80, y: 200, w: 1090, h: 990 };
 
-/* Deterministic pseudo-random so trees never reshuffle between renders */
-function rng(seed) {
-    let s = seed % 2147483647;
-    if (s <= 0) s += 2147483646;
-    return () => (s = (s * 16807) % 2147483647) / 2147483647;
-}
-
-/* Build dense tree lines along a vertical road edge */
-function vLine(x, y0, y1, step, seed, variants) {
-    const r = rng(seed);
-    const out = [];
-    for (let y = y0; y <= y1; y += step) {
-        const jx = (r() - 0.5) * 6;
-        const jy = (r() - 0.5) * (step * 0.4);
-        const s = 0.62 + r() * 0.5;
-        const v = variants[Math.floor(r() * variants.length)];
-        out.push([x + jx, y + jy, s, v]);
-    }
-    return out;
-}
-function hLine(y, x0, x1, step, seed, variants) {
-    const r = rng(seed);
-    const out = [];
-    for (let x = x0; x <= x1; x += step) {
-        const jx = (r() - 0.5) * (step * 0.4);
-        const jy = (r() - 0.5) * 6;
-        const s = 0.62 + r() * 0.5;
-        const v = variants[Math.floor(r() * variants.length)];
-        out.push([x + jx, y + jy, s, v]);
-    }
-    return out;
-}
-
-/* Tree variants: 0-2 broadleaf palettes, 3 = palm.
-   Trees hug the kerbs of every road (just inside the tarmac edge). */
-const TREE_ROWS = [
-    // Left 9m vertical road (kerbs at ~504 and ~558)
-    ...vLine(508, 300, 940, 46, 11, [0, 1, 3]),
-    ...vLine(554, 300, 940, 46, 12, [1, 2, 0]),
-    // Right 9m vertical road (kerbs at ~788 and ~856)
-    ...vLine(792, 300, 940, 44, 21, [0, 3, 1]),
-    ...vLine(852, 300, 940, 44, 22, [2, 1, 0]),
-    // Horizontal 9m road lower kerb (band ~502..562)
-    ...hLine(556, 150, 500, 52, 31, [1, 0, 2]),
-    // Top road inner planting strip (just below y258, above plots)
-    ...hLine(250, 150, 1080, 60, 41, [3, 0, 1]),
-    // Boundary planting — left diagonal edge
-    [138, 300, 0.8, 2], [130, 400, 0.9, 0], [128, 520, 0.8, 3], [126, 640, 0.85, 1],
-    [130, 780, 0.8, 0], [140, 1080, 0.95, 2],
-    // Between left blocks and CA
-    [255, 545, 0.7, 1], [355, 548, 0.75, 0], [455, 552, 0.7, 2],
-    // Right edge boundary planting
-    [1000, 300, 0.85, 3], [1030, 430, 0.9, 0], [1055, 560, 0.85, 1],
-    [1070, 690, 0.9, 2], [1030, 850, 0.85, 0], [960, 970, 0.9, 3],
-];
-
-/* Park landscaping — dense, clustered, fitted to the y=830..948 band */
-const PARK_TREES = [
-    [132, 848, 1.15, 2], [138, 905, 1.2, 1], [140, 940, 1.1, 0],
-    [175, 843, 0.85, 3], [225, 840, 0.8, 0],
-    [485, 845, 1.0, 3], [498, 895, 1.05, 0], [500, 935, 0.95, 1],
-    [455, 840, 0.85, 2], [410, 838, 0.8, 1],
-    [200, 940, 0.8, 3], [340, 942, 0.85, 0],
-];
-
-const PARK_SHRUBS = [
+const PARK_SHRUBS: number[][] = [
     [170, 890, 8, 0], [205, 858, 6, 1], [415, 890, 8, 0], [450, 860, 6, 1],
     [160, 935, 7, 1], [240, 938, 6, 0], [370, 936, 6, 1], [300, 855, 6, 0],
 ];
 
 /* Warm street-light dots (glow points) along road edges — [x,y] */
-const LIGHTS = [
+const LIGHTS: [number, number][] = [
     // left road
     [506, 320], [556, 400], [506, 490], [556, 580], [506, 680], [556, 770], [506, 870],
     // right road
@@ -176,7 +116,7 @@ const LIGHTS = [
 /* Cars populate every road (replacing roadside trees).
    [x, y, angle, color]. Vertical roads: two lanes either side of centre line.
    Left road centre x=531 (lanes ~518/544). Right road centre x=822 (lanes ~805/838). */
-const CARS = [
+const CARS: [number, number, number, string][] = [
     // Left vertical road — down-lane (x~518) and up-lane (x~544)
     [518, 300, 90, "#c23b32"], [544, 340, 90, "#e8e8ee"], [518, 400, 90, "#5a6474"],
     [544, 470, 90, "#dcdce4"], [518, 545, 90, "#3f6ea5"], [544, 620, 90, "#e8e8ee"],
@@ -194,48 +134,8 @@ const CARS = [
     [680, 250, 0, "#e8e8ee"], [840, 236, 0, "#8a3f3f"], [1000, 250, 0, "#dcdce4"],
 ];
 
-/* ── Broadleaf / palm vector tree ───────────────────────────────────────── */
-function Tree({ cx, cy, s = 1, v = 0 }) {
-    if (v === 3) {
-        // Palm
-        return (
-            <g transform={`translate(${cx},${cy}) scale(${s})`} className="lm-tree">
-                <ellipse cx="4" cy="10" rx="13" ry="4.5" className="lm-tree-shadow" />
-                <path d="M0,10 Q-2,-2 1,-14" stroke="#7a5230" strokeWidth="2.6" fill="none" strokeLinecap="round" />
-                <g className="lm-palm-fronds">
-                    <path d="M1,-14 Q-14,-18 -22,-10" stroke="#3f7d3c" strokeWidth="3" fill="none" strokeLinecap="round" />
-                    <path d="M1,-14 Q16,-18 24,-9" stroke="#4a8c45" strokeWidth="3" fill="none" strokeLinecap="round" />
-                    <path d="M1,-14 Q-10,-26 -16,-30" stroke="#356b34" strokeWidth="3" fill="none" strokeLinecap="round" />
-                    <path d="M1,-14 Q12,-26 18,-30" stroke="#3f7d3c" strokeWidth="3" fill="none" strokeLinecap="round" />
-                    <path d="M1,-14 Q-3,-30 -1,-38" stroke="#57a84f" strokeWidth="3" fill="none" strokeLinecap="round" />
-                </g>
-                <circle cx="1" cy="-14" r="2.4" fill="#5a3d24" />
-            </g>
-        );
-    }
-    const palettes = [
-        ["#2f6b34", "#3f8a41", "#57a84f"],
-        ["#2a5f38", "#3d7d44", "#5aa257"],
-        ["#356b2e", "#4a8a3c", "#63a84d"],
-    ];
-    const [dark, mid, light] = palettes[v % palettes.length];
-    return (
-        <g transform={`translate(${cx},${cy}) scale(${s})`} className="lm-tree">
-            <ellipse cx="3" cy="9" rx="12" ry="4.5" className="lm-tree-shadow" />
-            <rect x="-1.6" y="2" width="3.2" height="9" rx="1.4" fill="#5a3d24" />
-            <circle cx="-5" cy="-1" r="7.5" fill={dark} />
-            <circle cx="5" cy="-1" r="7.5" fill={dark} />
-            <circle cx="0" cy="-8" r="8.5" fill={mid} />
-            <circle cx="-4" cy="-5" r="6.5" fill={mid} />
-            <circle cx="4" cy="-5" r="6.5" fill={light} />
-            <circle cx="-1.5" cy="-9" r="4.5" fill={light} opacity="0.9" />
-            <circle cx="2" cy="-11" r="3" fill="#7ec46e" opacity="0.7" />
-        </g>
-    );
-}
-
 /* ── Warm street light with pooled glow ─────────────────────────────────── */
-function StreetLight({ x, y }) {
+function StreetLight({ x, y }: { x: number; y: number }) {
     return (
         <g className="lm-light" transform={`translate(${x},${y})`}>
             <circle r="16" className="lm-light-pool" />
@@ -247,7 +147,7 @@ function StreetLight({ x, y }) {
 }
 
 /* ── Tiny top-down car ──────────────────────────────────────────────────── */
-function Car({ x, y, a, c }) {
+function Car({ x, y, a, c }: { x: number; y: number; a: number; c: string }) {
     return (
         <g transform={`translate(${x},${y}) rotate(${a})`} className="lm-car">
             <ellipse cx="1" cy="2" rx="6" ry="10" className="lm-tree-shadow" />
@@ -258,17 +158,20 @@ function Car({ x, y, a, c }) {
     );
 }
 
+type Transform = { scale: number; x: number; y: number };
+type Point = { x: number; y: number };
+
 export default function LayoutMap() {
-    const [selected, setSelected] = useState(null);
-    const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
-    const wrapRef = useRef(null);
-    const drag = useRef(null);
-    const pinch = useRef(null);
+    const [selected, setSelected] = useState<string | null>(null);
+    const [t, setT] = useState<Transform>({ scale: 1, x: 0, y: 0 });
+    const wrapRef = useRef<HTMLDivElement | null>(null);
+    const drag = useRef<Point | null>(null);
+    const pinch = useRef<{ d: number; m: Point } | null>(null);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
-    const clampScale = (s) => Math.min(4, Math.max(1, s));
+    const clampScale = (s: number) => Math.min(4, Math.max(1, s));
 
-    const clampPan = (st) => {
+    const clampPan = (st: Transform): Transform => {
         const el = wrapRef.current;
         if (!el) return st;
         const w = el.clientWidth, h = el.clientHeight;
@@ -277,7 +180,7 @@ export default function LayoutMap() {
         return { scale: st.scale, x: Math.min(maxX, Math.max(-maxX, st.x)), y: Math.min(maxY, Math.max(-maxY, st.y)) };
     };
 
-    const zoomAt = useCallback((factor, cx, cy) => {
+    const zoomAt = useCallback((factor: number, cx: number, cy: number) => {
         setT((prev) => {
             const ns = clampScale(prev.scale * factor);
             if (ns === prev.scale) return prev;
@@ -287,43 +190,49 @@ export default function LayoutMap() {
         });
     }, []);
 
-    const onWheel = (e) => {
+
+    const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        const rect = wrapRef.current.getBoundingClientRect();
+        const el = wrapRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
         zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - rect.left, e.clientY - rect.top);
     };
 
-    const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    const mid = (a, b, rect) => ({ x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top });
+    const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const mid = (a: React.Touch, b: React.Touch, rect: DOMRect): Point => ({ x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top });
 
-    const onTouchStart = (e) => {
-        if (e.touches.length === 2) {
-            const rect = wrapRef.current.getBoundingClientRect();
+    const onTouchStart = (e: React.TouchEvent) => {
+        const el = wrapRef.current;
+        if (e.touches.length === 2 && el) {
+            const rect = el.getBoundingClientRect();
             pinch.current = { d: dist(e.touches[0], e.touches[1]), m: mid(e.touches[0], e.touches[1], rect) };
             drag.current = null;
         } else if (e.touches.length === 1 && t.scale > 1) {
             drag.current = { x: e.touches[0].clientX - t.x, y: e.touches[0].clientY - t.y };
         }
     };
-    const onTouchMove = (e) => {
-        if (e.touches.length === 2 && pinch.current) {
+    const onTouchMove = (e: React.TouchEvent) => {
+        const el = wrapRef.current;
+        if (e.touches.length === 2 && pinch.current && el) {
             e.preventDefault();
-            const rect = wrapRef.current.getBoundingClientRect();
+            const rect = el.getBoundingClientRect();
             const nd = dist(e.touches[0], e.touches[1]);
             const m = mid(e.touches[0], e.touches[1], rect);
             zoomAt(nd / pinch.current.d, m.x, m.y);
             pinch.current.d = nd;
         } else if (e.touches.length === 1 && drag.current) {
             e.preventDefault();
-            setT((p) => clampPan({ ...p, x: e.touches[0].clientX - drag.current.x, y: e.touches[0].clientY - drag.current.y }));
+            const d = drag.current;
+            setT((p) => clampPan({ ...p, x: e.touches[0].clientX - d.x, y: e.touches[0].clientY - d.y }));
         }
     };
-    const onTouchEnd = (e) => { if (e.touches.length === 0) { drag.current = null; pinch.current = null; } };
-    const onMouseDown = (e) => { if (t.scale > 1) drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; };
-    const onMouseMove = (e) => { if (drag.current) setT((p) => clampPan({ ...p, x: e.clientX - drag.current.x, y: e.clientY - drag.current.y })); };
+    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; pinch.current = null; } };
+    const onMouseDown = (e: React.MouseEvent) => { if (t.scale > 1) drag.current = { x: e.clientX - t.x, y: e.clientY - t.y }; };
+    const onMouseMove = (e: React.MouseEvent) => { const d = drag.current; if (d) setT((p) => clampPan({ ...p, x: e.clientX - d.x, y: e.clientY - d.y })); };
     const onMouseUp = () => { drag.current = null; };
     const reset = () => setT({ scale: 1, x: 0, y: 0 });
-    const btnZoom = (f) => { const el = wrapRef.current; zoomAt(f, el.clientWidth / 2, el.clientHeight / 2); };
+    const btnZoom = (f: number) => { const el = wrapRef.current; if (el) zoomAt(f, el.clientWidth / 2, el.clientHeight / 2); };
 
     useEffect(() => {
         const el = wrapRef.current;
@@ -725,7 +634,7 @@ export default function LayoutMap() {
                                     onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                     role="button"
                                     tabIndex={0}
-                                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}
+                                    onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}
                                     aria-label={`Plot ${p.id}, ${DIMENSIONS[p.dim]}`}
                                 >
                                     <polygon
@@ -828,7 +737,7 @@ export default function LayoutMap() {
     );
 }
 
-function Row({ label, value, accent }) {
+function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
     return (
         <div className="lm-row">
             <span className="lm-row-l">{label}</span>
