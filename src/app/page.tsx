@@ -1571,7 +1571,7 @@ function StatCard({
   ringPercent,
   delay,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   value: number;
   label: string;
   ringPercent: number;
@@ -1620,7 +1620,7 @@ function StatCard({
           />
         </svg>
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={24} color="var(--brass-light)" />
+          <Icon {...({ size: 24, color: "var(--brass-light)" } as any)} />
         </div>
       </div>
       <div className="stat-num">
