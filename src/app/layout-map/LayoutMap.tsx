@@ -64,7 +64,7 @@ const R9 = 58;   // 9m road width (all three identical)
 const R12 = 78;  // 12m road width (wider, since it's a bigger road)
 const R3 = 30;   // 3m pathway width
 const ROADS = {
-    top: `118,${262 - R12} 1108,${262 - R12 + 32} 1108,262 118,262`, // 12m approved layout road across the top
+    top: `118,${262 - R12} 1108,${262 - R12} 1108,262 118,262`, // 12m approved layout road — uniform width full length
     leftV: { x: 502, y: 262, w: R9, h: 686 },   // 9m road: right of 7-10 & left of 11-17, full height 262→948
     rightV: { x: 786, y: 262, w: 72, h: 686 },   // 9m road: right of 11-18 & left of 26-32 (72 spans block gap)
     midH: { x: 118, y: 470, w: 442, h: R9 },   // 9m road: below 1-6 block, above 7-10
@@ -132,24 +132,18 @@ function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
     );
 }
 
-// A car that drives continuously along a path (vertical or horizontal road).
-function Car({ axis, fixed, from, to, dur, delay, color }: { axis: "v" | "h"; fixed: number; from: number; to: number; dur: number; delay: number; color: string }) {
-    const dir = to > from ? 1 : -1;
+// A car that drives continuously ALONG A PATH (turns at corners via animateMotion).
+function Car({ path, dur, delay, color }: { path: string; dur: number; delay: number; color: string }) {
     return (
         <g pointerEvents="none">
             <g>
-                {axis === "v" ? (
-                    <animateTransform attributeName="transform" type="translate" from={`${fixed} ${from}`} to={`${fixed} ${to}`} dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" />
-                ) : (
-                    <animateTransform attributeName="transform" type="translate" from={`${from} ${fixed}`} to={`${to} ${fixed}`} dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" />
-                )}
-                <g transform={axis === "v" ? `rotate(${dir > 0 ? 0 : 180})` : `rotate(${dir > 0 ? 90 : -90})`}>
-                    <ellipse cx="0" cy="7" rx="6" ry="11" fill="#000" opacity="0.22" />
-                    <rect x="-6" y="-13" width="12" height="26" rx="4" fill={color} />
-                    <rect x="-4.5" y="-8" width="9" height="8" rx="2" fill="#cfe4f2" opacity="0.85" />
-                    <rect x="-4.5" y="3" width="9" height="6" rx="2" fill="#0d1620" opacity="0.55" />
-                    <circle cx="-4" cy="-11" r="1.4" fill="#fff6cf" /><circle cx="4" cy="-11" r="1.4" fill="#fff6cf" />
-                </g>
+                <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" rotate="auto" path={path} />
+                {/* car body drawn pointing along +x (travel direction) */}
+                <ellipse cx="0" cy="6" rx="11" ry="6" fill="#000" opacity="0.22" />
+                <rect x="-13" y="-6" width="26" height="12" rx="4" fill={color} />
+                <rect x="-8" y="-4.5" width="9" height="9" rx="2" fill="#cfe4f2" opacity="0.85" />
+                <rect x="3" y="-4.5" width="6" height="9" rx="2" fill="#0d1620" opacity="0.5" />
+                <circle cx="11" cy="-4" r="1.5" fill="#fff6cf" /><circle cx="11" cy="4" r="1.5" fill="#fff6cf" />
             </g>
         </g>
     );
@@ -183,13 +177,13 @@ export default function LayoutMap() {
     };
 
     const tick = useCallback(() => {
-        const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.2;
+        const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.28;
         eV.x += (tV.x - eV.x) * k; eV.y += (tV.y - eV.y) * k;
         eV.w += (tV.w - eV.w) * k; eV.h += (tV.h - eV.h) * k;
         let dr = t.rot - c.rot; while (dr > 180) dr -= 360; while (dr < -180) dr += 360;
         c.rot += dr * k;
-        const done = Math.abs(tV.x - eV.x) < 0.08 && Math.abs(tV.y - eV.y) < 0.08 &&
-            Math.abs(tV.w - eV.w) < 0.08 && Math.abs(tV.h - eV.h) < 0.08 && Math.abs(dr) < 0.08;
+        const done = Math.abs(tV.x - eV.x) < 0.05 && Math.abs(tV.y - eV.y) < 0.05 &&
+            Math.abs(tV.w - eV.w) < 0.05 && Math.abs(tV.h - eV.h) < 0.05 && Math.abs(dr) < 0.05;
         if (done) {
             c.view = { ...tV }; c.rot = t.rot; paint(tV, t.rot);
             setView({ ...tV }); setRot(t.rot); animating.current = false; raf.current = null; return;
@@ -228,7 +222,7 @@ export default function LayoutMap() {
     const smoothZoom = (factor: number, cx: number, cy: number) => {
         target.current.view = zoomedView(target.current.view, factor, cx, cy); startAnim();
     };
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.clientX, e.clientY); };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.25 : 1 / 1.25, e.clientX, e.clientY); };
 
     const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     const angle = (a: React.Touch, b: React.Touch) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI;
@@ -268,7 +262,7 @@ export default function LayoutMap() {
 
     const reset = () => { target.current = { view: { ...BASE_VB }, rot: 0 }; startAnim(); };
     const btnZoom = (f: number) => { const el = wrapRef.current; if (el) { const r = el.getBoundingClientRect(); smoothZoom(f, r.left + r.width / 2, r.top + r.height / 2); } };
-    const rotate = () => { target.current.rot = Math.round((target.current.rot + 90) / 90) * 90; startAnim(); };
+    const rotate = () => { target.current.rot += 45; startAnim(); };
 
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
@@ -281,7 +275,7 @@ export default function LayoutMap() {
     const stones: [number, number, number][] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    for (let i = 0; i < 520; i++) {
+    for (let i = 0; i < 320; i++) {
         const x = -750 + rnd() * 2650;
         const y = -650 + rnd() * 2450;
         // skip the built-up band (plots, roads, amenities) so greenery only sits in open land
@@ -289,7 +283,7 @@ export default function LayoutMap() {
         if (inCore) continue;
         trees.push([x, y, 0.7 + rnd() * 0.8]);
     }
-    for (let i = 0; i < 140; i++) {
+    for (let i = 0; i < 90; i++) {
         const x = -700 + rnd() * 2550;
         const y = -600 + rnd() * 2350;
         const inCore = x > 100 && x < 1010 && y > 170 && y < 970;
@@ -466,7 +460,7 @@ export default function LayoutMap() {
                             <line x1="531" y1="270" x2="531" y2="944" />
                             <line x1="822" y1="270" x2="822" y2="944" />
                             <line x1="122" y1="499" x2="500" y2="499" />
-                            <line x1="118" y1="223" x2="1108" y2="255" />
+                            <line x1="118" y1="223" x2="1108" y2="223" />
                         </g>
                         {/* manhole covers */}
                         <g className="lm-drain" pointerEvents="none">
@@ -545,13 +539,11 @@ export default function LayoutMap() {
                         {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} />)}
                         {/* stones scattered on open land */}
                         {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
-                        {/* moving cars — continuous traffic on all three 9m roads */}
-                        <Car axis="v" fixed={521} from={266} to={944} dur={9} delay={0} color="#c94f4f" />
-                        <Car axis="v" fixed={541} from={944} to={266} dur={11} delay={2} color="#e8e2d0" />
-                        <Car axis="v" fixed={812} from={266} to={944} dur={10} delay={1} color="#4f6fc9" />
-                        <Car axis="v" fixed={832} from={944} to={266} dur={12} delay={3.5} color="#3a3a3a" />
-                        <Car axis="h" fixed={490} from={140} to={556} dur={8} delay={0.5} color="#d0a94f" />
-                        <Car axis="h" fixed={512} from={556} to={140} dur={9.5} delay={2.5} color="#5fa38a" />
+                        {/* moving cars — only two, on road centerlines */}
+                        {/* Car 1: loop down/up the LEFT road (centerline x=531) */}
+                        <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" />
+                        {/* Car 2: TOP 12m road left↔right (centerline y=223, uniform) */}
+                        <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" />
                         {/* street lights */}
                         {[[531, 330], [531, 560], [531, 800], [822, 400], [822, 640], [822, 880], [300, 534], [200, 496], [400, 496]].map(([x, y], i) => <StreetLight key={i} x={x} y={y} />)}
 
@@ -607,8 +599,8 @@ export default function LayoutMap() {
 
                 {/* controls */}
                 <div className="lm-ctrl">
-                    <button onClick={() => btnZoom(1.3)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
-                    <button onClick={() => btnZoom(0.77)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
+                    <button onClick={() => btnZoom(1.8)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
+                    <button onClick={() => btnZoom(1 / 1.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                     <button onClick={reset} aria-label="Reset"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
                 </div>
