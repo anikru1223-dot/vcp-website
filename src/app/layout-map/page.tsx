@@ -1,4 +1,4 @@
-import LayoutMap from "./components/LayoutMap";
+import LayoutMap from "./LayoutMap";
 
 export const metadata = {
     title: "Basava Ganguru — Master Layout Plan",
