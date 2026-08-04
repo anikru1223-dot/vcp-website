@@ -62,13 +62,12 @@ const KARAB_LAKE = { cx: 290, cy: 830, rx: 140, ry: 70 };
 // 3m pathway is narrower. Left 9m road runs full height (plot 11 → 17) with no overlap.
 const R9 = 58;   // 9m road width (all three identical)
 const R12 = 78;  // 12m road width (wider, since it's a bigger road)
-const R3 = 30;   // 3m pathway width
 const ROADS = {
     top: `118,${262 - R12} 1108,${262 - R12} 1108,262 118,262`, // 12m approved layout road — uniform width full length
     leftV: { x: 502, y: 262, w: R9, h: 686 },   // 9m road: right of 7-10 & left of 11-17, full height 262→948
     rightV: { x: 786, y: 262, w: 72, h: 686 },   // 9m road: right of 11-18 & left of 26-32 (72 spans block gap)
     midH: { x: 118, y: 470, w: 442, h: R9 },   // 9m road: below 1-6 block, above 7-10
-    path: { x: 118, y: 648, w: 384, h: R3 },   // 3m pathway: below 7-10, above KARAB (stops at road x=502)
+    path: { x: 118, y: 648, w: 384, h: 42 },   // 3m pathway: touches 7-10 plots (648) AND KARAB top (690)
 };
 
 type ViewBox = { x: number; y: number; w: number; h: number };
@@ -95,29 +94,45 @@ const centroid = (pts: string): Point => {
 };
 
 /* Lush top-down tree with cast shadow and layered canopy */
-function Tree({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
+    const grad = ["url(#foliage1)", "url(#foliage2)", "url(#foliage3)"][v % 3];
+    // slight per-tree rotation for variety
+    const rot = (v * 47) % 360;
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            <ellipse cx="4" cy="5" rx="9" ry="3.5" fill="#000" opacity="0.28" />
-            <g filter="url(#treeSh)">
-                <circle cx="-4" cy="0" r="6" fill="#2c4a1c" />
-                <circle cx="4" cy="0" r="6" fill="#2c4a1c" />
-                <circle cx="0" cy="-4" r="7" fill="#3f6a26" />
-                <circle cx="-3" cy="-2" r="5" fill="#4f8330" />
-                <circle cx="3" cy="-3" r="4.5" fill="#5f9a3a" />
-                <circle cx="-1" cy="-5" r="3.5" fill="#78b84c" />
-                <circle cx="2" cy="-1" r="2.6" fill="#8ac85a" opacity="0.85" />
+            {/* dark cast shadow */}
+            <ellipse cx="4" cy="6" rx="11" ry="4" fill="#0a1c08" opacity="0.4" />
+            <g transform={`rotate(${rot})`} filter="url(#treeSh)">
+                {/* irregular bumpy canopy — many small lobes give a rough realistic outline */}
+                <circle cx="-6" cy="-1" r="4.6" fill={grad} />
+                <circle cx="-3" cy="-6" r="4.8" fill={grad} />
+                <circle cx="2" cy="-7" r="4.4" fill={grad} />
+                <circle cx="6" cy="-3" r="4.6" fill={grad} />
+                <circle cx="7" cy="2" r="4.2" fill={grad} />
+                <circle cx="3" cy="6" r="4.6" fill={grad} />
+                <circle cx="-3" cy="6" r="4.4" fill={grad} />
+                <circle cx="-7" cy="3" r="4.2" fill={grad} />
+                <circle cx="0" cy="0" r="7.5" fill={grad} />
+                {/* dark inner clumps for leafy texture */}
+                <circle cx="-2" cy="1" r="2.4" fill="#183009" opacity="0.5" />
+                <circle cx="3" cy="-1" r="1.8" fill="#183009" opacity="0.45" />
+                <circle cx="-1" cy="-3" r="1.6" fill="#183009" opacity="0.4" />
+                {/* small sunlit leaf highlights (top-left) */}
+                <circle cx="-3" cy="-4" r="2" fill="#8fc65a" opacity="0.55" />
+                <circle cx="-5" cy="-1" r="1.3" fill="#a3d66a" opacity="0.45" />
+                <circle cx="1" cy="-5" r="1.2" fill="#8fc65a" opacity="0.4" />
             </g>
         </g>
     );
 }
 
-function StreetLight({ x, y }: { x: number; y: number }) {
+function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
     return (
         <g transform={`translate(${x},${y})`} pointerEvents="none">
-            <circle r="15" fill="url(#lightPool)" />
-            <circle r="6" fill="#ffdd93" opacity="0.3" />
-            <circle r="2" fill="#fff6da" />
+            <circle r={night ? 28 : 15} fill="url(#lightPool)" opacity={night ? 1 : 0.6} />
+            {night && <circle r="16" fill="#ffdd93" opacity="0.28" />}
+            <circle r={night ? 8 : 6} fill="#ffdd93" opacity={night ? 0.6 : 0.3} />
+            <circle r={night ? 3 : 2} fill="#fff9e6" />
         </g>
     );
 }
@@ -133,17 +148,26 @@ function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
 }
 
 // A car that drives continuously ALONG A PATH (turns at corners via animateMotion).
-function Car({ path, dur, delay, color }: { path: string; dur: number; delay: number; color: string }) {
+function Car({ path, dur, delay, color, night = false }: { path: string; dur: number; delay: number; color: string; night?: boolean }) {
     return (
         <g pointerEvents="none">
             <g>
                 <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" rotate="auto" path={path} />
+                {/* headlight beams (night only) — cast forward along +x */}
+                {night && (
+                    <g>
+                        <path d="M13,-4 L46,-16 L46,16 L13,4 Z" fill="url(#headBeam)" opacity="0.5" />
+                        <circle cx="30" cy="0" r="16" fill="#fff3c4" opacity="0.12" />
+                    </g>
+                )}
                 {/* car body drawn pointing along +x (travel direction) */}
                 <ellipse cx="0" cy="6" rx="11" ry="6" fill="#000" opacity="0.22" />
                 <rect x="-13" y="-6" width="26" height="12" rx="4" fill={color} />
                 <rect x="-8" y="-4.5" width="9" height="9" rx="2" fill="#cfe4f2" opacity="0.85" />
                 <rect x="3" y="-4.5" width="6" height="9" rx="2" fill="#0d1620" opacity="0.5" />
-                <circle cx="11" cy="-4" r="1.5" fill="#fff6cf" /><circle cx="11" cy="4" r="1.5" fill="#fff6cf" />
+                <circle cx="11" cy="-4" r="1.6" fill={night ? "#fffce8" : "#fff6cf"} /><circle cx="11" cy="4" r="1.6" fill={night ? "#fffce8" : "#fff6cf"} />
+                {/* red tail lights at night */}
+                {night && <><circle cx="-12" cy="-4" r="1.3" fill="#ff5a4a" /><circle cx="-12" cy="4" r="1.3" fill="#ff5a4a" /></>}
             </g>
         </g>
     );
@@ -153,8 +177,16 @@ export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
     const [tiqOpen, setTiqOpen] = useState(false);
     const [photosOpen, setPhotosOpen] = useState(false);
+    const [night, setNight] = useState(false);
+    const [splash, setSplash] = useState(true);
     const [view, setView] = useState<ViewBox>({ ...BASE_VB });
     const [rot, setRot] = useState(0);
+
+    // 5-second intro splash when the map first loads
+    useEffect(() => {
+        const t = window.setTimeout(() => setSplash(false), 5000);
+        return () => window.clearTimeout(t);
+    }, []);
 
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
@@ -176,8 +208,26 @@ export default function LayoutMap() {
         if (compassRef.current) compassRef.current.setAttribute("transform", `translate(1120,250) rotate(${-r})`);
     };
 
+    // Hide heavy decoration (trees/stones/cars) while moving so zoom/pan is instant,
+    // then restore it once motion settles. Toggled via direct DOM to avoid re-renders.
+    const decoRef = useRef<SVGGElement | null>(null);
+    const settleTimer = useRef<number | null>(null);
+    const setMoving = (moving: boolean) => {
+        if (decoRef.current) decoRef.current.style.opacity = moving ? "0" : "1";
+        if (moving) {
+            if (settleTimer.current) window.clearTimeout(settleTimer.current);
+        } else {
+            if (settleTimer.current) window.clearTimeout(settleTimer.current);
+        }
+    };
+    const flagMoving = () => {
+        setMoving(true);
+        if (settleTimer.current) window.clearTimeout(settleTimer.current);
+        settleTimer.current = window.setTimeout(() => setMoving(false), 180);
+    };
+
     const tick = useCallback(() => {
-        const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.28;
+        const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.35;
         eV.x += (tV.x - eV.x) * k; eV.y += (tV.y - eV.y) * k;
         eV.w += (tV.w - eV.w) * k; eV.h += (tV.h - eV.h) * k;
         let dr = t.rot - c.rot; while (dr > 180) dr -= 360; while (dr < -180) dr += 360;
@@ -186,9 +236,10 @@ export default function LayoutMap() {
             Math.abs(tV.w - eV.w) < 0.05 && Math.abs(tV.h - eV.h) < 0.05 && Math.abs(dr) < 0.05;
         if (done) {
             c.view = { ...tV }; c.rot = t.rot; paint(tV, t.rot);
-            setView({ ...tV }); setRot(t.rot); animating.current = false; raf.current = null; return;
+            setView({ ...tV }); setRot(t.rot); animating.current = false; raf.current = null;
+            setMoving(false); return;
         }
-        paint(eV, c.rot); raf.current = requestAnimationFrame(tick);
+        paint(eV, c.rot); flagMoving(); raf.current = requestAnimationFrame(tick);
     }, []);
 
     const startAnim = useCallback(() => {
@@ -200,7 +251,7 @@ export default function LayoutMap() {
         animating.current = false;
         cur.current.view = { ...v }; if (r !== undefined) cur.current.rot = r;
         target.current.view = { ...v }; if (r !== undefined) target.current.rot = r;
-        paint(v, r !== undefined ? r : cur.current.rot);
+        paint(v, r !== undefined ? r : cur.current.rot); flagMoving();
     }, []);
 
     const commit = useCallback(() => { setView({ ...cur.current.view }); setRot(cur.current.rot); }, []);
@@ -267,33 +318,68 @@ export default function LayoutMap() {
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
         el.addEventListener("wheel", onWheel, { passive: false });
-        return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); };
+        return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); if (settleTimer.current) window.clearTimeout(settleTimer.current); };
     }, []);
 
-    // Trees + stones scattered across the WIDE open terrain (fills the whole screen).
+    // Trees clustered into dense groves (like the AR3D reference) + stones.
     const trees: [number, number, number][] = [];
     const stones: [number, number, number][] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    for (let i = 0; i < 320; i++) {
-        const x = -750 + rnd() * 2650;
-        const y = -650 + rnd() * 2450;
-        // skip the built-up band (plots, roads, amenities) so greenery only sits in open land
-        const inCore = x > 118 && x < 1000 && y > 184 && y < 960;
-        if (inCore) continue;
+    const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
+    // Grove centres concentrated in/around the VISIBLE viewport (60..1190 x, 190..1200 y),
+    // with extra spill just beyond the edges so the greenery reaches the screen borders.
+    for (let g = 0; g < 60; g++) {
+        const gx = -120 + rnd() * 1440;
+        const gy = -60 + rnd() * 1420;
+        const count = 9 + Math.floor(rnd() * 14); // 9–22 trees per grove
+        const spread = 45 + rnd() * 95;
+        for (let j = 0; j < count; j++) {
+            const ox = ((rnd() + rnd() - 1)) * spread;
+            const oy = ((rnd() + rnd() - 1)) * spread;
+            const x = gx + ox, y = gy + oy;
+            if (inCore(x, y)) continue;
+            trees.push([x, y, 0.7 + rnd() * 0.9]);
+        }
+    }
+    // scattered singles to fill gaps between groves
+    for (let i = 0; i < 120; i++) {
+        const x = -140 + rnd() * 1480;
+        const y = -80 + rnd() * 1460;
+        if (inCore(x, y)) continue;
         trees.push([x, y, 0.7 + rnd() * 0.8]);
     }
-    for (let i = 0; i < 90; i++) {
-        const x = -700 + rnd() * 2550;
-        const y = -600 + rnd() * 2350;
-        const inCore = x > 100 && x < 1010 && y > 170 && y < 970;
-        if (inCore) continue;
+    for (let i = 0; i < 70; i++) {
+        const x = -100 + rnd() * 1400;
+        const y = -60 + rnd() * 1420;
+        if (inCore(x, y)) continue;
         stones.push([x, y, 0.5 + rnd() * 1.1]);
     }
 
     return (
-        <div className="lm-root">
+        <div className={`lm-root ${night ? "is-night" : ""}`}>
             <style>{css}</style>
+
+            {/* Intro splash (5s) */}
+            {splash && (
+                <div className="lm-splash" onClick={() => setSplash(false)}>
+                    <div className="lm-splash-inner">
+                        <div className="lm-splash-logo" aria-hidden="true">
+                            <svg viewBox="0 0 40 40" width="64" height="64">
+                                <defs><linearGradient id="scg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#c9a24b" /></linearGradient></defs>
+                                <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="url(#scg)" strokeWidth="1.6" />
+                                <rect x="14" y="16" width="5" height="12" fill="url(#scg)" /><rect x="21" y="13" width="5" height="15" fill="url(#scg)" />
+                            </svg>
+                        </div>
+                        <div className="lm-splash-name">Basava Ganguru</div>
+                        <div className="lm-splash-sub">VIJAYALAXMI C PATIL · SHIVAMOGGA</div>
+                        <div className="lm-splash-tag">Residential Layout · 32 Plots</div>
+                        <div className="lm-splash-bar"><span /></div>
+                        <div className="lm-splash-loading">Loading master plan…</div>
+                    </div>
+                    <div className="lm-splash-credit">Built by Train IQ · trainiq.in</div>
+                </div>
+            )}
 
             <header className="lm-head">
                 <div className="lm-brand">
@@ -402,6 +488,18 @@ export default function LayoutMap() {
                         <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
                             <stop offset="0" stopColor="#ffe9b0" stopOpacity="0.6" /><stop offset="0.5" stopColor="#ffce6e" stopOpacity="0.2" /><stop offset="1" stopColor="#ffce6e" stopOpacity="0" />
                         </radialGradient>
+                        <radialGradient id="foliage1" cx="0.4" cy="0.35" r="0.72">
+                            <stop offset="0" stopColor="#5a8a38" /><stop offset="0.5" stopColor="#3c6624" /><stop offset="1" stopColor="#1e3813" />
+                        </radialGradient>
+                        <radialGradient id="foliage2" cx="0.4" cy="0.35" r="0.72">
+                            <stop offset="0" stopColor="#65934a" /><stop offset="0.5" stopColor="#436f2c" /><stop offset="1" stopColor="#233f16" />
+                        </radialGradient>
+                        <radialGradient id="foliage3" cx="0.42" cy="0.34" r="0.75">
+                            <stop offset="0" stopColor="#4f8030" /><stop offset="0.5" stopColor="#345c20" /><stop offset="1" stopColor="#1a3310" />
+                        </radialGradient>
+                        <linearGradient id="headBeam" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0" stopColor="#fff3c4" stopOpacity="0.7" /><stop offset="1" stopColor="#fff3c4" stopOpacity="0" />
+                        </linearGradient>
                         {/* warm sun wash + vignette over the whole plan */}
                         <radialGradient id="sun" cx="0.28" cy="0.16" r="0.9">
                             <stop offset="0" stopColor="#ffe4a0" stopOpacity="0.22" /><stop offset="0.5" stopColor="#ffd48a" stopOpacity="0.05" /><stop offset="1" stopColor="#000" stopOpacity="0" />
@@ -480,6 +578,7 @@ export default function LayoutMap() {
                         <polygon points={KARAB} fill="url(#grass)" filter="url(#plotSh)" />
                         <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                         <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
+                        <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
                         {/* jogging path loop */}
                         <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
                         {/* lake with rim + highlight */}
@@ -503,6 +602,7 @@ export default function LayoutMap() {
                         <polygon points={CA} fill="url(#ca)" filter="url(#plotSh)" />
                         <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                         <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
+                        <polygon points={CA} className="lm-amen-border" pointerEvents="none" />
                         <g transform="translate(195,330)" pointerEvents="none">
                             <ellipse cx="0" cy="20" rx="30" ry="8" fill="#000" opacity="0.16" />
                             <rect x="-26" y="-6" width="52" height="24" rx="2" fill="#eef4ea" />
@@ -512,11 +612,11 @@ export default function LayoutMap() {
                         <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
                         <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
 
-                        {/* STP — utility compound */}
+                        {/* STP — utility compound (building fits inside box, clear of road at x=502) */}
                         <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
-                        <rect x="474" y="702" width="44" height="40" rx="2" fill="#b9aecb" />
-                        <polygon points="472,702 520,702 512,690 480,690" fill="url(#stpRoof)" />
-                        <circle cx="486" cy="726" r="6" fill="#9d88c4" /><circle cx="506" cy="726" r="6" fill="#9d88c4" />
+                        <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
+                        <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
+                        <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                         <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
                         {/* PLOTS */}
@@ -535,17 +635,13 @@ export default function LayoutMap() {
                             );
                         })}
 
-                        {/* trees (with shadows) */}
-                        {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} />)}
-                        {/* stones scattered on open land */}
-                        {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
-                        {/* moving cars — only two, on road centerlines */}
-                        {/* Car 1: loop down/up the LEFT road (centerline x=531) */}
-                        <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" />
-                        {/* Car 2: TOP 12m road left↔right (centerline y=223, uniform) */}
-                        <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" />
-                        {/* street lights */}
-                        {[[531, 330], [531, 560], [531, 800], [822, 400], [822, 640], [822, 880], [300, 534], [200, 496], [400, 496]].map(([x, y], i) => <StreetLight key={i} x={x} y={y} />)}
+                        {/* Decoration layer — hidden during zoom/pan for smoothness */}
+                        <g ref={decoRef} style={{ transition: "opacity .18s ease" }}>
+                            {/* trees (with shadows) */}
+                            {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
+                            {/* stones scattered on open land */}
+                            {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
+                        </g>
 
                         {/* compass */}
                         <g ref={compassRef} transform={`translate(1120,250) rotate(${-rot})`}>
@@ -555,10 +651,50 @@ export default function LayoutMap() {
                             <text y="-24" textAnchor="middle" fill="#e7cd85" fontSize="12" fontWeight="800">N</text>
                         </g>
 
-                        {/* boundary — compound wall + red property line */}
-                        {/* sun wash + vignette */}
-                        {/* sun wash only (no edge darkening) */}
-                        <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />
+                        {/* Day: warm sun wash. Night: dark overlay dimming everything below. */}
+                        {night
+                            ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />
+                            : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
+
+                        {/* Lights & vehicles render ABOVE the night overlay so they stay bright */}
+                        <g style={{ transition: "opacity .18s ease" }}>
+                            {/* At night: re-draw roads LIT so they stay clearly visible */}
+                            {night && (
+                                <g pointerEvents="none">
+                                    {/* soft warm glow bed under roads (from streetlights) */}
+                                    <polygon points={ROADS.top} fill="#5a5548" opacity="0.5" />
+                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#5a5548" opacity="0.5" />
+                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#5a5548" opacity="0.5" />
+                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#5a5548" opacity="0.5" />
+                                    {/* lit asphalt surface */}
+                                    <polygon points={ROADS.top} fill="#4a463a" />
+                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#4a463a" />
+                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#4a463a" />
+                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#4a463a" />
+                                    {/* bright centre lane markings */}
+                                    <g stroke="#fff0b8" strokeWidth="2.6" strokeDasharray="14 16" opacity="0.85" strokeLinecap="round">
+                                        <line x1="531" y1="266" x2="531" y2="944" />
+                                        <line x1="822" y1="266" x2="822" y2="944" />
+                                        <line x1="122" y1="499" x2="556" y2="499" />
+                                        <line x1="118" y1="223" x2="1108" y2="223" />
+                                    </g>
+                                </g>
+                            )}
+                            {/* cars with headlights (headlights only glow at night) */}
+                            <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" night={night} />
+                            <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" night={night} />
+                            {/* street lights at ROAD CORNERS & JUNCTIONS */}
+                            {[
+                                // top 12m road — evenly spaced along it
+                                [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
+                                // left 9m road — top junction, mid-road junction, bottom corner
+                                [531, 300], [531, 499], [531, 720], [531, 930],
+                                // right 9m road — top junction, middle, bottom corner
+                                [822, 300], [822, 560], [822, 820], [822, 930],
+                                // mid 9m road — left end and junction with left road
+                                [150, 499], [340, 499],
+                            ].map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
+                        </g>
                     </g>
                 </svg>
 
@@ -603,6 +739,13 @@ export default function LayoutMap() {
                     <button onClick={() => btnZoom(1 / 1.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                     <button onClick={reset} aria-label="Reset"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
+                    <button className={night ? "lm-ctrl-on" : ""} onClick={() => setNight((v) => !v)} aria-label="Toggle day / night">
+                        {night ? (
+                            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 2v2M12 20v2M4.5 4.5l1.4 1.4M18.1 18.1l1.4 1.4M2 12h2M20 12h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" strokeLinecap="round" /></svg>
+                        ) : (
+                            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" strokeLinejoin="round" /></svg>
+                        )}
+                    </button>
                 </div>
 
                 <div className="lm-legend">
@@ -739,7 +882,35 @@ const css = `
 .lm-road-lbl-lg{ font-size:15px; font-weight:700; letter-spacing:.2em; fill:#f4e6b0; opacity:.95; }
 .lm-road-lbl-sm{ font-size:9.5px; letter-spacing:.12em; }
 .lm-drain circle{ fill:#1e1b15; stroke:#4c4636; stroke-width:.8; }
-.lm-turf-edge{ fill:none; stroke:#c7d69a; stroke-width:2.2; opacity:.5; stroke-linejoin:round; }
+.lm-turf-edge{ fill:none; stroke:#1e3510; stroke-width:3.5; opacity:.95; stroke-linejoin:round; }
+.lm-amen-border{ fill:none; stroke:#14260a; stroke-width:1.6; stroke-dasharray:7 5; opacity:.9; stroke-linejoin:round; }
+
+/* ===== Intro splash ===== */
+.lm-splash{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer;
+  background:radial-gradient(120% 100% at 50% 30%,#1c2417,#0a0d07 80%);
+  animation:splashOut .5s ease forwards; animation-delay:4.5s; }
+.lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center;
+  animation:splashIn .8s cubic-bezier(.22,1,.36,1); }
+.lm-splash-logo{ filter:drop-shadow(0 4px 20px rgba(212,171,84,.5)); margin-bottom:18px;
+  animation:logoFloat 3s ease-in-out infinite; }
+@keyframes logoFloat{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+.lm-splash-name{ font-family:'Playfair Display',serif; font-weight:800; font-size:34px; line-height:1;
+  background:linear-gradient(180deg,#fdf6e2,#e7cd85 55%,#c9a24b);
+  -webkit-background-clip:text; background-clip:text; color:transparent; letter-spacing:-.01em; }
+.lm-splash-sub{ margin-top:10px; font-size:11px; letter-spacing:.24em; color:#b9c2a8; }
+.lm-splash-tag{ margin-top:6px; font-size:12px; color:#8b9280; letter-spacing:.08em; }
+.lm-splash-bar{ margin-top:26px; width:180px; height:3px; border-radius:99px; background:rgba(212,171,84,.18); overflow:hidden; }
+.lm-splash-bar span{ display:block; height:100%; width:0; border-radius:99px;
+  background:linear-gradient(90deg,#f2dd9a,#d4ab54); animation:barFill 4.6s ease forwards; }
+@keyframes barFill{ 0%{width:0} 100%{width:100%} }
+.lm-splash-loading{ margin-top:14px; font-size:11px; letter-spacing:.14em; color:#8b9280; text-transform:uppercase;
+  animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse{ 0%,100%{opacity:.5} 50%{opacity:1} }
+.lm-splash-credit{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
+  font-size:10px; letter-spacing:.1em; color:#6b7358; }
+@keyframes splashIn{ from{opacity:0; transform:translateY(14px) scale(.97)} to{opacity:1; transform:none} }
+@keyframes splashOut{ to{opacity:0; visibility:hidden} }
 .lm-jog{ fill:none; stroke:#e6dbb2; stroke-width:8; opacity:.5; stroke-linecap:round; }
 .lm-wall{ fill:none; stroke:#3a3527; stroke-width:8; stroke-linejoin:round; opacity:.75; }
 .lm-redline{ fill:none; stroke:#e0504a; stroke-width:2.6; stroke-linejoin:round; opacity:.9;
@@ -792,6 +963,7 @@ const css = `
   display:flex; align-items:center; justify-content:center; cursor:pointer;
   border-bottom:1px solid rgba(212,171,84,.14); transition:background .15s; }
 .lm-ctrl button:last-child{ border-bottom:none; }
+.lm-ctrl button.lm-ctrl-on{ background:linear-gradient(180deg,#2a3550,#1a2338); color:#ffd76a; }
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
 
