@@ -87,35 +87,101 @@ export default function Layout3D({ plots, boundary, ca, karab, stp, roads, selec
         const amb = new THREE.AmbientLight("#ffffff", 0.35);
         scene.add(amb);
 
-        // ---- Ground plane ----
+        // ---- Ground plane with generated grass/earth texture ----
+        const groundCanvas = document.createElement("canvas");
+        groundCanvas.width = 512; groundCanvas.height = 512;
+        const gx = groundCanvas.getContext("2d")!;
+        // base earth
+        const grad = gx.createRadialGradient(220, 180, 60, 256, 256, 380);
+        grad.addColorStop(0, "#a89454"); grad.addColorStop(0.6, "#8f7d4c"); grad.addColorStop(1, "#6f6038");
+        gx.fillStyle = grad; gx.fillRect(0, 0, 512, 512);
+        // speckle detail
+        for (let i = 0; i < 4000; i++) {
+            const x = Math.random() * 512, y = Math.random() * 512;
+            const c = ["#7a6a3c", "#a08a4e", "#6b5c34", "#9a8a52"][Math.floor(Math.random() * 4)];
+            gx.fillStyle = c; gx.globalAlpha = 0.25 + Math.random() * 0.35;
+            gx.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
+        }
+        // faint dry-grass tufts
+        gx.globalAlpha = 0.3;
+        for (let i = 0; i < 800; i++) {
+            const x = Math.random() * 512, y = Math.random() * 512;
+            gx.strokeStyle = Math.random() > 0.5 ? "#8a9a4a" : "#6f7a3a"; gx.lineWidth = 1;
+            gx.beginPath(); gx.moveTo(x, y); gx.lineTo(x + (Math.random() - 0.5) * 3, y - 2 - Math.random() * 3); gx.stroke();
+        }
+        gx.globalAlpha = 1;
+        const groundTex = new THREE.CanvasTexture(groundCanvas);
+        groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+        groundTex.repeat.set(6, 6);
+        groundTex.anisotropy = 4;
         const groundGeo = new THREE.PlaneGeometry(600, 600);
-        const groundMat = new THREE.MeshStandardMaterial({ color: "#9c8a54", roughness: 1 });
+        const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 });
         const ground = new THREE.Mesh(groundGeo, groundMat);
         ground.rotation.x = -Math.PI / 2;
         ground.position.y = -0.05;
         ground.receiveShadow = true;
         scene.add(ground);
 
-        // scatter low-poly trees on open land
-        const treeMat = new THREE.MeshStandardMaterial({ color: "#3f6a26", roughness: 0.9 });
-        const trunkMat = new THREE.MeshStandardMaterial({ color: "#5a3d24", roughness: 1 });
-        const treeGeo = new THREE.IcosahedronGeometry(1.4, 0);
-        const trunkGeo = new THREE.CylinderGeometry(0.22, 0.28, 1.2, 5);
+        // ---- Realistic layered trees ----
+        // Reusable geometries (shared for performance)
+        const trunkGeo = new THREE.CylinderGeometry(0.14, 0.24, 1.6, 6);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: "#6b4a2c", roughness: 1 });
+        const leafGeos = [
+            new THREE.IcosahedronGeometry(1, 1),
+            new THREE.IcosahedronGeometry(0.8, 1),
+            new THREE.DodecahedronGeometry(0.9, 0),
+        ];
+        const leafPalette = ["#2f5320", "#3a6526", "#47762c", "#5a8c38", "#356b28"];
+        const leafMats = leafPalette.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, flatShading: true }));
+
+        // build a single tree as a group, then clone
+        const makeTree = (variant: number): THREE.Group => {
+            const g = new THREE.Group();
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 0.8; trunk.castShadow = true;
+            g.add(trunk);
+            // 3–4 canopy blobs stacked for a full leafy crown
+            const layers = 3 + (variant % 2);
+            for (let l = 0; l < layers; l++) {
+                const geo = leafGeos[(variant + l) % leafGeos.length];
+                const mat = leafMats[(variant + l) % leafMats.length];
+                const blob = new THREE.Mesh(geo, mat);
+                const yy = 1.8 + l * 0.7;
+                const spread = 0.9 - l * 0.18;
+                blob.position.set((Math.sin(variant + l) * 0.4) * spread, yy, (Math.cos(variant * 2 + l) * 0.4) * spread);
+                blob.scale.setScalar((1.5 - l * 0.22) * (0.9 + (variant % 3) * 0.12));
+                blob.castShadow = true;
+                g.add(blob);
+            }
+            return g;
+        };
+        const treeVariants = [0, 1, 2, 3, 4].map(makeTree);
+
         let seed = 7;
         const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-        for (let i = 0; i < 220; i++) {
-            const x = (90 + rnd() * 1090 - CX) * SCALE;
-            const z = (210 + rnd() * 980 - CZ) * SCALE;
+        for (let i = 0; i < 240; i++) {
             const px = 90 + rnd() * 1090, pz = 210 + rnd() * 980;
-            if (px > 118 && px < 1000 && pz > 184 && pz < 960) continue; // keep off the built core
-            const s = 0.7 + rnd() * 0.8;
-            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-            trunk.position.set(x, 0.6 * s, z); trunk.scale.setScalar(s); trunk.castShadow = true;
-            scene.add(trunk);
-            const canopy = new THREE.Mesh(treeGeo, treeMat);
-            canopy.position.set(x, 1.7 * s, z); canopy.scale.setScalar(s * (0.8 + rnd() * 0.5)); canopy.castShadow = true;
-            scene.add(canopy);
+            if (px > 118 && px < 1000 && pz > 184 && pz < 960) continue; // keep off built core
+            const x = (px - CX) * SCALE, z = (pz - CZ) * SCALE;
+            const s = 0.75 + rnd() * 0.9;
+            const tree = treeVariants[Math.floor(rnd() * treeVariants.length)].clone();
+            tree.position.set(x, 0, z);
+            tree.scale.setScalar(s);
+            tree.rotation.y = rnd() * Math.PI * 2;
+            scene.add(tree);
         }
+        // denser tree belt hugging the roads/plot edges (landscaping)
+        const belt: [number, number][] = [];
+        for (let y = 280; y < 940; y += 30) { belt.push([492, y]); belt.push([568, y]); belt.push([778, y]); belt.push([862, y]); }
+        for (let x = 150; x < 500; x += 34) belt.push([x, 458]);
+        belt.forEach(([px, pz], i) => {
+            const x = (px - CX) * SCALE, z = (pz - CZ) * SCALE;
+            const tree = treeVariants[i % treeVariants.length].clone();
+            tree.position.set(x, 0, z);
+            tree.scale.setScalar(0.55 + (i % 3) * 0.08);
+            tree.rotation.y = i;
+            scene.add(tree);
+        });
 
         // ---- Roads (dark slabs) ----
         const roadMat = new THREE.MeshStandardMaterial({ color: "#3a342a", roughness: 1 });
@@ -151,8 +217,13 @@ export default function Layout3D({ plots, boundary, ca, karab, stp, roads, selec
         extrudePoly(ca, 0.25, "#a9d475");
         extrudePoly(stp, 0.5, "#b9aecb");
 
-        // lake
-        const lakeGeo = new THREE.CircleGeometry(14 * SCALE * 10 * SCALE, 40);
+        // lake inside KARAB (matches the 2D map)
+        const lakeMat = new THREE.MeshStandardMaterial({ color: "#63b5ac", roughness: 0.25, metalness: 0.3 });
+        const lakeMesh = new THREE.Mesh(new THREE.CircleGeometry(15, 40), lakeMat);
+        lakeMesh.rotation.x = -Math.PI / 2;
+        lakeMesh.scale.set(1.5, 1, 0.75);
+        lakeMesh.position.set((290 - CX) * SCALE, 0.28, (830 - CZ) * SCALE);
+        scene.add(lakeMesh);
 
         // ---- Plots (extruded blocks, interactive) ----
         const plotMeshes: THREE.Mesh[] = [];
