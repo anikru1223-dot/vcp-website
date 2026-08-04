@@ -122,9 +122,43 @@ function StreetLight({ x, y }: { x: number; y: number }) {
     );
 }
 
+function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+    return (
+        <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
+            <ellipse cx="1.5" cy="2" rx="6" ry="2.4" fill="#000" opacity="0.2" />
+            <path d="M-5,1 Q-6,-3 -2,-4 Q2,-5 5,-2 Q6,2 2,3 Q-3,3 -5,1 Z" fill="#9a927c" />
+            <path d="M-5,1 Q-6,-3 -2,-4 Q0,-4 1,-1 Q0,2 -2,3 Q-4,3 -5,1 Z" fill="#b3ab94" opacity="0.7" />
+        </g>
+    );
+}
+
+// A car that drives continuously along a path (vertical or horizontal road).
+function Car({ axis, fixed, from, to, dur, delay, color }: { axis: "v" | "h"; fixed: number; from: number; to: number; dur: number; delay: number; color: string }) {
+    const dir = to > from ? 1 : -1;
+    return (
+        <g pointerEvents="none">
+            <g>
+                {axis === "v" ? (
+                    <animateTransform attributeName="transform" type="translate" from={`${fixed} ${from}`} to={`${fixed} ${to}`} dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" />
+                ) : (
+                    <animateTransform attributeName="transform" type="translate" from={`${from} ${fixed}`} to={`${to} ${fixed}`} dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" />
+                )}
+                <g transform={axis === "v" ? `rotate(${dir > 0 ? 0 : 180})` : `rotate(${dir > 0 ? 90 : -90})`}>
+                    <ellipse cx="0" cy="7" rx="6" ry="11" fill="#000" opacity="0.22" />
+                    <rect x="-6" y="-13" width="12" height="26" rx="4" fill={color} />
+                    <rect x="-4.5" y="-8" width="9" height="8" rx="2" fill="#cfe4f2" opacity="0.85" />
+                    <rect x="-4.5" y="3" width="9" height="6" rx="2" fill="#0d1620" opacity="0.55" />
+                    <circle cx="-4" cy="-11" r="1.4" fill="#fff6cf" /><circle cx="4" cy="-11" r="1.4" fill="#fff6cf" />
+                </g>
+            </g>
+        </g>
+    );
+}
+
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
     const [tiqOpen, setTiqOpen] = useState(false);
+    const [photosOpen, setPhotosOpen] = useState(false);
     const [view, setView] = useState<ViewBox>({ ...BASE_VB });
     const [rot, setRot] = useState(0);
 
@@ -242,17 +276,25 @@ export default function LayoutMap() {
         return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
 
-    // Trees: scattered across the OPEN terrain only — never on roads or the built-up core.
+    // Trees + stones scattered across the WIDE open terrain (fills the whole screen).
     const trees: [number, number, number][] = [];
+    const stones: [number, number, number][] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    for (let i = 0; i < 260; i++) {
-        const x = 90 + rnd() * 1090;
-        const y = 210 + rnd() * 980;
-        // skip the whole built-up band (plots, roads, amenities) so trees only sit in open land
+    for (let i = 0; i < 520; i++) {
+        const x = -750 + rnd() * 2650;
+        const y = -650 + rnd() * 2450;
+        // skip the built-up band (plots, roads, amenities) so greenery only sits in open land
         const inCore = x > 118 && x < 1000 && y > 184 && y < 960;
         if (inCore) continue;
-        trees.push([x, y, 0.7 + rnd() * 0.7]);
+        trees.push([x, y, 0.7 + rnd() * 0.8]);
+    }
+    for (let i = 0; i < 140; i++) {
+        const x = -700 + rnd() * 2550;
+        const y = -600 + rnd() * 2350;
+        const inCore = x > 100 && x < 1010 && y > 170 && y < 970;
+        if (inCore) continue;
+        stones.push([x, y, 0.5 + rnd() * 1.1]);
     }
 
     return (
@@ -376,8 +418,8 @@ export default function LayoutMap() {
                     </defs>
 
                     {/* terrain base + texture */}
-                    <rect x={BASE_VB.x} y={BASE_VB.y} width={BASE_VB.w} height={BASE_VB.h} fill="url(#terrain)" />
-                    <rect x={BASE_VB.x} y={BASE_VB.y} width={BASE_VB.w} height={BASE_VB.h} fill="url(#terrainTex)" />
+                    <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
+                    <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
                     {/* scattered dry-grass patches for realism */}
                     <g pointerEvents="none">
                         <ellipse cx="220" cy="380" rx="130" ry="80" fill="url(#patch)" />
@@ -501,6 +543,15 @@ export default function LayoutMap() {
 
                         {/* trees (with shadows) */}
                         {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} />)}
+                        {/* stones scattered on open land */}
+                        {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
+                        {/* moving cars — continuous traffic on all three 9m roads */}
+                        <Car axis="v" fixed={521} from={266} to={944} dur={9} delay={0} color="#c94f4f" />
+                        <Car axis="v" fixed={541} from={944} to={266} dur={11} delay={2} color="#e8e2d0" />
+                        <Car axis="v" fixed={812} from={266} to={944} dur={10} delay={1} color="#4f6fc9" />
+                        <Car axis="v" fixed={832} from={944} to={266} dur={12} delay={3.5} color="#3a3a3a" />
+                        <Car axis="h" fixed={490} from={140} to={556} dur={8} delay={0.5} color="#d0a94f" />
+                        <Car axis="h" fixed={512} from={556} to={140} dur={9.5} delay={2.5} color="#5fa38a" />
                         {/* street lights */}
                         {[[531, 330], [531, 560], [531, 800], [822, 400], [822, 640], [822, 880], [300, 534], [200, 496], [400, 496]].map(([x, y], i) => <StreetLight key={i} x={x} y={y} />)}
 
@@ -519,14 +570,40 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                {/* Google Maps location button */}
-                <a className="lm-mapbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
-                    <svg viewBox="0 0 24 24" width="24" height="24">
-                        <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#ea4335" />
-                        <circle cx="12" cy="9" r="2.6" fill="#fff" />
-                    </svg>
-                    <span className="lm-mapbtn-txt">Maps</span>
-                </a>
+                {/* Action buttons — Maps + Photos, stacked below the header/search */}
+                <div className="lm-actionbtns">
+                    <a className="lm-actbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
+                        <svg viewBox="0 0 24 24" width="22" height="22">
+                            <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#ea4335" />
+                            <circle cx="12" cy="9" r="2.6" fill="#fff" />
+                        </svg>
+                        <span className="lm-actbtn-txt">Maps</span>
+                    </a>
+                    <button className="lm-actbtn" onClick={() => setPhotosOpen(true)} aria-label="Photos">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#d4ab54" strokeWidth="2">
+                            <rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" fill="#d4ab54" stroke="none" /><path d="M4 17l5-5 4 4 3-3 4 4" />
+                        </svg>
+                        <span className="lm-actbtn-txt">Photos</span>
+                    </button>
+                </div>
+
+                {/* Photos popup (empty for now) */}
+                {photosOpen && (
+                    <div className="lm-photos-overlay" onClick={() => setPhotosOpen(false)}>
+                        <div className="lm-photos-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="lm-photos-head">
+                                <span>Project Photos</span>
+                                <button className="lm-close" onClick={() => setPhotosOpen(false)} aria-label="Close">
+                                    <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
+                                </button>
+                            </div>
+                            <div className="lm-photos-empty">
+                                <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#8b9280" strokeWidth="1.6"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
+                                <div>Photos coming soon</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* controls */}
                 <div className="lm-ctrl">
@@ -552,7 +629,11 @@ export default function LayoutMap() {
                         </a>
                     )}
                     <button className="lm-tiq-logo" onClick={() => setTiqOpen((v) => !v)} aria-label="Train IQ">
-                        <img src="/trainiq-logo.jpeg" alt="Train IQ" className="lm-tiq-img" />
+                        <svg viewBox="0 0 62 34" width="46" height="25" aria-hidden="true">
+                            <rect x="4" y="6" width="5.4" height="22" rx="1" fill="#14243c" />
+                            <path d="M32 6.4 a11 11 0 1 0 6.4 19.9 l4.2 4.2 3.8-3.8 -4.1-4.1 A11 11 0 0 0 32 6.4 Z M32 11.4 a6 6 0 1 1 0 12 a6 6 0 0 1 0-12 Z" fill="#14243c" />
+                            <rect x="50" y="22.5" width="5.6" height="5.6" rx="1" fill="#14243c" />
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -650,7 +731,6 @@ const css = `
   background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:12px;
   padding:6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .15s; }
 .lm-tiq-logo:active{ transform:scale(.94); }
-.lm-tiq-img{ height:24px; width:auto; display:block; object-fit:contain; }
 .lm-tiq-pop{ text-decoration:none; background:rgba(20,36,60,.96); color:#fff; border-radius:12px;
   padding:9px 14px; box-shadow:0 8px 24px rgba(0,0,0,.45); backdrop-filter:blur(10px);
   white-space:nowrap; animation:tiqpop .2s ease; }
@@ -687,17 +767,28 @@ const css = `
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
 .lm-stp-label{ fill:#3a2358; font-size:12px; font-weight:800; text-anchor:middle; }
 
-/* ===== Google Maps button ===== */
-.lm-mapbtn{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
-  top:calc(env(safe-area-inset-top,0px) + 78px); z-index:8; text-decoration:none;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  width:56px; height:56px; border-radius:16px; cursor:pointer;
+/* ===== Action buttons (Maps + Photos), stacked below header ===== */
+.lm-actionbtns{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
+  top:calc(env(safe-area-inset-top,0px) + 108px); z-index:8; display:flex; flex-direction:column; gap:10px; }
+.lm-actbtn{ text-decoration:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  width:54px; height:54px; border-radius:15px; cursor:pointer;
   border:1px solid var(--line); background:var(--glass); color:var(--txt);
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  box-shadow:0 10px 30px rgba(0,0,0,.5); transition:transform .15s, background .2s; }
-.lm-mapbtn:hover{ background:rgba(212,171,84,.12); }
-.lm-mapbtn:active{ transform:scale(.95); }
-.lm-mapbtn-txt{ font-size:8.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; opacity:.85; }
+  box-shadow:0 8px 24px rgba(0,0,0,.45); transition:transform .15s, background .2s; }
+.lm-actbtn:hover{ background:rgba(212,171,84,.12); }
+.lm-actbtn:active{ transform:scale(.95); }
+.lm-actbtn-txt{ font-size:8px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; opacity:.85; }
+
+/* ===== Photos modal ===== */
+.lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+  background:rgba(6,9,6,.6); backdrop-filter:blur(6px); animation:fadein .2s ease; }
+.lm-photos-modal{ width:min(88vw,420px); background:linear-gradient(180deg,#1a2116,#0d120a);
+  border:1px solid var(--line); border-radius:20px; padding:16px 18px 22px; box-shadow:0 24px 60px rgba(0,0,0,.6); }
+.lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;
+  font-size:15px; font-weight:700; font-family:'Playfair Display',serif; color:var(--gold-lt); }
+.lm-photos-empty{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:36px 0;
+  color:var(--muted); font-size:13px; letter-spacing:.02em; }
+@keyframes fadein{ from{opacity:0} to{opacity:1} }
 
 /* ===== Apple-Maps-style control stack ===== */
 .lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
