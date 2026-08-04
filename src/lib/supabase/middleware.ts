@@ -15,23 +15,43 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll();
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value }) => {
-                        request.cookies.set(name, value);
-                    });
+                    cookiesToSet.forEach(({ name, value }) =>
+                        request.cookies.set(name, value)
+                    );
 
                     response = NextResponse.next({
                         request,
                     });
 
-                    cookiesToSet.forEach(({ name, value, options }) => {
-                        response.cookies.set(name, value, options);
-                    });
+                    cookiesToSet.forEach(({ name, value, options }) =>
+                        response.cookies.set(name, value, options)
+                    );
                 },
             },
         }
     );
 
-    await supabase.auth.getUser();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    const pathname = request.nextUrl.pathname;
+
+    const publicRoutes = ["/", "/layout-map", "/login"];
+
+    const isPublic =
+        publicRoutes.includes(pathname) ||
+        pathname.startsWith("/_next") ||
+        pathname.startsWith("/api") ||
+        pathname.startsWith("/favicon");
+
+    if (!user && !isPublic) {
+        return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    if (user && pathname === "/login") {
+        return NextResponse.redirect(new URL("/projects", request.url));
+    }
 
     return response;
 }
