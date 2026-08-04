@@ -1,8 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect, Suspense, lazy } from "react";
-
-const Layout3D = lazy(() => import("./Layout3D"));
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
 /**
  * Basava Ganguru — Interactive Master Layout (AR3D style)
@@ -96,33 +94,6 @@ const centroid = (pts: string): Point => {
     return { x: x / c, y: y / c };
 };
 
-// Parse "x,y x,y ..." into [{x,y}]
-const parsePts = (pts: string): Point[] => {
-    const n = pts.split(/[ ,]+/).map(Number);
-    const out: Point[] = [];
-    for (let i = 0; i < n.length; i += 2) out.push({ x: n[i], y: n[i + 1] });
-    return out;
-};
-const toStr = (ps: Point[]) => ps.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-
-// Build the extruded side-wall polygons for a plot (raised by depth `d` upward on screen).
-// In the tilted view, "up" (−y) reads as height. Only edges facing the camera (lower edges)
-// get walls, giving a solid block look.
-const sideWalls = (pts: string, d: number): { face: string; lit: boolean }[] => {
-    const p = parsePts(pts);
-    const walls: { face: string; lit: boolean }[] = [];
-    for (let i = 0; i < p.length; i++) {
-        const a = p[i], b = p[(i + 1) % p.length];
-        // wall from base edge (a→b) up to top edge (a'→b') where top = shifted by (0,−d)
-        const face = toStr([a, b, { x: b.x, y: b.y - d }, { x: a.x, y: a.y - d }]);
-        // edges on the lower/front side (larger y, i.e. facing viewer) are lit brighter
-        const lit = (a.y + b.y) / 2 > centroid(pts).y;
-        walls.push({ face, lit });
-    }
-    return walls;
-};
-const topFace = (pts: string, d: number) => toStr(parsePts(pts).map((pt) => ({ x: pt.x, y: pt.y - d })));
-
 /* Lush top-down tree with cast shadow and layered canopy */
 function Tree({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
     return (
@@ -153,7 +124,7 @@ function StreetLight({ x, y }: { x: number; y: number }) {
 
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
-    const [is3d, setIs3d] = useState(false);
+    const [tiqOpen, setTiqOpen] = useState(false);
     const [view, setView] = useState<ViewBox>({ ...BASE_VB });
     const [rot, setRot] = useState(0);
 
@@ -312,9 +283,9 @@ export default function LayoutMap() {
             </header>
 
             <div className="lm-stage" ref={wrapRef}
-                onTouchStart={is3d ? undefined : onTouchStart} onTouchMove={is3d ? undefined : onTouchMove} onTouchEnd={is3d ? undefined : onTouchEnd}
-                onMouseDown={is3d ? undefined : onMouseDown} onMouseMove={is3d ? undefined : onMouseMove} onMouseUp={is3d ? undefined : onMouseUp} onMouseLeave={is3d ? undefined : onMouseUp}>
-                <svg ref={svgRef} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg" style={{ visibility: is3d ? "hidden" : "visible" }}>
+                onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+                onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+                <svg ref={svgRef} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
                         {/* Terrain — layered earth with warm sun */}
                         <radialGradient id="terrain" cx="0.32" cy="0.22" r="1.15">
@@ -516,32 +487,14 @@ export default function LayoutMap() {
                         {PLOTS.map((p) => {
                             const c = centroid(p.pts);
                             const isSel = p.id === selected;
-                            const depth = isSel ? 30 : 22; // extrusion height in 3D
                             return (
                                 <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                     role="button" tabIndex={0}
                                     onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                    {is3d ? (
-                                        <>
-                                            {/* ground shadow */}
-                                            <polygon points={toStr(parsePts(p.pts).map((pt) => ({ x: pt.x + 6, y: pt.y + 6 })))} fill="#000" opacity="0.28" />
-                                            {/* side walls */}
-                                            {sideWalls(p.pts, depth).map((w, i) => (
-                                                <polygon key={i} points={w.face} fill={w.lit ? "#2f5320" : "#264518"} stroke="#1e3813" strokeWidth="0.5" />
-                                            ))}
-                                            {/* top face */}
-                                            <polygon points={topFace(p.pts, depth)} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.4 : 1.2} filter={isSel ? "url(#selGlow)" : undefined} />
-                                            <polygon points={topFace(p.pts, depth)} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
-                                            <text x={c.x} y={c.y - depth + 5} className="lm-plot-num">{p.id}</text>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
-                                            <polygon points={p.pts} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
-                                            <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
-                                            <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
-                                        </>
-                                    )}
+                                    <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
+                                    <polygon points={p.pts} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
+                                    <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
+                                    <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                 </g>
                             );
                         })}
@@ -566,41 +519,41 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                {/* Real 3D scene (Three.js) — mounts only in 3D mode */}
-                {is3d && (
-                    <Suspense fallback={<div className="lm-3d-loading">Loading 3D…</div>}>
-                        <Layout3D
-                            plots={PLOTS.map((p) => ({ id: p.id, pts: p.pts, sqft: p.sqft }))}
-                            boundary={BOUNDARY}
-                            ca={CA}
-                            karab={KARAB}
-                            stp={STP}
-                            roads={ROADS}
-                            selected={selected}
-                            onSelect={setSelected}
-                        />
-                    </Suspense>
-                )}
+                {/* Google Maps location button */}
+                <a className="lm-mapbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#ea4335" />
+                        <circle cx="12" cy="9" r="2.6" fill="#fff" />
+                    </svg>
+                    <span className="lm-mapbtn-txt">Maps</span>
+                </a>
 
-                {/* 2D / 3D toggle */}
-                <button className={`lm-view3d ${is3d ? "on" : ""}`} onClick={() => setIs3d((v) => !v)} aria-label="Toggle 3D view">
-                    <span className="lm-view3d-label">{is3d ? "2D" : "3D"}</span>
-                    <span className="lm-view3d-sub">{is3d ? "Flat map" : "Explore"}</span>
-                </button>
-
-                {/* controls (2D only — 3D uses orbit gestures) */}
-                {!is3d && <div className="lm-ctrl">
+                {/* controls */}
+                <div className="lm-ctrl">
                     <button onClick={() => btnZoom(1.3)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={() => btnZoom(0.77)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                     <button onClick={reset} aria-label="Reset"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
-                </div>}
+                </div>
 
                 <div className="lm-legend">
                     <span><i className="lg-plot" />Plots</span>
                     <span><i className="lg-ca" />CA</span>
                     <span><i className="lg-park" />Karab</span>
                     <span><i className="lg-stp" />STP</span>
+                </div>
+
+                {/* Train IQ credit — tap to open popup */}
+                <div className="lm-tiq-wrap">
+                    {tiqOpen && (
+                        <a className="lm-tiq-pop" href="https://trainiq.in" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                            <div className="lm-tiq-pop-title">Built by Train IQ</div>
+                            <div className="lm-tiq-pop-sub">trainiq.in →</div>
+                        </a>
+                    )}
+                    <button className="lm-tiq-logo" onClick={() => setTiqOpen((v) => !v)} aria-label="Train IQ">
+                        <img src="/trainiq-logo.jpeg" alt="Train IQ" className="lm-tiq-img" />
+                    </button>
                 </div>
             </div>
 
@@ -689,8 +642,21 @@ const css = `
   background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230); }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
-.lm-3d-loading{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-  color:var(--gold); font-size:14px; letter-spacing:.1em; background:#8f7d4c; z-index:5; }
+
+/* ===== Train IQ credit logo + popup ===== */
+.lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:9; display:flex; align-items:center; gap:10px; }
+.lm-tiq-logo{ display:flex; align-items:center; justify-content:center; cursor:pointer;
+  background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:12px;
+  padding:6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .15s; }
+.lm-tiq-logo:active{ transform:scale(.94); }
+.lm-tiq-img{ height:24px; width:auto; display:block; object-fit:contain; }
+.lm-tiq-pop{ text-decoration:none; background:rgba(20,36,60,.96); color:#fff; border-radius:12px;
+  padding:9px 14px; box-shadow:0 8px 24px rgba(0,0,0,.45); backdrop-filter:blur(10px);
+  white-space:nowrap; animation:tiqpop .2s ease; }
+.lm-tiq-pop-title{ font-size:12px; font-weight:700; letter-spacing:.01em; }
+.lm-tiq-pop-sub{ font-size:11px; color:#a9c4e6; margin-top:1px; }
+@keyframes tiqpop{ from{ opacity:0; transform:translateX(8px); } to{ opacity:1; transform:translateX(0); } }
 
 /* ===== SVG map elements ===== */
 .lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#b9b39c; stroke-width:2.4; opacity:.4; }
@@ -721,20 +687,17 @@ const css = `
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
 .lm-stp-label{ fill:#3a2358; font-size:12px; font-weight:800; text-anchor:middle; }
 
-/* ===== 2D / 3D toggle ===== */
-.lm-view3d{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
-  top:calc(env(safe-area-inset-top,0px) + 78px); z-index:8;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+/* ===== Google Maps button ===== */
+.lm-mapbtn{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
+  top:calc(env(safe-area-inset-top,0px) + 78px); z-index:8; text-decoration:none;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   width:56px; height:56px; border-radius:16px; cursor:pointer;
-  border:1px solid var(--line); background:var(--glass); color:var(--gold);
+  border:1px solid var(--line); background:var(--glass); color:var(--txt);
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  box-shadow:0 10px 30px rgba(0,0,0,.5); transition:transform .15s, background .2s, border-color .2s; }
-.lm-view3d:hover{ background:rgba(212,171,84,.12); }
-.lm-view3d:active{ transform:scale(.95); }
-.lm-view3d.on{ background:linear-gradient(180deg,#f2dd9a,#d4ab54); color:#1a1305; border-color:transparent;
-  box-shadow:0 10px 26px rgba(212,171,84,.4); }
-.lm-view3d-label{ font-size:18px; font-weight:800; line-height:1; font-family:'Inter',sans-serif; }
-.lm-view3d-sub{ font-size:7.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; opacity:.8; }
+  box-shadow:0 10px 30px rgba(0,0,0,.5); transition:transform .15s, background .2s; }
+.lm-mapbtn:hover{ background:rgba(212,171,84,.12); }
+.lm-mapbtn:active{ transform:scale(.95); }
+.lm-mapbtn-txt{ font-size:8.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; opacity:.85; }
 
 /* ===== Apple-Maps-style control stack ===== */
 .lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
