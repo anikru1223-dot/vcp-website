@@ -41,25 +41,38 @@ export async function middleware(request: NextRequest) {
 
     const pathname = request.nextUrl.pathname;
 
-    // Public pages
-    const publicRoutes = [
-        "/",
-        "/login",
-        "/layout-map",
-    ];
+    // -------------------------
+    // PUBLIC ROUTES
+    // -------------------------
 
     const isPublic =
-        publicRoutes.includes(pathname) ||
-        pathname.startsWith("/_next") ||
-        pathname.startsWith("/favicon") ||
-        pathname.startsWith("/api");
+        pathname === "/" ||
+        pathname === "/login" ||
+        pathname === "/layout-map" ||
 
-    // Not logged in
+        // Basava Ganguru Public Website
+        pathname === "/project/basava-ganguru" ||
+        pathname.startsWith("/project/basava-ganguru/") ||
+
+        // Next.js assets
+        pathname.startsWith("/_next") ||
+        pathname.startsWith("/api") ||
+        pathname.startsWith("/favicon") ||
+        pathname.startsWith("/images") ||
+        pathname.startsWith("/fonts");
+
+    // -------------------------
+    // NOT LOGGED IN
+    // -------------------------
+
     if (!user && !isPublic) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    // Already logged in
+    // -------------------------
+    // ALREADY LOGGED IN
+    // -------------------------
+
     if (user && pathname === "/login") {
         return NextResponse.redirect(new URL("/projects", request.url));
     }
@@ -68,5 +81,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+    matcher: [
+        "/((?!_next/static|_next/image|favicon.ico).*)",
+    ],
 };
