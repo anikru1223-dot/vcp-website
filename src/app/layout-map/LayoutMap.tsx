@@ -153,20 +153,6 @@ function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
     );
 }
 
-// A car that drives continuously ALONG A PATH (turns at corners via animateMotion).
-function Car({ path, dur, delay, color, night = false }: { path: string; dur: number; delay: number; color: string; night?: boolean }) {
-    return (
-        <g pointerEvents="none">
-            <g>
-                <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" rotate="auto" path={path} />
-                {night && <path d="M13,-4 L44,-15 L44,15 L13,4 Z" fill="url(#headBeam)" opacity="0.45" />}
-                <rect x="-13" y="-6" width="26" height="12" rx="4" fill={color} />
-                <rect x="-7" y="-4.5" width="10" height="9" rx="2" fill="#cfe4f2" opacity="0.8" />
-                <circle cx="11" cy="0" r="2" fill={night ? "#fffce8" : "#fff6cf"} />
-            </g>
-        </g>
-    );
-}
 
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
@@ -710,37 +696,6 @@ export default function LayoutMap() {
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
-                            {/* ===== ENTRANCE GATE (top 12m road entry) ===== */}
-                            <g pointerEvents="none">
-                                {/* approach apron on the road */}
-                                <rect x="248" y="186" width="140" height="76" fill="#4a463a" opacity="0.5" />
-                                {/* landscaping strips either side */}
-                                <rect x="214" y="196" width="30" height="60" rx="4" fill="#4f8330" />
-                                <rect x="392" y="196" width="30" height="60" rx="4" fill="#4f8330" />
-                                {[[229, 206], [229, 226], [229, 246], [407, 206], [407, 226], [407, 246]].map(([bx, by], i) => (
-                                    <circle key={`gb${i}`} cx={bx} cy={by} r="5" fill={i % 2 ? "#5f9a3a" : "#3c6624"} />
-                                ))}
-                                {/* two gate pillars */}
-                                <rect x="242" y="198" width="14" height="60" rx="2" fill="#3a3128" />
-                                <rect x="380" y="198" width="14" height="60" rx="2" fill="#3a3128" />
-                                <rect x="240" y="194" width="18" height="8" rx="2" fill="#d4ab54" />
-                                <rect x="378" y="194" width="18" height="8" rx="2" fill="#d4ab54" />
-                                {/* signage arch across the entry */}
-                                <rect x="256" y="188" width="124" height="16" rx="4" fill="#14243c" />
-                                <text x="318" y="200" textAnchor="middle" fill="#f2dd9a" fontSize="10" fontWeight="800" letterSpacing="0.5">BASAVA GANGURU</text>
-                                {/* security cabin (right of entry) */}
-                                <rect x="398" y="214" width="26" height="22" rx="2" fill="#e8ddc8" stroke="#b0a58c" strokeWidth="1" />
-                                <polygon points="396,214 426,214 421,206 401,206" fill="#8a5a3a" />
-                                <rect x="404" y="220" width="8" height="8" fill="#7fb0d0" opacity="0.8" />
-                                {/* boom barrier (diagonal, lifted) */}
-                                <rect x="258" y="228" width="6" height="6" fill="#c0392b" />
-                                <g transform="translate(261,231) rotate(-38)">
-                                    <rect x="0" y="-2.5" width="64" height="5" rx="2" fill="#fff" />
-                                    <rect x="0" y="-2.5" width="16" height="5" fill="#c0392b" />
-                                    <rect x="32" y="-2.5" width="16" height="5" fill="#c0392b" />
-                                </g>
-                            </g>
-
                             {/* PLOTS */}
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
@@ -792,9 +747,6 @@ export default function LayoutMap() {
                                         </g>
                                     </g>
                                 )}
-                                {/* cars with headlights (headlights only glow at night) */}
-                                <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" night={night} />
-                                <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" night={night} />
                                 {/* street lights at ROAD CORNERS & JUNCTIONS */}
                                 {[
                                     // top 12m road — evenly spaced along it
@@ -926,7 +878,16 @@ export default function LayoutMap() {
                             <Row label="SQ. METERS" value={`${sel.sqm} Sq.M`} />
                             <Row label="FACING" value={SIDES[sel.id]?.facing || sel.facing} />
                         </div>
-                        <button className="lm-cta">Enquire about Plot {sel.id}</button>
+                        <div className="lm-cta-row">
+                            <a className="lm-cta lm-cta-wa" href={`https://wa.me/919980061727?text=${encodeURIComponent(`Hi, I'm interested in Plot ${sel.id} at Basava Ganguru. Please share details.`)}`} target="_blank" rel="noopener noreferrer">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 2.1.55 4.06 1.6 5.83L2 22l4.4-1.15a9.86 9.86 0 0 0 5.64 1.72c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.1c-.24.68-1.42 1.3-1.95 1.34-.5.04-1.13.23-3.7-.77-3.12-1.23-5.11-4.42-5.26-4.62-.15-.2-1.26-1.67-1.26-3.19 0-1.52.8-2.27 1.08-2.58.28-.31.61-.39.82-.39.2 0 .41 0 .59.01.19.01.44-.07.69.53.24.58.83 2.02.9 2.17.07.15.12.32.02.52-.1.2-.15.32-.29.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.6.17.29.76 1.25 1.63 2.03 1.12 1 2.06 1.31 2.35 1.46.29.15.46.12.63-.07.17-.2.72-.84.91-1.13.19-.29.39-.24.65-.15.27.1 1.7.8 1.99.95.29.15.48.22.55.34.07.13.07.72-.17 1.4z" /></svg>
+                                WhatsApp
+                            </a>
+                            <a className="lm-cta lm-cta-call" href="tel:+919980061727">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" /></svg>
+                                Call
+                            </a>
+                        </div>
                     </>
                 )}
             </div>
@@ -1151,10 +1112,13 @@ const css = `
 .lm-row:last-child{ border-bottom:none; }
 .lm-row-l{ font-size:11.5px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
 .lm-row-v{ font-size:14.5px; font-weight:700; text-align:right; }
-.lm-cta{ width:100%; padding:15px; border:none; border-radius:14px; cursor:pointer;
-  background:linear-gradient(180deg,#f2dd9a,#d4ab54); color:#1a1305; font-weight:800; font-size:15px; letter-spacing:.01em;
-  box-shadow:0 10px 26px rgba(212,171,84,.32); transition:transform .12s; }
-.lm-cta:hover{ transform:translateY(-1px); }
+.lm-cta-row{ display:flex; gap:10px; }
+.lm-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
+  padding:14px; border:none; border-radius:14px; cursor:pointer; color:#fff; font-weight:800; font-size:15px;
+  transition:transform .12s, filter .15s; }
+.lm-cta-wa{ background:linear-gradient(180deg,#2fc463,#1faa4f); box-shadow:0 10px 26px rgba(37,180,80,.35); }
+.lm-cta-call{ background:linear-gradient(180deg,#4a91e2,#2f6fc4); box-shadow:0 10px 26px rgba(47,111,196,.35); }
+.lm-cta:hover{ transform:translateY(-1px); filter:brightness(1.05); }
 .lm-cta:active{ transform:translateY(1px); }
 
 @media (min-width:640px){
