@@ -184,7 +184,7 @@ export default function LayoutMap() {
 
     // 5-second intro splash when the map first loads
     useEffect(() => {
-        const t = window.setTimeout(() => setSplash(false), 5000);
+        const t = window.setTimeout(() => setSplash(false), 2000);
         return () => window.clearTimeout(t);
     }, []);
 
@@ -208,23 +208,6 @@ export default function LayoutMap() {
         if (compassRef.current) compassRef.current.setAttribute("transform", `translate(1120,250) rotate(${-r})`);
     };
 
-    // Hide heavy decoration (trees/stones/cars) while moving so zoom/pan is instant,
-    // then restore it once motion settles. Toggled via direct DOM to avoid re-renders.
-    const decoRef = useRef<SVGGElement | null>(null);
-    const settleTimer = useRef<number | null>(null);
-    const setMoving = (moving: boolean) => {
-        if (decoRef.current) decoRef.current.style.opacity = moving ? "0" : "1";
-        if (moving) {
-            if (settleTimer.current) window.clearTimeout(settleTimer.current);
-        } else {
-            if (settleTimer.current) window.clearTimeout(settleTimer.current);
-        }
-    };
-    const flagMoving = () => {
-        setMoving(true);
-        if (settleTimer.current) window.clearTimeout(settleTimer.current);
-        settleTimer.current = window.setTimeout(() => setMoving(false), 180);
-    };
 
     const tick = useCallback(() => {
         const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.35;
@@ -237,9 +220,9 @@ export default function LayoutMap() {
         if (done) {
             c.view = { ...tV }; c.rot = t.rot; paint(tV, t.rot);
             setView({ ...tV }); setRot(t.rot); animating.current = false; raf.current = null;
-            setMoving(false); return;
+            return;
         }
-        paint(eV, c.rot); flagMoving(); raf.current = requestAnimationFrame(tick);
+        paint(eV, c.rot); raf.current = requestAnimationFrame(tick);
     }, []);
 
     const startAnim = useCallback(() => {
@@ -251,7 +234,7 @@ export default function LayoutMap() {
         animating.current = false;
         cur.current.view = { ...v }; if (r !== undefined) cur.current.rot = r;
         target.current.view = { ...v }; if (r !== undefined) target.current.rot = r;
-        paint(v, r !== undefined ? r : cur.current.rot); flagMoving();
+        paint(v, r !== undefined ? r : cur.current.rot);
     }, []);
 
     const commit = useCallback(() => { setView({ ...cur.current.view }); setRot(cur.current.rot); }, []);
@@ -318,7 +301,7 @@ export default function LayoutMap() {
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
         el.addEventListener("wheel", onWheel, { passive: false });
-        return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); if (settleTimer.current) window.clearTimeout(settleTimer.current); };
+        return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
 
     // Trees clustered into dense groves (like the AR3D reference) + stones.
@@ -636,7 +619,7 @@ export default function LayoutMap() {
                         })}
 
                         {/* Decoration layer — hidden during zoom/pan for smoothness */}
-                        <g ref={decoRef} style={{ transition: "opacity .18s ease" }}>
+                        <g>
                             {/* trees (with shadows) */}
                             {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
                             {/* stones scattered on open land */}
@@ -889,7 +872,7 @@ const css = `
 .lm-splash{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column;
   align-items:center; justify-content:center; cursor:pointer;
   background:radial-gradient(120% 100% at 50% 30%,#1c2417,#0a0d07 80%);
-  animation:splashOut .5s ease forwards; animation-delay:4.5s; }
+  animation:splashOut .4s ease forwards; animation-delay:1.6s; }
 .lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center;
   animation:splashIn .8s cubic-bezier(.22,1,.36,1); }
 .lm-splash-logo{ filter:drop-shadow(0 4px 20px rgba(212,171,84,.5)); margin-bottom:18px;
@@ -902,7 +885,7 @@ const css = `
 .lm-splash-tag{ margin-top:6px; font-size:12px; color:#8b9280; letter-spacing:.08em; }
 .lm-splash-bar{ margin-top:26px; width:180px; height:3px; border-radius:99px; background:rgba(212,171,84,.18); overflow:hidden; }
 .lm-splash-bar span{ display:block; height:100%; width:0; border-radius:99px;
-  background:linear-gradient(90deg,#f2dd9a,#d4ab54); animation:barFill 4.6s ease forwards; }
+  background:linear-gradient(90deg,#f2dd9a,#d4ab54); animation:barFill 1.7s ease forwards; }
 @keyframes barFill{ 0%{width:0} 100%{width:100%} }
 .lm-splash-loading{ margin-top:14px; font-size:11px; letter-spacing:.14em; color:#8b9280; text-transform:uppercase;
   animation:pulse 1.6s ease-in-out infinite; }
