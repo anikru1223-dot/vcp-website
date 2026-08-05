@@ -550,27 +550,47 @@ export default function LayoutMap() {
                                 </g>
                             ))}
 
-                            {/* mud / village roads continuing the internal roads outward */}
-                            <rect x="560" y="-560" width="46" height="750" fill="#8a7b57" opacity="0.9" />
-                            <rect x="508" y="948" width="46" height="520" fill="#8a7b57" opacity="0.9" />
-                            <rect x="800" y="948" width="46" height="520" fill="#8a7b57" opacity="0.9" />
-                            <rect x="-700" y="200" width="820" height="40" fill="#8a7b57" opacity="0.85" />
-                            <rect x="1108" y="205" width="640" height="40" fill="#8a7b57" opacity="0.85" />
-                            <path d="M-700,700 Q-300,760 -120,760 L-120,800 Q-320,800 -700,740 Z" fill="#8a7b57" opacity="0.8" />
+                            {/* ===== EXISTING approach roads (black, like the sanctioned drawing) ===== */}
+                            {/* three EXISTING 9m ROAD stubs coming down from the top into the 12m road */}
+                            <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
+                            <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
+                            <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
+                            {/* EXISTING 12m ROAD on the right, running vertically, joined to the top 12m road */}
+                            <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
+                            {/* connector: top 12m road extends right to meet the existing 12m road */}
+                            <rect x="1108" y="184" width="62" height="78" fill="#3a342a" />
+                            {/* EXISTING 9m ROAD on the left */}
+                            <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
+                            {/* left & bottom road continuations (black) */}
+                            <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
+                            <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
 
-                            {/* drainage channels */}
-                            <rect x="606" y="-560" width="7" height="740" fill="#5f6b4a" opacity="0.7" />
-                            <rect x="-700" y="244" width="810" height="6" fill="#5f6b4a" opacity="0.6" />
+                            {/* dashed lane lines on the existing roads */}
+                            <g stroke="#e8d9a0" strokeWidth="2" strokeDasharray="10 12" opacity="0.5">
+                                <line x1="321" y1="-110" x2="321" y2="180" />
+                                <line x1="583" y1="-110" x2="583" y2="180" />
+                                <line x1="841" y1="-110" x2="841" y2="180" />
+                                <line x1="1138" y1="200" x2="1138" y2="1070" />
+                            </g>
 
-                            {/* electric poles + wires along the top village road */}
-                            {[-600, -400, -200, 40, 1180, 1360, 1540, 1720].map((px, i) => (
-                                <g key={`pole${i}`}>
-                                    <line x1={px} y1={188} x2={px} y2={158} stroke="#6b5c3f" strokeWidth="3" />
-                                    <line x1={px - 8} y1={162} x2={px + 8} y2={162} stroke="#6b5c3f" strokeWidth="2.5" />
-                                </g>
-                            ))}
-                            <path d="M-600,162 Q-500,176 -400,162 Q-300,176 -200,162 Q-80,176 40,162" fill="none" stroke="#3a3320" strokeWidth="1" opacity="0.5" />
-                            <path d="M1180,162 Q1270,176 1360,162 Q1450,176 1540,162 Q1630,176 1720,162" fill="none" stroke="#3a3320" strokeWidth="1" opacity="0.5" />
+                            {/* Survey number labels (Sy.No.) on all four sides */}
+                            <g className="lm-syno">
+                                <text x="300" y="-140" textAnchor="middle">Sy.No.39</text>
+                                <text x="581" y="-140" textAnchor="middle">Sy.No.42</text>
+                                <text x="70" y="430" textAnchor="middle" transform="rotate(-90 70 430)">Sy.No.44</text>
+                                <text x="70" y="720" textAnchor="middle" transform="rotate(-90 70 720)">Sy.No.43/1</text>
+                                <text x="1195" y="500" textAnchor="middle" transform="rotate(90 1195 500)">Sy.No.43/3</text>
+                                <text x="1195" y="820" textAnchor="middle" transform="rotate(90 1195 820)">Sy.No.43/3</text>
+                                <text x="600" y="1090" textAnchor="middle">Sy.No.46</text>
+                            </g>
+
+                            {/* EXISTING road name labels */}
+                            <g pointerEvents="none">
+                                <text x="321" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 321 60)">EXISTING 9m ROAD</text>
+                                <text x="583" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 583 60)">EXISTING 9m ROAD</text>
+                                <text x="841" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 841 60)">EXISTING 9m ROAD</text>
+                                <text x="1138" y="640" className="lm-exist-lbl" textAnchor="middle" transform="rotate(90 1138 640)">EXISTING 12m ROAD</text>
+                            </g>
 
                             {/* scattered farmhouses (roof + body) */}
                             {[
@@ -971,6 +991,8 @@ const css = `
   font-family:'Inter',sans-serif; opacity:.85; }
 .lm-road-lbl-lg{ font-size:15px; font-weight:700; letter-spacing:.2em; fill:#f4e6b0; opacity:.95; }
 .lm-road-lbl-sm{ font-size:9.5px; letter-spacing:.12em; }
+.lm-syno text{ fill:#5a4f38; font-size:15px; font-weight:700; letter-spacing:.04em; font-family:'Inter',sans-serif; }
+.lm-exist-lbl{ fill:#cfc39a; font-size:11px; font-weight:700; letter-spacing:.12em; font-family:'Inter',sans-serif; opacity:.8; }
 .lm-drain circle{ fill:#1e1b15; stroke:#4c4636; stroke-width:.8; }
 .lm-turf-edge{ fill:none; stroke:#1e3510; stroke-width:3.5; opacity:.95; stroke-linejoin:round; }
 .lm-amen-border{ fill:none; stroke:#14260a; stroke-width:1.6; stroke-dasharray:7 5; opacity:.9; stroke-linejoin:round; }
