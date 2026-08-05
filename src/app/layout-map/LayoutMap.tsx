@@ -162,22 +162,43 @@ export default function LayoutMap() {
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
 
-    const S_MIN = 0.35, S_MAX = 9;
+    // Zoom limits: min 1 = layout fills the viewport (~78%); max 4.5 for readability.
+    const S_MIN = 1, S_MAX = 4.5;
 
     // Screen→user scale: how many user units per screen pixel at base zoom.
     const baseScaleRef = useRef(1);
     const computeBaseScale = () => {
         const el = wrapRef.current; if (!el) return 1;
         const r = el.getBoundingClientRect();
-        // viewBox is meet-fitted, so the smaller ratio governs
         return Math.min(r.width / BASE_VB.w, r.height / BASE_VB.h) || 1;
+    };
+
+    // Clamp pan so the layout can't be dragged off-screen. Returns clamped {tx,ty}
+    // plus how far past the limit we were (for elastic feel while dragging).
+    const clampPan = (c: Cam, elastic = false): Cam => {
+        const el = wrapRef.current; if (!el) return c;
+        const r = el.getBoundingClientRect();
+        // content size on screen at current scale
+        const bs = baseScaleRef.current || 1;
+        const contentW = BASE_VB.w * bs * c.s;
+        const contentH = BASE_VB.h * bs * c.s;
+        // allow some slack so surroundings (drawn beyond BASE_VB) can show at edges
+        const slackX = r.width * 0.18, slackY = r.height * 0.18;
+        const minTx = r.width - contentW - slackX, maxTx = slackX;
+        const minTy = r.height - contentH - slackY, maxTy = slackY;
+        const soft = (val: number, lo: number, hi: number) => {
+            if (lo > hi) { const mid = (lo + hi) / 2; return mid; } // content smaller than view → center
+            if (val < lo) return elastic ? lo - (lo - val) * 0.35 : lo;
+            if (val > hi) return elastic ? hi + (val - hi) * 0.35 : hi;
+            return val;
+        };
+        return { ...c, tx: soft(c.tx, minTx, maxTx), ty: soft(c.ty, minTy, maxTy) };
     };
 
     // Write the transform straight to the DOM (fast path).
     const paint = (c: Cam) => {
         if (cameraRef.current) {
             const bs = baseScaleRef.current || 1;
-            // tx/ty are in screen px → convert to user units (÷ base scale) so pan matches finger.
             cameraRef.current.style.transform =
                 `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) rotate(${c.rot}deg)`;
         }
@@ -226,7 +247,7 @@ export default function LayoutMap() {
 
     const smoothZoom = (factor: number, clientX: number, clientY: number) => {
         const p = relPt(clientX, clientY);
-        target.current = zoomAt(target.current, factor, p.x, p.y); startAnim();
+        target.current = clampPan(zoomAt(target.current, factor, p.x, p.y), false); startAnim();
     };
     const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.22 : 1 / 1.22, e.clientX, e.clientY); };
 
@@ -248,23 +269,23 @@ export default function LayoutMap() {
             const g = gesture.current, nd = dist(e.touches[0], e.touches[1]), na = angle(e.touches[0], e.touches[1]);
             const p = relPt((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
             let c = zoomAt(cur.current, nd / g.d, p.x, p.y);
-            // pan by the movement of the pinch centre + apply rotation delta
             c = { ...c, tx: c.tx + (p.x - g.cx), ty: c.ty + (p.y - g.cy), rot: c.rot + (na - g.ang) };
-            setNow(c);
+            setNow(clampPan(c, true));
             g.d = nd; g.ang = na; g.cx = p.x; g.cy = p.y;
         } else if (e.touches.length === 1 && drag.current) {
             e.preventDefault();
             const d = drag.current;
-            setNow({ ...cur.current, tx: d.tx + (e.touches[0].clientX - d.px), ty: d.ty + (e.touches[0].clientY - d.py) });
+            setNow(clampPan({ ...cur.current, tx: d.tx + (e.touches[0].clientX - d.px), ty: d.ty + (e.touches[0].clientY - d.py) }, true));
         }
     };
-    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; } };
+    const settle = () => { target.current = clampPan({ ...cur.current, s: Math.min(S_MAX, Math.max(S_MIN, cur.current.s)) }, false); startAnim(); };
+    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; settle(); } };
     const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, tx: cur.current.tx, ty: cur.current.ty }; };
     const onMouseMove = (e: React.MouseEvent) => {
         const d = drag.current; if (!d) return;
-        setNow({ ...cur.current, tx: d.tx + (e.clientX - d.px), ty: d.ty + (e.clientY - d.py) });
+        setNow(clampPan({ ...cur.current, tx: d.tx + (e.clientX - d.px), ty: d.ty + (e.clientY - d.py) }, true));
     };
-    const onMouseUp = () => { drag.current = null; };
+    const onMouseUp = () => { if (drag.current) { drag.current = null; settle(); } };
 
     const reset = () => { target.current = { s: 1, tx: 0, ty: 0, rot: 0 }; startAnim(); };
     const btnZoom = (f: number) => { const el = wrapRef.current; if (el) { const r = el.getBoundingClientRect(); smoothZoom(f, r.left + r.width / 2, r.top + r.height / 2); } };
@@ -477,6 +498,68 @@ export default function LayoutMap() {
                             <ellipse cx="320" cy="1080" rx="160" ry="90" fill="url(#patch)" />
                             <ellipse cx="1050" cy="950" rx="140" ry="80" fill="url(#patch)" />
                             <ellipse cx="700" cy="1120" rx="180" ry="70" fill="url(#patch)" />
+                        </g>
+
+                        {/* ===== SURROUNDINGS (lightweight, drawn beyond the project boundary) ===== */}
+                        <g pointerEvents="none">
+                            {/* agricultural fields — green parcels with subtle furrow lines */}
+                            {[
+                                { x: -700, y: -400, w: 520, h: 360, c: "#7ba045" },
+                                { x: -700, y: 20, w: 520, h: 380, c: "#8caf52" },
+                                { x: -700, y: 460, w: 470, h: 420, c: "#6f9a3e" },
+                                { x: -680, y: 960, w: 560, h: 380, c: "#83a84c" },
+                                { x: 1230, y: -360, w: 520, h: 420, c: "#7ba045" },
+                                { x: 1260, y: 120, w: 500, h: 400, c: "#8caf52" },
+                                { x: 1240, y: 580, w: 520, h: 440, c: "#6f9a3e" },
+                                { x: 320, y: 1180, w: 640, h: 360, c: "#83a84c" },
+                                { x: 120, y: -560, w: 560, h: 300, c: "#8caf52" },
+                                { x: 760, y: -560, w: 520, h: 300, c: "#7ba045" },
+                            ].map((f, i) => (
+                                <g key={`fld${i}`}>
+                                    <rect x={f.x} y={f.y} width={f.w} height={f.h} rx="6" fill={f.c} opacity="0.9" />
+                                    {Array.from({ length: Math.floor(f.h / 26) }).map((_, r) => (
+                                        <line key={r} x1={f.x + 8} y1={f.y + 14 + r * 26} x2={f.x + f.w - 8} y2={f.y + 14 + r * 26} stroke="#5c8232" strokeWidth="1.5" opacity="0.4" />
+                                    ))}
+                                </g>
+                            ))}
+
+                            {/* mud / village roads continuing the internal roads outward */}
+                            <rect x="560" y="-560" width="46" height="750" fill="#8a7b57" opacity="0.9" />
+                            <rect x="508" y="948" width="46" height="520" fill="#8a7b57" opacity="0.9" />
+                            <rect x="800" y="948" width="46" height="520" fill="#8a7b57" opacity="0.9" />
+                            <rect x="-700" y="200" width="820" height="40" fill="#8a7b57" opacity="0.85" />
+                            <rect x="1108" y="205" width="640" height="40" fill="#8a7b57" opacity="0.85" />
+                            <path d="M-700,700 Q-300,760 -120,760 L-120,800 Q-320,800 -700,740 Z" fill="#8a7b57" opacity="0.8" />
+
+                            {/* drainage channels */}
+                            <rect x="606" y="-560" width="7" height="740" fill="#5f6b4a" opacity="0.7" />
+                            <rect x="-700" y="244" width="810" height="6" fill="#5f6b4a" opacity="0.6" />
+
+                            {/* electric poles + wires along the top village road */}
+                            {[-600, -400, -200, 40, 1180, 1360, 1540, 1720].map((px, i) => (
+                                <g key={`pole${i}`}>
+                                    <line x1={px} y1={188} x2={px} y2={158} stroke="#6b5c3f" strokeWidth="3" />
+                                    <line x1={px - 8} y1={162} x2={px + 8} y2={162} stroke="#6b5c3f" strokeWidth="2.5" />
+                                </g>
+                            ))}
+                            <path d="M-600,162 Q-500,176 -400,162 Q-300,176 -200,162 Q-80,176 40,162" fill="none" stroke="#3a3320" strokeWidth="1" opacity="0.5" />
+                            <path d="M1180,162 Q1270,176 1360,162 Q1450,176 1540,162 Q1630,176 1720,162" fill="none" stroke="#3a3320" strokeWidth="1" opacity="0.5" />
+
+                            {/* scattered farmhouses (roof + body) */}
+                            {[
+                                { x: -520, y: 120, s: 1.2 }, { x: 1420, y: 300, s: 1.1 }, { x: -420, y: 720, s: 1 },
+                                { x: 1480, y: 820, s: 1.2 }, { x: 560, y: 1360, s: 1.1 }, { x: -560, y: 1080, s: 1 },
+                            ].map((h, i) => (
+                                <g key={`hut${i}`} transform={`translate(${h.x},${h.y}) scale(${h.s})`}>
+                                    <rect x="-20" y="12" width="40" height="6" fill="#000" opacity="0.15" />
+                                    <rect x="-18" y="-6" width="36" height="20" rx="1" fill="#e8ddc8" />
+                                    <polygon points="-22,-6 22,-6 14,-20 -14,-20" fill="#a8552f" />
+                                    <rect x="-4" y="2" width="8" height="12" fill="#7a5a3a" />
+                                </g>
+                            ))}
+
+                            {/* compound wall hint around the project */}
+                            <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.45" />
                         </g>
 
 
