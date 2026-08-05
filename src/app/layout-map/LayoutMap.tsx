@@ -199,8 +199,12 @@ export default function LayoutMap() {
     const paint = (c: Cam) => {
         if (cameraRef.current) {
             const bs = baseScaleRef.current || 1;
+            // Rotation pivots around the map centre (in viewBox user units) so it spins in place,
+            // not around the corner. Order: pan → scale (from 0,0, compensated by zoomAt) → rotate-about-centre.
+            const cx = BASE_VB.x + BASE_VB.w / 2;
+            const cy = BASE_VB.y + BASE_VB.h / 2;
             cameraRef.current.style.transform =
-                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) rotate(${c.rot}deg)`;
+                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) translate(${cx}px,${cy}px) rotate(${c.rot}deg) translate(${-cx}px,${-cy}px)`;
         }
         if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
     };
@@ -623,12 +627,20 @@ export default function LayoutMap() {
                             <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
                             {/* jogging path loop */}
                             <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
-                            {/* lake with rim + highlight */}
+                            {/* lake — layered water with ripples + stone edging */}
+                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx + 6} ry={KARAB_LAKE.ry + 5} fill="#7d8a5c" opacity="0.6" pointerEvents="none" />
                             <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#lake)" filter="url(#softSh)" />
-                            <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 20} rx="52" ry="18" fill="#fff" opacity="0.22" pointerEvents="none" />
-                            {Array.from({ length: 26 }).map((_, i) => {
-                                const a = (i / 26) * Math.PI * 2;
-                                return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 5)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 4)} r={2 + (i % 3)} fill="#9a927c" opacity="0.7" pointerEvents="none" />;
+                            {/* deeper centre + reflection highlight */}
+                            <ellipse cx={KARAB_LAKE.cx + 10} cy={KARAB_LAKE.cy + 6} rx={KARAB_LAKE.rx * 0.62} ry={KARAB_LAKE.ry * 0.6} fill="#3f8f96" opacity="0.5" pointerEvents="none" />
+                            <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 22} rx="54" ry="18" fill="#fff" opacity="0.28" pointerEvents="none" />
+                            {/* concentric ripples */}
+                            {[0.78, 0.55, 0.34].map((k, i) => (
+                                <ellipse key={`rip${i}`} cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx * k} ry={KARAB_LAKE.ry * k} fill="none" stroke="#cfeef0" strokeWidth="1" opacity={0.22 - i * 0.04} pointerEvents="none" />
+                            ))}
+                            {/* stone edging ring */}
+                            {Array.from({ length: 30 }).map((_, i) => {
+                                const a = (i / 30) * Math.PI * 2;
+                                return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 6)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 5)} r={2.4 + (i % 3) * 0.8} fill={i % 2 ? "#b3ab94" : "#9a927c"} opacity="0.85" pointerEvents="none" />;
                             })}
                             {/* flower beds */}
                             {[[200, 760, "#e07aa8"], [420, 770, "#f0b429"], [180, 905, "#c85a9a"], [440, 900, "#e8a020"]].map(([x, y, col], i) => (
@@ -660,6 +672,37 @@ export default function LayoutMap() {
                             <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
+
+                            {/* ===== ENTRANCE GATE (top 12m road entry) ===== */}
+                            <g pointerEvents="none">
+                                {/* approach apron on the road */}
+                                <rect x="248" y="186" width="140" height="76" fill="#4a463a" opacity="0.5" />
+                                {/* landscaping strips either side */}
+                                <rect x="214" y="196" width="30" height="60" rx="4" fill="#4f8330" />
+                                <rect x="392" y="196" width="30" height="60" rx="4" fill="#4f8330" />
+                                {[[229, 206], [229, 226], [229, 246], [407, 206], [407, 226], [407, 246]].map(([bx, by], i) => (
+                                    <circle key={`gb${i}`} cx={bx} cy={by} r="5" fill={i % 2 ? "#5f9a3a" : "#3c6624"} />
+                                ))}
+                                {/* two gate pillars */}
+                                <rect x="242" y="198" width="14" height="60" rx="2" fill="#3a3128" />
+                                <rect x="380" y="198" width="14" height="60" rx="2" fill="#3a3128" />
+                                <rect x="240" y="194" width="18" height="8" rx="2" fill="#d4ab54" />
+                                <rect x="378" y="194" width="18" height="8" rx="2" fill="#d4ab54" />
+                                {/* signage arch across the entry */}
+                                <rect x="256" y="188" width="124" height="16" rx="4" fill="#14243c" />
+                                <text x="318" y="200" textAnchor="middle" fill="#f2dd9a" fontSize="10" fontWeight="800" letterSpacing="0.5">BASAVA GANGURU</text>
+                                {/* security cabin (right of entry) */}
+                                <rect x="398" y="214" width="26" height="22" rx="2" fill="#e8ddc8" stroke="#b0a58c" strokeWidth="1" />
+                                <polygon points="396,214 426,214 421,206 401,206" fill="#8a5a3a" />
+                                <rect x="404" y="220" width="8" height="8" fill="#7fb0d0" opacity="0.8" />
+                                {/* boom barrier (diagonal, lifted) */}
+                                <rect x="258" y="228" width="6" height="6" fill="#c0392b" />
+                                <g transform="translate(261,231) rotate(-38)">
+                                    <rect x="0" y="-2.5" width="64" height="5" rx="2" fill="#fff" />
+                                    <rect x="0" y="-2.5" width="16" height="5" fill="#c0392b" />
+                                    <rect x="32" y="-2.5" width="16" height="5" fill="#c0392b" />
+                                </g>
+                            </g>
 
                             {/* PLOTS */}
                             {PLOTS.map((p) => {
