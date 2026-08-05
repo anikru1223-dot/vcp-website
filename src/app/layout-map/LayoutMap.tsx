@@ -48,6 +48,43 @@ const PLOTS: Plot[] = [
     { id: "32", pts: "858,850 986,850 972,948 858,948", dim: "15.00/16.10 × 9.00/7.65 m", facing: "South", sqm: 129.5, sqft: 1394 },
 ];
 
+// Four-side dimensions (metres) + correct facing per plot, from the sanctioned drawing.
+type Sides = { n: string; e: string; s: string; w: string; facing: string };
+const SIDES: Record<string, Sides> = {
+    "1": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "North" },
+    "2": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "North" },
+    "3": { n: "7.60", e: "15.05", s: "8.70", w: "15.00", facing: "North-East" },
+    "4": { n: "9.00", e: "12.15", s: "9.05", w: "11.50", facing: "South" },
+    "5": { n: "9.00", e: "10.80", s: "9.05", w: "12.15", facing: "South" },
+    "6": { n: "8.70", e: "10.10", s: "9.50", w: "10.80", facing: "South-East" },
+    "7": { n: "8.15", e: "9.45", s: "9.80", w: "9.30", facing: "North-West" },
+    "8": { n: "9.30", e: "12.00", s: "9.30", w: "12.00", facing: "North" },
+    "9": { n: "9.30", e: "12.00", s: "9.30", w: "12.00", facing: "North" },
+    "10": { n: "9.30", e: "12.00", s: "9.30", w: "12.00", facing: "North-East" },
+    "11": { n: "9.05", e: "13.35", s: "9.00", w: "14.00", facing: "North-West" },
+    "12": { n: "9.00", e: "12.00", s: "9.00", w: "12.00", facing: "West" },
+    "13": { n: "9.00", e: "12.00", s: "9.00", w: "12.00", facing: "West" },
+    "14": { n: "9.00", e: "12.00", s: "9.00", w: "12.00", facing: "West" },
+    "15": { n: "9.00", e: "12.00", s: "9.00", w: "12.00", facing: "West" },
+    "16": { n: "9.00", e: "12.00", s: "9.00", w: "12.00", facing: "West" },
+    "17": { n: "11.35", e: "12.05", s: "10.30", w: "12.00", facing: "South-West" },
+    "18": { n: "10.30", e: "16.00", s: "8.90", w: "16.05", facing: "North-East" },
+    "19": { n: "9.00", e: "16.05", s: "9.00", w: "16.05", facing: "East" },
+    "20": { n: "9.00", e: "16.05", s: "9.00", w: "16.05", facing: "East" },
+    "21": { n: "9.00", e: "16.05", s: "9.00", w: "16.05", facing: "East" },
+    "22": { n: "9.00", e: "16.05", s: "9.00", w: "16.05", facing: "East" },
+    "23": { n: "9.00", e: "16.05", s: "9.00", w: "16.05", facing: "East" },
+    "24": { n: "10.05", e: "12.65", s: "10.05", w: "11.90", facing: "North-East" },
+    "25": { n: "9.05", e: "13.35", s: "9.00", w: "13.35", facing: "North" },
+    "26": { n: "15.10", e: "15.00", s: "9.25", w: "10.35", facing: "North-West" },
+    "27": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "West" },
+    "28": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "West" },
+    "29": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "West" },
+    "30": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "West" },
+    "31": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "West" },
+    "32": { n: "15.00", e: "9.00", s: "16.10", w: "7.65", facing: "South-West" },
+};
+
 // Odd irregular property boundary (traced to the sanctioned red line).
 const BOUNDARY = "118,232 1108,268 1150,700 900,1090 118,1150 118,232";
 
@@ -871,16 +908,23 @@ export default function LayoutMap() {
                             </button>
                         </div>
                         <div className="lm-diagram">
-                            <div className="lm-diagram-box">
-                                <span className="lm-diagram-face">← {sel.facing}</span>
+                            <div className="lm-dimbox">
+                                <span className="lm-dim lm-dim-top">{SIDES[sel.id]?.n} m</span>
+                                <span className="lm-dim lm-dim-right">{SIDES[sel.id]?.e} m</span>
+                                <span className="lm-dim lm-dim-bottom">{SIDES[sel.id]?.s} m</span>
+                                <span className="lm-dim lm-dim-left">{SIDES[sel.id]?.w} m</span>
+                                <div className="lm-dimbox-inner">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" className="lm-dim-compass"><path d="M12 3 L15 12 L12 10 L9 12 Z" fill="#d4ab54" /><path d="M12 21 L15 12 L12 14 L9 12 Z" fill="#7a6f4a" /></svg>
+                                    <span className="lm-dim-facing">{SIDES[sel.id]?.facing}</span>
+                                    <span className="lm-dim-facelbl">FACING</span>
+                                </div>
                             </div>
                         </div>
                         <div className="lm-rows">
                             <Row label="SQ. FEET" value={`${sel.sqft.toLocaleString()} Sq.Ft`} />
                             <Row label="SQ. YARDS" value={`${Math.round(sel.sqft / 9)} Sq.Yrd`} />
                             <Row label="SQ. METERS" value={`${sel.sqm} Sq.M`} />
-                            <Row label="DIMENSIONS" value={sel.dim} />
-                            <Row label="FACING" value={`← ${sel.facing}`} />
+                            <Row label="FACING" value={SIDES[sel.id]?.facing || sel.facing} />
                         </div>
                         <button className="lm-cta">Enquire about Plot {sel.id}</button>
                     </>
@@ -1089,11 +1133,19 @@ const css = `
 .lm-close{ width:38px; height:38px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--muted);
   display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
 .lm-close:hover{ background:rgba(255,255,255,.05); }
-.lm-diagram{ display:flex; justify-content:center; margin-bottom:16px; }
-.lm-diagram-box{ width:170px; height:82px; border:2px solid var(--gold); border-radius:6px; display:flex;
-  align-items:center; justify-content:center; background:rgba(212,171,84,.07);
-  box-shadow:inset 0 0 20px rgba(212,171,84,.12); }
-.lm-diagram-face{ color:var(--gold-lt); font-weight:700; font-size:13px; letter-spacing:.02em; }
+.lm-diagram{ display:flex; justify-content:center; margin:6px 0 18px; }
+.lm-dimbox{ position:relative; width:190px; height:110px; margin:22px 30px; }
+.lm-dimbox-inner{ position:absolute; inset:0; border:2px solid var(--gold); border-radius:8px;
+  background:rgba(212,171,84,.07); box-shadow:inset 0 0 22px rgba(212,171,84,.12);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+.lm-dim-compass{ opacity:.9; }
+.lm-dim-facing{ color:var(--gold-lt); font-weight:800; font-size:15px; letter-spacing:.01em; }
+.lm-dim-facelbl{ color:var(--muted); font-size:8px; letter-spacing:.18em; }
+.lm-dim{ position:absolute; color:var(--gold-lt); font-size:11px; font-weight:600; white-space:nowrap; }
+.lm-dim-top{ top:-18px; left:50%; transform:translateX(-50%); }
+.lm-dim-bottom{ bottom:-18px; left:50%; transform:translateX(-50%); }
+.lm-dim-left{ left:-8px; top:50%; transform:translate(-100%,-50%); }
+.lm-dim-right{ right:-8px; top:50%; transform:translate(100%,-50%); }
 .lm-rows{ display:flex; flex-direction:column; margin-bottom:18px; }
 .lm-row{ display:flex; justify-content:space-between; align-items:center; padding:13px 2px; border-bottom:1px solid rgba(255,255,255,.07); }
 .lm-row:last-child{ border-bottom:none; }
