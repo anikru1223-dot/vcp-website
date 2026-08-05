@@ -84,33 +84,13 @@ const centroid = (pts: string): Point => {
 
 /* Lush top-down tree with cast shadow and layered canopy */
 function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
-    const grad = ["url(#foliage1)", "url(#foliage2)", "url(#foliage3)"][v % 3];
-    // slight per-tree rotation for variety
-    const rot = (v * 47) % 360;
+    const fill = ["#3c6624", "#436f2c", "#345c20"][v % 3];
+    // Light 2D tree: 1 shadow + 1 canopy circle + 1 highlight = 3 nodes (no filter).
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            {/* dark cast shadow */}
-            <ellipse cx="4" cy="6" rx="11" ry="4" fill="#0a1c08" opacity="0.4" />
-            <g transform={`rotate(${rot})`} filter="url(#treeSh)">
-                {/* irregular bumpy canopy — many small lobes give a rough realistic outline */}
-                <circle cx="-6" cy="-1" r="4.6" fill={grad} />
-                <circle cx="-3" cy="-6" r="4.8" fill={grad} />
-                <circle cx="2" cy="-7" r="4.4" fill={grad} />
-                <circle cx="6" cy="-3" r="4.6" fill={grad} />
-                <circle cx="7" cy="2" r="4.2" fill={grad} />
-                <circle cx="3" cy="6" r="4.6" fill={grad} />
-                <circle cx="-3" cy="6" r="4.4" fill={grad} />
-                <circle cx="-7" cy="3" r="4.2" fill={grad} />
-                <circle cx="0" cy="0" r="7.5" fill={grad} />
-                {/* dark inner clumps for leafy texture */}
-                <circle cx="-2" cy="1" r="2.4" fill="#183009" opacity="0.5" />
-                <circle cx="3" cy="-1" r="1.8" fill="#183009" opacity="0.45" />
-                <circle cx="-1" cy="-3" r="1.6" fill="#183009" opacity="0.4" />
-                {/* small sunlit leaf highlights (top-left) */}
-                <circle cx="-3" cy="-4" r="2" fill="#8fc65a" opacity="0.55" />
-                <circle cx="-5" cy="-1" r="1.3" fill="#a3d66a" opacity="0.45" />
-                <circle cx="1" cy="-5" r="1.2" fill="#8fc65a" opacity="0.4" />
-            </g>
+            <ellipse cx="3" cy="7" rx="12" ry="4" fill="#0a1c08" opacity="0.32" />
+            <circle cx="0" cy="0" r="12" fill={fill} />
+            <circle cx="-3.5" cy="-3.5" r="4.5" fill="#6fa43f" opacity="0.55" />
         </g>
     );
 }
@@ -127,11 +107,11 @@ function StreetLight({ x, y, night = false }: { x: number; y: number; night?: bo
 }
 
 function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+    // Light 2D stone: 1 shadow + 1 rock ellipse = 2 nodes.
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            <ellipse cx="1.5" cy="2" rx="6" ry="2.4" fill="#000" opacity="0.2" />
-            <path d="M-5,1 Q-6,-3 -2,-4 Q2,-5 5,-2 Q6,2 2,3 Q-3,3 -5,1 Z" fill="#9a927c" />
-            <path d="M-5,1 Q-6,-3 -2,-4 Q0,-4 1,-1 Q0,2 -2,3 Q-4,3 -5,1 Z" fill="#b3ab94" opacity="0.7" />
+            <ellipse cx="1.5" cy="2.5" rx="7" ry="2.6" fill="#000" opacity="0.18" />
+            <ellipse cx="0" cy="0" rx="6" ry="4.2" fill="#a49c86" />
         </g>
     );
 }
@@ -142,21 +122,10 @@ function Car({ path, dur, delay, color, night = false }: { path: string; dur: nu
         <g pointerEvents="none">
             <g>
                 <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite" rotate="auto" path={path} />
-                {/* headlight beams (night only) — cast forward along +x */}
-                {night && (
-                    <g>
-                        <path d="M13,-4 L46,-16 L46,16 L13,4 Z" fill="url(#headBeam)" opacity="0.5" />
-                        <circle cx="30" cy="0" r="16" fill="#fff3c4" opacity="0.12" />
-                    </g>
-                )}
-                {/* car body drawn pointing along +x (travel direction) */}
-                <ellipse cx="0" cy="6" rx="11" ry="6" fill="#000" opacity="0.22" />
+                {night && <path d="M13,-4 L44,-15 L44,15 L13,4 Z" fill="url(#headBeam)" opacity="0.45" />}
                 <rect x="-13" y="-6" width="26" height="12" rx="4" fill={color} />
-                <rect x="-8" y="-4.5" width="9" height="9" rx="2" fill="#cfe4f2" opacity="0.85" />
-                <rect x="3" y="-4.5" width="6" height="9" rx="2" fill="#0d1620" opacity="0.5" />
-                <circle cx="11" cy="-4" r="1.6" fill={night ? "#fffce8" : "#fff6cf"} /><circle cx="11" cy="4" r="1.6" fill={night ? "#fffce8" : "#fff6cf"} />
-                {/* red tail lights at night */}
-                {night && <><circle cx="-12" cy="-4" r="1.3" fill="#ff5a4a" /><circle cx="-12" cy="4" r="1.3" fill="#ff5a4a" /></>}
+                <rect x="-7" y="-4.5" width="10" height="9" rx="2" fill="#cfe4f2" opacity="0.8" />
+                <circle cx="11" cy="0" r="2" fill={night ? "#fffce8" : "#fff6cf"} />
             </g>
         </g>
     );
@@ -316,33 +285,32 @@ export default function LayoutMap() {
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
-    // Grove centres concentrated in/around the VISIBLE viewport (60..1190 x, 190..1200 y),
-    // with extra spill just beyond the edges so the greenery reaches the screen borders.
-    for (let g = 0; g < 60; g++) {
+    // Grove centres — fewer, bigger 2D trees (light on the DOM, still fills the screen).
+    for (let g = 0; g < 34; g++) {
         const gx = -120 + rnd() * 1440;
         const gy = -60 + rnd() * 1420;
-        const count = 9 + Math.floor(rnd() * 14); // 9–22 trees per grove
-        const spread = 45 + rnd() * 95;
+        const count = 5 + Math.floor(rnd() * 7); // 5–11 trees per grove
+        const spread = 55 + rnd() * 90;
         for (let j = 0; j < count; j++) {
             const ox = ((rnd() + rnd() - 1)) * spread;
             const oy = ((rnd() + rnd() - 1)) * spread;
             const x = gx + ox, y = gy + oy;
             if (inCore(x, y)) continue;
-            trees.push([x, y, 0.7 + rnd() * 0.9]);
+            trees.push([x, y, 1.1 + rnd() * 0.8]);
         }
     }
-    // scattered singles to fill gaps between groves
-    for (let i = 0; i < 120; i++) {
+    // scattered singles to fill gaps
+    for (let i = 0; i < 60; i++) {
         const x = -140 + rnd() * 1480;
         const y = -80 + rnd() * 1460;
         if (inCore(x, y)) continue;
-        trees.push([x, y, 0.7 + rnd() * 0.8]);
+        trees.push([x, y, 1.1 + rnd() * 0.7]);
     }
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0; i < 40; i++) {
         const x = -100 + rnd() * 1400;
         const y = -60 + rnd() * 1420;
         if (inCore(x, y)) continue;
-        stones.push([x, y, 0.5 + rnd() * 1.1]);
+        stones.push([x, y, 1 + rnd() * 1.2]);
     }
 
     return (
@@ -618,9 +586,7 @@ export default function LayoutMap() {
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
-                                        <polygon points={p.pts} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
-                                        <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
+                                        <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : undefined} />
                                         <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                     </g>
                                 );
