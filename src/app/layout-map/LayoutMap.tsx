@@ -74,17 +74,6 @@ type ViewBox = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
 
 const BASE_VB: ViewBox = { x: 60, y: 190, w: 1130, h: 1010 };
-const ASPECT = BASE_VB.h / BASE_VB.w;
-const MIN_W = BASE_VB.w / 8;
-const MAX_W = BASE_VB.w * 1.7;
-const pivotX = BASE_VB.x + BASE_VB.w / 2;
-const pivotY = BASE_VB.y + BASE_VB.h / 2;
-
-function rotateDelta(dx: number, dy: number, deg: number): [number, number] {
-    const r = (-deg * Math.PI) / 180;
-    const cos = Math.cos(r), sin = Math.sin(r);
-    return [dx * cos - dy * sin, dx * sin + dy * cos];
-}
 
 const centroid = (pts: string): Point => {
     const n = pts.split(/[ ,]+/).map(Number);
@@ -179,10 +168,8 @@ export default function LayoutMap() {
     const [photosOpen, setPhotosOpen] = useState(false);
     const [night, setNight] = useState(false);
     const [splash, setSplash] = useState(true);
-    const [view, setView] = useState<ViewBox>({ ...BASE_VB });
-    const [rot, setRot] = useState(0);
 
-    // 5-second intro splash when the map first loads
+    // 2-second intro splash when the map first loads
     useEffect(() => {
         const t = window.setTimeout(() => setSplash(false), 2000);
         return () => window.clearTimeout(t);
@@ -190,118 +177,137 @@ export default function LayoutMap() {
 
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
-    const rotGRef = useRef<SVGGElement | null>(null);
+    const cameraRef = useRef<SVGGElement | null>(null);
     const compassRef = useRef<SVGGElement | null>(null);
 
-    const target = useRef<{ view: ViewBox; rot: number }>({ view: { ...BASE_VB }, rot: 0 });
-    const cur = useRef<{ view: ViewBox; rot: number }>({ view: { ...BASE_VB }, rot: 0 });
+    // Camera state: scale (s), translate (tx,ty in screen px), rotation (deg).
+    // Applied as a CSS transform on ONE group → GPU-composited, no re-rasterization → smooth on mobile.
+    type Cam = { s: number; tx: number; ty: number; rot: number };
+    const cur = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
+    const target = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
     const raf = useRef<number | null>(null);
     const animating = useRef(false);
-    const drag = useRef<{ px: number; py: number; vx: number; vy: number } | null>(null);
-    const gesture = useRef<{ d: number; ang: number } | null>(null);
+    const drag = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
+    const gesture = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
+    const [, forceCompass] = useState(0);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
 
-    const paint = (v: ViewBox, r: number) => {
-        if (svgRef.current) svgRef.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
-        if (rotGRef.current) rotGRef.current.setAttribute("transform", `rotate(${r} ${pivotX} ${pivotY})`);
-        if (compassRef.current) compassRef.current.setAttribute("transform", `translate(1120,250) rotate(${-r})`);
+    const S_MIN = 0.35, S_MAX = 9;
+
+    // Screen→user scale: how many user units per screen pixel at base zoom.
+    const baseScaleRef = useRef(1);
+    const computeBaseScale = () => {
+        const el = wrapRef.current; if (!el) return 1;
+        const r = el.getBoundingClientRect();
+        // viewBox is meet-fitted, so the smaller ratio governs
+        return Math.min(r.width / BASE_VB.w, r.height / BASE_VB.h) || 1;
     };
 
+    // Write the transform straight to the DOM (fast path).
+    const paint = (c: Cam) => {
+        if (cameraRef.current) {
+            const bs = baseScaleRef.current || 1;
+            // tx/ty are in screen px → convert to user units (÷ base scale) so pan matches finger.
+            cameraRef.current.style.transform =
+                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) rotate(${c.rot}deg)`;
+        }
+        if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
+    };
 
     const tick = useCallback(() => {
-        const c = cur.current, t = target.current, eV = c.view, tV = t.view, k = 0.35;
-        eV.x += (tV.x - eV.x) * k; eV.y += (tV.y - eV.y) * k;
-        eV.w += (tV.w - eV.w) * k; eV.h += (tV.h - eV.h) * k;
-        let dr = t.rot - c.rot; while (dr > 180) dr -= 360; while (dr < -180) dr += 360;
-        c.rot += dr * k;
-        const done = Math.abs(tV.x - eV.x) < 0.05 && Math.abs(tV.y - eV.y) < 0.05 &&
-            Math.abs(tV.w - eV.w) < 0.05 && Math.abs(tV.h - eV.h) < 0.05 && Math.abs(dr) < 0.05;
+        const c = cur.current, t = target.current, k = 0.32;
+        c.s += (t.s - c.s) * k;
+        c.tx += (t.tx - c.tx) * k;
+        c.ty += (t.ty - c.ty) * k;
+        let dr = t.rot - c.rot; c.rot += dr * k;
+        const done = Math.abs(t.s - c.s) < 0.0005 && Math.abs(t.tx - c.tx) < 0.1 &&
+            Math.abs(t.ty - c.ty) < 0.1 && Math.abs(dr) < 0.05;
         if (done) {
-            c.view = { ...tV }; c.rot = t.rot; paint(tV, t.rot);
-            setView({ ...tV }); setRot(t.rot); animating.current = false; raf.current = null;
-            return;
+            cur.current = { ...t }; paint(t); animating.current = false; raf.current = null;
+            forceCompass((n) => n + 1); return;
         }
-        paint(eV, c.rot); raf.current = requestAnimationFrame(tick);
+        paint(c); raf.current = requestAnimationFrame(tick);
     }, []);
 
     const startAnim = useCallback(() => {
         if (!animating.current) { animating.current = true; raf.current = requestAnimationFrame(tick); }
     }, [tick]);
 
-    const setNow = useCallback((v: ViewBox, r?: number) => {
+    // Direct (no easing) set — used during finger drag/pinch for 1:1 response.
+    const setNow = (c: Cam) => {
         if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
         animating.current = false;
-        cur.current.view = { ...v }; if (r !== undefined) cur.current.rot = r;
-        target.current.view = { ...v }; if (r !== undefined) target.current.rot = r;
-        paint(v, r !== undefined ? r : cur.current.rot);
-    }, []);
+        cur.current = { ...c }; target.current = { ...c }; paint(c);
+    };
 
-    const commit = useCallback(() => { setView({ ...cur.current.view }); setRot(cur.current.rot); }, []);
+    // Zoom toward a screen point (cx,cy relative to wrapper), keeping that point fixed.
+    const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
+        const ns = Math.min(S_MAX, Math.max(S_MIN, base.s * factor));
+        const f = ns / base.s;
+        // keep the point under the cursor stationary: tx' = cx - f*(cx - tx)
+        return { s: ns, tx: cx - f * (cx - base.tx), ty: cy - f * (cy - base.ty), rot: base.rot };
+    };
 
-    const toUser = (clientX: number, clientY: number, v: ViewBox): Point => {
-        const el = wrapRef.current;
-        if (!el) return { x: v.x + v.w / 2, y: v.y + v.h / 2 };
-        const rect = el.getBoundingClientRect();
-        const scale = Math.min(rect.width / v.w, rect.height / v.h);
-        const offX = (rect.width - v.w * scale) / 2, offY = (rect.height - v.h * scale) / 2;
-        return { x: v.x + (clientX - rect.left - offX) / scale, y: v.y + (clientY - rect.top - offY) / scale };
+    const relPt = (clientX: number, clientY: number) => {
+        const el = wrapRef.current; if (!el) return { x: 0, y: 0 };
+        const r = el.getBoundingClientRect();
+        return { x: clientX - r.left, y: clientY - r.top };
     };
-    const clampW = (w: number) => Math.min(MAX_W, Math.max(MIN_W, w));
-    const zoomedView = (base: ViewBox, factor: number, cx: number, cy: number): ViewBox => {
-        const nw = clampW(base.w / factor), nh = nw * ASPECT, f = toUser(cx, cy, base);
-        const rx = (f.x - base.x) / base.w, ry = (f.y - base.y) / base.h;
-        return { x: f.x - rx * nw, y: f.y - ry * nh, w: nw, h: nh };
+
+    const smoothZoom = (factor: number, clientX: number, clientY: number) => {
+        const p = relPt(clientX, clientY);
+        target.current = zoomAt(target.current, factor, p.x, p.y); startAnim();
     };
-    const smoothZoom = (factor: number, cx: number, cy: number) => {
-        target.current.view = zoomedView(target.current.view, factor, cx, cy); startAnim();
-    };
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.25 : 1 / 1.25, e.clientX, e.clientY); };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.22 : 1 / 1.22, e.clientX, e.clientY); };
 
     const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     const angle = (a: React.Touch, b: React.Touch) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI;
 
     const onTouchStart = (e: React.TouchEvent) => {
-        if (e.touches.length === 2) { gesture.current = { d: dist(e.touches[0], e.touches[1]), ang: angle(e.touches[0], e.touches[1]) }; drag.current = null; }
-        else if (e.touches.length === 1) drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, vx: cur.current.view.x, vy: cur.current.view.y };
-    };
-    const onTouchMove = (e: React.TouchEvent) => {
-        const el = wrapRef.current;
-        if (e.touches.length === 2 && gesture.current && el) {
-            e.preventDefault();
-            const g = gesture.current, nd = dist(e.touches[0], e.touches[1]), na = angle(e.touches[0], e.touches[1]);
-            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            setNow(zoomedView(cur.current.view, nd / g.d, cx, cy), cur.current.rot + (na - g.ang));
-            g.d = nd; g.ang = na;
-        } else if (e.touches.length === 1 && drag.current && el) {
-            e.preventDefault();
-            const d = drag.current, rect = el.getBoundingClientRect();
-            const scale = Math.min(rect.width / cur.current.view.w, rect.height / cur.current.view.h);
-            let dx = (e.touches[0].clientX - d.px) / scale, dy = (e.touches[0].clientY - d.py) / scale;
-            [dx, dy] = rotateDelta(dx, dy, cur.current.rot);
-            setNow({ ...cur.current.view, x: d.vx - dx, y: d.vy - dy });
+        if (e.touches.length === 2) {
+            const p = relPt((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+            gesture.current = { d: dist(e.touches[0], e.touches[1]), ang: angle(e.touches[0], e.touches[1]), cx: p.x, cy: p.y };
+            drag.current = null;
+        } else if (e.touches.length === 1) {
+            drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, tx: cur.current.tx, ty: cur.current.ty };
         }
     };
-    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; commit(); } };
-    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, vx: cur.current.view.x, vy: cur.current.view.y }; };
-    const onMouseMove = (e: React.MouseEvent) => {
-        const el = wrapRef.current, d = drag.current; if (!d || !el) return;
-        const rect = el.getBoundingClientRect();
-        const scale = Math.min(rect.width / cur.current.view.w, rect.height / cur.current.view.h);
-        let dx = (e.clientX - d.px) / scale, dy = (e.clientY - d.py) / scale;
-        [dx, dy] = rotateDelta(dx, dy, cur.current.rot);
-        setNow({ ...cur.current.view, x: d.vx - dx, y: d.vy - dy });
+    const onTouchMove = (e: React.TouchEvent) => {
+        if (e.touches.length === 2 && gesture.current) {
+            e.preventDefault();
+            const g = gesture.current, nd = dist(e.touches[0], e.touches[1]), na = angle(e.touches[0], e.touches[1]);
+            const p = relPt((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+            let c = zoomAt(cur.current, nd / g.d, p.x, p.y);
+            // pan by the movement of the pinch centre + apply rotation delta
+            c = { ...c, tx: c.tx + (p.x - g.cx), ty: c.ty + (p.y - g.cy), rot: c.rot + (na - g.ang) };
+            setNow(c);
+            g.d = nd; g.ang = na; g.cx = p.x; g.cy = p.y;
+        } else if (e.touches.length === 1 && drag.current) {
+            e.preventDefault();
+            const d = drag.current;
+            setNow({ ...cur.current, tx: d.tx + (e.touches[0].clientX - d.px), ty: d.ty + (e.touches[0].clientY - d.py) });
+        }
     };
-    const onMouseUp = () => { if (drag.current) { drag.current = null; commit(); } };
+    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; } };
+    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, tx: cur.current.tx, ty: cur.current.ty }; };
+    const onMouseMove = (e: React.MouseEvent) => {
+        const d = drag.current; if (!d) return;
+        setNow({ ...cur.current, tx: d.tx + (e.clientX - d.px), ty: d.ty + (e.clientY - d.py) });
+    };
+    const onMouseUp = () => { drag.current = null; };
 
-    const reset = () => { target.current = { view: { ...BASE_VB }, rot: 0 }; startAnim(); };
+    const reset = () => { target.current = { s: 1, tx: 0, ty: 0, rot: 0 }; startAnim(); };
     const btnZoom = (f: number) => { const el = wrapRef.current; if (el) { const r = el.getBoundingClientRect(); smoothZoom(f, r.left + r.width / 2, r.top + r.height / 2); } };
-    const rotate = () => { target.current.rot += 45; startAnim(); };
+    const rotate = () => { target.current = { ...target.current, rot: target.current.rot + 45 }; startAnim(); };
 
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
+        baseScaleRef.current = computeBaseScale();
         el.addEventListener("wheel", onWheel, { passive: false });
-        return () => { el.removeEventListener("wheel", onWheel); if (raf.current) cancelAnimationFrame(raf.current); };
+        const onResize = () => { baseScaleRef.current = computeBaseScale(); };
+        window.addEventListener("resize", onResize);
+        return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
 
     // Trees clustered into dense groves (like the AR3D reference) + stones.
@@ -390,7 +396,7 @@ export default function LayoutMap() {
             <div className="lm-stage" ref={wrapRef}
                 onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
                 onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
-                <svg ref={svgRef} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
+                <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
                         {/* Terrain — layered earth with warm sun */}
                         <radialGradient id="terrain" cx="0.32" cy="0.22" r="1.15">
@@ -492,192 +498,195 @@ export default function LayoutMap() {
                         </radialGradient>
                     </defs>
 
-                    {/* terrain base + texture */}
-                    <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
-                    <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
-                    {/* scattered dry-grass patches for realism */}
-                    <g pointerEvents="none">
-                        <ellipse cx="220" cy="380" rx="130" ry="80" fill="url(#patch)" />
-                        <ellipse cx="1000" cy="450" rx="150" ry="90" fill="url(#patch)" />
-                        <ellipse cx="320" cy="1080" rx="160" ry="90" fill="url(#patch)" />
-                        <ellipse cx="1050" cy="950" rx="140" ry="80" fill="url(#patch)" />
-                        <ellipse cx="700" cy="1120" rx="180" ry="70" fill="url(#patch)" />
+                    <g ref={cameraRef} className="lm-camera">
+                        {/* terrain base + texture */}
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
+                        {/* scattered dry-grass patches for realism */}
+                        <g pointerEvents="none">
+                            <ellipse cx="220" cy="380" rx="130" ry="80" fill="url(#patch)" />
+                            <ellipse cx="1000" cy="450" rx="150" ry="90" fill="url(#patch)" />
+                            <ellipse cx="320" cy="1080" rx="160" ry="90" fill="url(#patch)" />
+                            <ellipse cx="1050" cy="950" rx="140" ry="80" fill="url(#patch)" />
+                            <ellipse cx="700" cy="1120" rx="180" ry="70" fill="url(#patch)" />
+                        </g>
+
+
+                        <g>
+                            {/* (parcel base removed — terrain shows through, no boundary shape) */}
+
+
+                            {/* roads — recessed asphalt with texture */}
+                            <g filter="url(#plotSh)">
+                                <polygon points={ROADS.top} fill="url(#asphalt)" />
+                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
+                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
+                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphalt)" />
+                            </g>
+                            {/* asphalt grain */}
+                            <g opacity="0.9" pointerEvents="none">
+                                <polygon points={ROADS.top} fill="url(#asphaltTex)" />
+                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltTex)" />
+                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltTex)" />
+                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphaltTex)" />
+                            </g>
+                            {/* light concrete kerbs */}
+                            <g className="lm-kerb" pointerEvents="none">
+                                <polygon points={ROADS.top} />
+                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
+                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
+                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
+                            </g>
+                            {/* interlocking-paver pathway */}
+                            <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
+                            <g className="lm-paver" pointerEvents="none">
+                                {Array.from({ length: Math.floor((ROADS.path.w - 14) / 30) }).map((_, i) => (
+                                    <line key={i} x1={ROADS.path.x + 14 + i * 30} y1={ROADS.path.y} x2={ROADS.path.x + 14 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
+                                ))}
+                            </g>
+                            {/* lane markings — bright centre dashes */}
+                            <g className="lm-lane" pointerEvents="none">
+                                <line x1="531" y1="270" x2="531" y2="944" />
+                                <line x1="822" y1="270" x2="822" y2="944" />
+                                <line x1="122" y1="499" x2="500" y2="499" />
+                                <line x1="118" y1="223" x2="1108" y2="223" />
+                            </g>
+                            {/* manhole covers */}
+                            <g className="lm-drain" pointerEvents="none">
+                                <circle cx="531" cy="360" r="3.4" /><circle cx="531" cy="640" r="3.4" /><circle cx="531" cy="880" r="3.4" />
+                                <circle cx="822" cy="420" r="3.4" /><circle cx="822" cy="700" r="3.4" /><circle cx="822" cy="900" r="3.4" />
+                            </g>
+                            {/* ROAD NAME LABELS */}
+                            <g pointerEvents="none">
+                                <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
+                                <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
+                                <text x="822" y="620" className="lm-road-lbl" transform="rotate(-90 822 620)">9m ROAD</text>
+                                <text x="300" y="504" className="lm-road-lbl">9m ROAD</text>
+                                <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
+                            </g>
+
+                            {/* KARAB (open space) — turf + stone edge + landscaped lake */}
+                            <polygon points={KARAB} fill="url(#grass)" filter="url(#plotSh)" />
+                            <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
+                            <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
+                            <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
+                            {/* jogging path loop */}
+                            <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
+                            {/* lake with rim + highlight */}
+                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#lake)" filter="url(#softSh)" />
+                            <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 20} rx="52" ry="18" fill="#fff" opacity="0.22" pointerEvents="none" />
+                            {Array.from({ length: 26 }).map((_, i) => {
+                                const a = (i / 26) * Math.PI * 2;
+                                return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 5)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 4)} r={2 + (i % 3)} fill="#9a927c" opacity="0.7" pointerEvents="none" />;
+                            })}
+                            {/* flower beds */}
+                            {[[200, 760, "#e07aa8"], [420, 770, "#f0b429"], [180, 905, "#c85a9a"], [440, 900, "#e8a020"]].map(([x, y, col], i) => (
+                                <g key={i} pointerEvents="none">
+                                    <circle cx={x as number} cy={y as number} r="9" fill="#3c6424" />
+                                    <circle cx={(x as number) - 3} cy={(y as number) - 2} r="4" fill={col as string} />
+                                    <circle cx={(x as number) + 3} cy={(y as number) + 1} r="3.4" fill={col as string} opacity="0.8" />
+                                </g>
+                            ))}
+                            <text x="300" y="835" className="lm-amen-label">KARAB</text>
+
+                            {/* CA — light-green turf with clubhouse hint */}
+                            <polygon points={CA} fill="url(#ca)" filter="url(#plotSh)" />
+                            <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
+                            <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
+                            <polygon points={CA} className="lm-amen-border" pointerEvents="none" />
+                            <g transform="translate(195,330)" pointerEvents="none">
+                                <ellipse cx="0" cy="20" rx="30" ry="8" fill="#000" opacity="0.16" />
+                                <rect x="-26" y="-6" width="52" height="24" rx="2" fill="#eef4ea" />
+                                <polygon points="-30,-6 30,-6 22,-20 -22,-20" fill="#8fb87a" />
+                                <rect x="-18" y="4" width="7" height="12" fill="#a9c99a" /><rect x="-4" y="4" width="7" height="12" fill="#a9c99a" /><rect x="10" y="4" width="7" height="12" fill="#a9c99a" />
+                            </g>
+                            <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
+                            <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
+
+                            {/* STP — utility compound (building fits inside box, clear of road at x=502) */}
+                            <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
+                            <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
+                            <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
+                            <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
+                            <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
+
+                            {/* PLOTS */}
+                            {PLOTS.map((p) => {
+                                const c = centroid(p.pts);
+                                const isSel = p.id === selected;
+                                return (
+                                    <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
+                                        role="button" tabIndex={0}
+                                        onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
+                                        <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
+                                        <polygon points={p.pts} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
+                                        <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
+                                        <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
+                                    </g>
+                                );
+                            })}
+
+                            {/* Decoration layer — hidden during zoom/pan for smoothness */}
+                            <g>
+                                {/* trees (with shadows) */}
+                                {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
+                                {/* stones scattered on open land */}
+                                {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
+                            </g>
+
+                            {/* Day: warm sun wash. Night: dark overlay dimming everything below. */}
+                            {night
+                                ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />
+                                : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
+
+                            {/* Lights & vehicles render ABOVE the night overlay so they stay bright */}
+                            <g style={{ transition: "opacity .18s ease" }}>
+                                {/* At night: re-draw roads LIT so they stay clearly visible */}
+                                {night && (
+                                    <g pointerEvents="none">
+                                        {/* soft warm glow bed under roads (from streetlights) */}
+                                        <polygon points={ROADS.top} fill="#5a5548" opacity="0.5" />
+                                        <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#5a5548" opacity="0.5" />
+                                        <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#5a5548" opacity="0.5" />
+                                        <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#5a5548" opacity="0.5" />
+                                        {/* lit asphalt surface */}
+                                        <polygon points={ROADS.top} fill="#4a463a" />
+                                        <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#4a463a" />
+                                        <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#4a463a" />
+                                        <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#4a463a" />
+                                        {/* bright centre lane markings */}
+                                        <g stroke="#fff0b8" strokeWidth="2.6" strokeDasharray="14 16" opacity="0.85" strokeLinecap="round">
+                                            <line x1="531" y1="266" x2="531" y2="944" />
+                                            <line x1="822" y1="266" x2="822" y2="944" />
+                                            <line x1="122" y1="499" x2="556" y2="499" />
+                                            <line x1="118" y1="223" x2="1108" y2="223" />
+                                        </g>
+                                    </g>
+                                )}
+                                {/* cars with headlights (headlights only glow at night) */}
+                                <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" night={night} />
+                                <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" night={night} />
+                                {/* street lights at ROAD CORNERS & JUNCTIONS */}
+                                {[
+                                    // top 12m road — evenly spaced along it
+                                    [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
+                                    // left 9m road — top junction, mid-road junction, bottom corner
+                                    [531, 300], [531, 499], [531, 720], [531, 930],
+                                    // right 9m road — top junction, middle, bottom corner
+                                    [822, 300], [822, 560], [822, 820], [822, 930],
+                                    // mid 9m road — left end and junction with left road
+                                    [150, 499], [340, 499],
+                                ].map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
+                            </g>
+                        </g>
                     </g>
 
-
-                    <g ref={rotGRef} transform={`rotate(${rot} ${pivotX} ${pivotY})`}>
-                        {/* (parcel base removed — terrain shows through, no boundary shape) */}
-
-                        {/* roads — recessed asphalt with texture */}
-                        <g filter="url(#plotSh)">
-                            <polygon points={ROADS.top} fill="url(#asphalt)" />
-                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
-                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
-                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphalt)" />
-                        </g>
-                        {/* asphalt grain */}
-                        <g opacity="0.9" pointerEvents="none">
-                            <polygon points={ROADS.top} fill="url(#asphaltTex)" />
-                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltTex)" />
-                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltTex)" />
-                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphaltTex)" />
-                        </g>
-                        {/* light concrete kerbs */}
-                        <g className="lm-kerb" pointerEvents="none">
-                            <polygon points={ROADS.top} />
-                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
-                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
-                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
-                        </g>
-                        {/* interlocking-paver pathway */}
-                        <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
-                        <g className="lm-paver" pointerEvents="none">
-                            {Array.from({ length: Math.floor((ROADS.path.w - 14) / 30) }).map((_, i) => (
-                                <line key={i} x1={ROADS.path.x + 14 + i * 30} y1={ROADS.path.y} x2={ROADS.path.x + 14 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
-                            ))}
-                        </g>
-                        {/* lane markings — bright centre dashes */}
-                        <g className="lm-lane" pointerEvents="none">
-                            <line x1="531" y1="270" x2="531" y2="944" />
-                            <line x1="822" y1="270" x2="822" y2="944" />
-                            <line x1="122" y1="499" x2="500" y2="499" />
-                            <line x1="118" y1="223" x2="1108" y2="223" />
-                        </g>
-                        {/* manhole covers */}
-                        <g className="lm-drain" pointerEvents="none">
-                            <circle cx="531" cy="360" r="3.4" /><circle cx="531" cy="640" r="3.4" /><circle cx="531" cy="880" r="3.4" />
-                            <circle cx="822" cy="420" r="3.4" /><circle cx="822" cy="700" r="3.4" /><circle cx="822" cy="900" r="3.4" />
-                        </g>
-                        {/* ROAD NAME LABELS */}
-                        <g pointerEvents="none">
-                            <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
-                            <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
-                            <text x="822" y="620" className="lm-road-lbl" transform="rotate(-90 822 620)">9m ROAD</text>
-                            <text x="300" y="504" className="lm-road-lbl">9m ROAD</text>
-                            <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
-                        </g>
-
-                        {/* KARAB (open space) — turf + stone edge + landscaped lake */}
-                        <polygon points={KARAB} fill="url(#grass)" filter="url(#plotSh)" />
-                        <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
-                        <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
-                        <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
-                        {/* jogging path loop */}
-                        <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
-                        {/* lake with rim + highlight */}
-                        <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#lake)" filter="url(#softSh)" />
-                        <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 20} rx="52" ry="18" fill="#fff" opacity="0.22" pointerEvents="none" />
-                        {Array.from({ length: 26 }).map((_, i) => {
-                            const a = (i / 26) * Math.PI * 2;
-                            return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 5)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 4)} r={2 + (i % 3)} fill="#9a927c" opacity="0.7" pointerEvents="none" />;
-                        })}
-                        {/* flower beds */}
-                        {[[200, 760, "#e07aa8"], [420, 770, "#f0b429"], [180, 905, "#c85a9a"], [440, 900, "#e8a020"]].map(([x, y, col], i) => (
-                            <g key={i} pointerEvents="none">
-                                <circle cx={x as number} cy={y as number} r="9" fill="#3c6424" />
-                                <circle cx={(x as number) - 3} cy={(y as number) - 2} r="4" fill={col as string} />
-                                <circle cx={(x as number) + 3} cy={(y as number) + 1} r="3.4" fill={col as string} opacity="0.8" />
-                            </g>
-                        ))}
-                        <text x="300" y="835" className="lm-amen-label">KARAB</text>
-
-                        {/* CA — light-green turf with clubhouse hint */}
-                        <polygon points={CA} fill="url(#ca)" filter="url(#plotSh)" />
-                        <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
-                        <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
-                        <polygon points={CA} className="lm-amen-border" pointerEvents="none" />
-                        <g transform="translate(195,330)" pointerEvents="none">
-                            <ellipse cx="0" cy="20" rx="30" ry="8" fill="#000" opacity="0.16" />
-                            <rect x="-26" y="-6" width="52" height="24" rx="2" fill="#eef4ea" />
-                            <polygon points="-30,-6 30,-6 22,-20 -22,-20" fill="#8fb87a" />
-                            <rect x="-18" y="4" width="7" height="12" fill="#a9c99a" /><rect x="-4" y="4" width="7" height="12" fill="#a9c99a" /><rect x="10" y="4" width="7" height="12" fill="#a9c99a" />
-                        </g>
-                        <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
-                        <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
-
-                        {/* STP — utility compound (building fits inside box, clear of road at x=502) */}
-                        <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
-                        <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
-                        <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
-                        <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
-                        <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
-
-                        {/* PLOTS */}
-                        {PLOTS.map((p) => {
-                            const c = centroid(p.pts);
-                            const isSel = p.id === selected;
-                            return (
-                                <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
-                                    role="button" tabIndex={0}
-                                    onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                    <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
-                                    <polygon points={p.pts} fill="url(#turf)" opacity="0.4" pointerEvents="none" />
-                                    <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
-                                    <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
-                                </g>
-                            );
-                        })}
-
-                        {/* Decoration layer — hidden during zoom/pan for smoothness */}
-                        <g>
-                            {/* trees (with shadows) */}
-                            {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
-                            {/* stones scattered on open land */}
-                            {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
-                        </g>
-
-                        {/* compass */}
-                        <g ref={compassRef} transform={`translate(1120,250) rotate(${-rot})`}>
-                            <circle r="20" fill="rgba(20,24,16,.72)" stroke="url(#gold)" strokeWidth="1.6" />
-                            <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" fill="#e0504a" />
-                            <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" fill="#6a7256" />
-                            <text y="-24" textAnchor="middle" fill="#e7cd85" fontSize="12" fontWeight="800">N</text>
-                        </g>
-
-                        {/* Day: warm sun wash. Night: dark overlay dimming everything below. */}
-                        {night
-                            ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />
-                            : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
-
-                        {/* Lights & vehicles render ABOVE the night overlay so they stay bright */}
-                        <g style={{ transition: "opacity .18s ease" }}>
-                            {/* At night: re-draw roads LIT so they stay clearly visible */}
-                            {night && (
-                                <g pointerEvents="none">
-                                    {/* soft warm glow bed under roads (from streetlights) */}
-                                    <polygon points={ROADS.top} fill="#5a5548" opacity="0.5" />
-                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#5a5548" opacity="0.5" />
-                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#5a5548" opacity="0.5" />
-                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#5a5548" opacity="0.5" />
-                                    {/* lit asphalt surface */}
-                                    <polygon points={ROADS.top} fill="#4a463a" />
-                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#4a463a" />
-                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#4a463a" />
-                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#4a463a" />
-                                    {/* bright centre lane markings */}
-                                    <g stroke="#fff0b8" strokeWidth="2.6" strokeDasharray="14 16" opacity="0.85" strokeLinecap="round">
-                                        <line x1="531" y1="266" x2="531" y2="944" />
-                                        <line x1="822" y1="266" x2="822" y2="944" />
-                                        <line x1="122" y1="499" x2="556" y2="499" />
-                                        <line x1="118" y1="223" x2="1108" y2="223" />
-                                    </g>
-                                </g>
-                            )}
-                            {/* cars with headlights (headlights only glow at night) */}
-                            <Car path="M525,266 L525,944 L537,944 L537,266 Z" dur={13} delay={0} color="#c94f4f" night={night} />
-                            <Car path="M140,219 L1080,219 L1080,229 L140,229 Z" dur={18} delay={1.5} color="#e8e2d0" night={night} />
-                            {/* street lights at ROAD CORNERS & JUNCTIONS */}
-                            {[
-                                // top 12m road — evenly spaced along it
-                                [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
-                                // left 9m road — top junction, mid-road junction, bottom corner
-                                [531, 300], [531, 499], [531, 720], [531, 930],
-                                // right 9m road — top junction, middle, bottom corner
-                                [822, 300], [822, 560], [822, 820], [822, 930],
-                                // mid 9m road — left end and junction with left road
-                                [150, 499], [340, 499],
-                            ].map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
-                        </g>
+                    {/* compass — fixed on screen */}
+                    <g transform="translate(1120,250)">
+                        <circle r="20" fill="rgba(20,24,16,.72)" stroke="url(#gold)" strokeWidth="1.6" />
+                        <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" fill="#e0504a" />
+                        <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" fill="#6a7256" />
+                        <text y="-24" textAnchor="middle" fill="#e7cd85" fontSize="12" fontWeight="800">N</text>
                     </g>
                 </svg>
 
@@ -841,6 +850,7 @@ const css = `
   background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230); }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
+.lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
 /* ===== Train IQ credit logo + popup ===== */
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
