@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
  * quadrilaterals. Plot sizes are proportional to real metres (one global scale),
  * so bigger plots genuinely look bigger. Tap a plot for exact dimensions.
  *
- * Plot status (available / interested / sold) is loaded live from Supabase and
+ * Plot status (available / reserved / sold) is loaded live from Supabase and
  * colour-coded on the map. Admin sets status from the [plotId] details page.
  */
 
@@ -17,11 +17,11 @@ type Plot = {
     id: string; pts: string; dim: string; facing: string; sqm: number; sqft: number;
 };
 
-type Status = "available" | "interested" | "sold";
+type Status = "available" | "reserved" | "sold";
 
 const STATUS_META: Record<Status, { label: string; fill: string; sel: string; legend: string }> = {
     available: { label: "Available", fill: "url(#plotFill)", sel: "url(#plotSel)", legend: "linear-gradient(180deg,#568636,#365b21)" },
-    interested: { label: "Interested", fill: "url(#plotInt)", sel: "url(#plotIntSel)", legend: "linear-gradient(180deg,#f5b942,#d98a1f)" },
+    reserved: { label: "Reserved", fill: "url(#plotInt)", sel: "url(#plotIntSel)", legend: "linear-gradient(180deg,#f5b942,#d98a1f)" },
     sold: { label: "Sold", fill: "url(#plotSold)", sel: "url(#plotSoldSel)", legend: "linear-gradient(180deg,#e0504a,#a52a24)" },
 };
 
@@ -487,7 +487,7 @@ export default function LayoutMap() {
                         <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#8fd257" /><stop offset="1" stopColor="#5fa538" />
                         </linearGradient>
-                        {/* interested — amber/gold */}
+                        {/* reserved — amber/gold */}
                         <linearGradient id="plotInt" x1="0" y1="0" x2="0.35" y2="1">
                             <stop offset="0" stopColor="#f5b942" /><stop offset="0.5" stopColor="#e09a2a" /><stop offset="1" stopColor="#b8791c" />
                         </linearGradient>
@@ -863,7 +863,7 @@ export default function LayoutMap() {
 
                 {/* Status filter chips */}
                 <div className="lm-filters">
-                    {(["all", "available", "interested", "sold"] as const).map((f) => (
+                    {(["all", "available", "reserved", "sold"] as const).map((f) => (
                         <button
                             key={f}
                             className={`lm-fchip ${filter === f ? "active" : ""} lm-fchip-${f}`}
@@ -926,7 +926,7 @@ export default function LayoutMap() {
 
                 <div className="lm-legend">
                     <span><i className="lg-avail" />Available</span>
-                    <span><i className="lg-int" />Interested</span>
+                    <span><i className="lg-int" />Reserved</span>
                     <span><i className="lg-sold" />Sold</span>
                     <span><i className="lg-ca" />CA</span>
                     <span><i className="lg-stp" />STP</span>
@@ -1063,7 +1063,7 @@ const css = `
 .lm-fchip:active{ transform:scale(.95); }
 .lm-fchip.active{ border-color:var(--gold); color:#fff; }
 .lm-fchip-available.active{ background:linear-gradient(180deg,#3f7a28,#2c5a1c); border-color:#5fa538; }
-.lm-fchip-interested.active{ background:linear-gradient(180deg,#d98a1f,#b06e14); border-color:#f5b942; }
+.lm-fchip-reserved.active{ background:linear-gradient(180deg,#d98a1f,#b06e14); border-color:#f5b942; }
 .lm-fchip-sold.active{ background:linear-gradient(180deg,#c23a34,#96271f); border-color:#e0504a; }
 .lm-fchip-all.active{ background:linear-gradient(180deg,#3a4256,#252b3a); }
 

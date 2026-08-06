@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client"; // adjust path if needed
 import { ArrowLeft } from "lucide-react";
 
-type Status = "available" | "interested" | "sold";
+type Status = "available" | "reserved" | "sold";
 
 const STATUS_META: Record<Status, { label: string; dot: string; chip: string }> = {
     available: { label: "Available", dot: "bg-green-500", chip: "bg-green-500/15 text-green-400 border-green-500/30" },
-    interested: { label: "Interested", dot: "bg-yellow-500", chip: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+    reserved: { label: "Reserved", dot: "bg-yellow-500", chip: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
     sold: { label: "Sold", dot: "bg-red-500", chip: "bg-red-500/15 text-red-400 border-red-500/30" },
 };
 
@@ -60,7 +60,7 @@ export default function PlotsPage() {
 
     const counts = {
         available: PLOT_IDS.filter((id) => (statusMap[id] || "available") === "available").length,
-        interested: PLOT_IDS.filter((id) => statusMap[id] === "interested").length,
+        reserved: PLOT_IDS.filter((id) => statusMap[id] === "reserved").length,
         sold: PLOT_IDS.filter((id) => statusMap[id] === "sold").length,
     };
 
@@ -89,14 +89,14 @@ export default function PlotsPage() {
                 {/* Summary counts */}
                 <div className="mt-5 grid grid-cols-3 gap-3">
                     <Stat label="Available" value={counts.available} color="text-green-400" />
-                    <Stat label="Interested" value={counts.interested} color="text-yellow-400" />
+                    <Stat label="Reserved" value={counts.reserved} color="text-yellow-400" />
                     <Stat label="Sold" value={counts.sold} color="text-red-400" />
                 </div>
             </div>
 
             {/* Filter tabs */}
             <div className="flex gap-2 overflow-x-auto px-5 py-4">
-                {(["all", "available", "interested", "sold"] as const).map((f) => (
+                {(["all", "available", "reserved", "sold"] as const).map((f) => (
                     <button
                         key={f}
                         onClick={() => setFilter(f)}

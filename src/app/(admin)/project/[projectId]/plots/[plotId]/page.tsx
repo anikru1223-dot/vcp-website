@@ -5,11 +5,11 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client"; // adjust path if needed
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-type Status = "available" | "interested" | "sold";
+type Status = "available" | "reserved" | "sold";
 
 const STATUS_META: Record<Status, { label: string; text: string; ring: string; bg: string }> = {
     available: { label: "Available", text: "text-green-500", ring: "ring-green-400", bg: "bg-green-600" },
-    interested: { label: "Interested", text: "text-yellow-500", ring: "ring-yellow-300", bg: "bg-yellow-500" },
+    reserved: { label: "Reserved", text: "text-yellow-500", ring: "ring-yellow-300", bg: "bg-yellow-500" },
     sold: { label: "Sold", text: "text-red-500", ring: "ring-red-400", bg: "bg-red-600" },
 };
 
@@ -87,10 +87,10 @@ export default function PlotDetailsPage() {
 
                 {/* Mark buttons */}
                 <div className="grid grid-cols-1 gap-4">
-                    {(["available", "interested", "sold"] as const).map((s) => {
+                    {(["available", "reserved", "sold"] as const).map((s) => {
                         const m = STATUS_META[s];
                         const active = status === s;
-                        const textBlack = s === "interested" ? "text-black" : "";
+                        const textBlack = s === "reserved" ? "text-black" : "";
                         return (
                             <button
                                 key={s}
