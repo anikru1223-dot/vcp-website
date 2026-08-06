@@ -1,16 +1,28 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client"; // adjust path to your client
 
 /**
  * Basava Ganguru — Interactive Master Layout (AR3D style)
  * Geometry built from the OWNER-SUPPLIED dimensions. Odd/corner plots are true
  * quadrilaterals. Plot sizes are proportional to real metres (one global scale),
  * so bigger plots genuinely look bigger. Tap a plot for exact dimensions.
+ *
+ * Plot status (available / interested / sold) is loaded live from Supabase and
+ * colour-coded on the map. Admin sets status from the [plotId] details page.
  */
 
 type Plot = {
     id: string; pts: string; dim: string; facing: string; sqm: number; sqft: number;
+};
+
+type Status = "available" | "interested" | "sold";
+
+const STATUS_META: Record<Status, { label: string; fill: string; sel: string; legend: string }> = {
+    available: { label: "Available", fill: "url(#plotFill)", sel: "url(#plotSel)", legend: "linear-gradient(180deg,#568636,#365b21)" },
+    interested: { label: "Interested", fill: "url(#plotInt)", sel: "url(#plotIntSel)", legend: "linear-gradient(180deg,#f5b942,#d98a1f)" },
+    sold: { label: "Sold", fill: "url(#plotSold)", sel: "url(#plotSoldSel)", legend: "linear-gradient(180deg,#e0504a,#a52a24)" },
 };
 
 const PLOTS: Plot[] = [
@@ -161,11 +173,48 @@ export default function LayoutMap() {
     const [night, setNight] = useState(false);
     const [splash, setSplash] = useState(true);
 
+    // Plot status (from Supabase) + active filter
+    const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
+    const [filter, setFilter] = useState<Status | "all">("all");
+    const projectId = "basava-ganguru"; // change or pull from props/route if needed
+    const supabase = createClient();
+
     // 2-second intro splash when the map first loads
     useEffect(() => {
         const t = window.setTimeout(() => setSplash(false), 2000);
         return () => window.clearTimeout(t);
     }, []);
+
+    // Load plot statuses from Supabase + subscribe to admin changes (realtime)
+    useEffect(() => {
+        let active = true;
+
+        const load = async () => {
+            const { data } = await supabase
+                .from("plot_status")
+                .select("plot_id,status")
+                .eq("project_id", projectId);
+            if (!active || !data) return;
+            const m: Record<string, Status> = {};
+            data.forEach((r: { plot_id: string; status: Status }) => { m[r.plot_id] = r.status; });
+            setStatusMap(m);
+        };
+        load();
+
+        const channel = supabase
+            .channel("plot_status_map")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "plot_status", filter: `project_id=eq.${projectId}` },
+                (payload) => {
+                    const row = payload.new as { plot_id: string; status: Status };
+                    if (row?.plot_id) setStatusMap((prev) => ({ ...prev, [row.plot_id]: row.status }));
+                }
+            )
+            .subscribe();
+
+        return () => { active = false; supabase.removeChannel(channel); };
+    }, [projectId]);
 
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
@@ -437,6 +486,20 @@ export default function LayoutMap() {
                         </linearGradient>
                         <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#8fd257" /><stop offset="1" stopColor="#5fa538" />
+                        </linearGradient>
+                        {/* interested — amber/gold */}
+                        <linearGradient id="plotInt" x1="0" y1="0" x2="0.35" y2="1">
+                            <stop offset="0" stopColor="#f5b942" /><stop offset="0.5" stopColor="#e09a2a" /><stop offset="1" stopColor="#b8791c" />
+                        </linearGradient>
+                        <linearGradient id="plotIntSel" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#ffd076" /><stop offset="1" stopColor="#e5a536" />
+                        </linearGradient>
+                        {/* sold — red */}
+                        <linearGradient id="plotSold" x1="0" y1="0" x2="0.35" y2="1">
+                            <stop offset="0" stopColor="#e0504a" /><stop offset="0.5" stopColor="#c23a34" /><stop offset="1" stopColor="#96271f" />
+                        </linearGradient>
+                        <linearGradient id="plotSoldSel" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#f27a74" /><stop offset="1" stopColor="#cc4038" />
                         </linearGradient>
                         <pattern id="turf" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
                             <rect width="8" height="8" fill="transparent" />
@@ -716,15 +779,22 @@ export default function LayoutMap() {
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
-                            {/* PLOTS */}
+                            {/* PLOTS — colour reflects Supabase status; dimmed when filtered out */}
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
+                                const st: Status = statusMap[p.id] || "available";
+                                const meta = STATUS_META[st];
+                                const dimmed = filter !== "all" && filter !== st;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
+                                        style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className="lm-plot-shape" fill={isSel ? "url(#plotSel)" : "url(#plotFill)"} stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3} filter={isSel ? "url(#selGlow)" : undefined} />
+                                        <polygon points={p.pts} className="lm-plot-shape"
+                                            fill={isSel ? meta.sel : meta.fill}
+                                            stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3}
+                                            filter={isSel ? "url(#selGlow)" : undefined} />
                                         <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                     </g>
                                 );
@@ -791,6 +861,19 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
+                {/* Status filter chips */}
+                <div className="lm-filters">
+                    {(["all", "available", "interested", "sold"] as const).map((f) => (
+                        <button
+                            key={f}
+                            className={`lm-fchip ${filter === f ? "active" : ""} lm-fchip-${f}`}
+                            onClick={() => setFilter(f)}
+                        >
+                            {f === "all" ? "All" : STATUS_META[f].label}
+                        </button>
+                    ))}
+                </div>
+
                 {/* Action buttons — Maps + Photos, stacked below the header/search */}
                 <div className="lm-actionbtns">
                     <a className="lm-actbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
@@ -842,9 +925,10 @@ export default function LayoutMap() {
                 </div>
 
                 <div className="lm-legend">
-                    <span><i className="lg-plot" />Plots</span>
+                    <span><i className="lg-avail" />Available</span>
+                    <span><i className="lg-int" />Interested</span>
+                    <span><i className="lg-sold" />Sold</span>
                     <span><i className="lg-ca" />CA</span>
-                    <span><i className="lg-park" />Karab</span>
                     <span><i className="lg-stp" />STP</span>
                 </div>
 
@@ -893,6 +977,7 @@ export default function LayoutMap() {
                             </div>
                         </div>
                         <div className="lm-rows">
+                            <Row label="STATUS" value={STATUS_META[statusMap[sel.id] || "available"].label} />
                             <Row label="SQ. FEET" value={`${sel.sqft.toLocaleString()} Sq.Ft`} />
                             <Row label="SQ. YARDS" value={`${Math.round(sel.sqft / 9)} Sq.Yrd`} />
                             <Row label="SQ. METERS" value={`${sel.sqm} Sq.M`} />
@@ -968,6 +1053,19 @@ const css = `
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
+
+/* ===== Status filter chips ===== */
+.lm-filters{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 108px); left:50%; transform:translateX(-50%);
+  z-index:8; display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:92vw; }
+.lm-fchip{ background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600;
+  padding:8px 14px; border-radius:999px; cursor:pointer; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .12s, background .2s, border-color .2s; white-space:nowrap; }
+.lm-fchip:active{ transform:scale(.95); }
+.lm-fchip.active{ border-color:var(--gold); color:#fff; }
+.lm-fchip-available.active{ background:linear-gradient(180deg,#3f7a28,#2c5a1c); border-color:#5fa538; }
+.lm-fchip-interested.active{ background:linear-gradient(180deg,#d98a1f,#b06e14); border-color:#f5b942; }
+.lm-fchip-sold.active{ background:linear-gradient(180deg,#c23a34,#96271f); border-color:#e0504a; }
+.lm-fchip-all.active{ background:linear-gradient(180deg,#3a4256,#252b3a); }
 
 /* ===== Train IQ credit logo + popup ===== */
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
@@ -1087,9 +1185,10 @@ const css = `
   box-shadow:0 10px 30px rgba(0,0,0,.45); }
 .lm-legend span{ display:flex; align-items:center; gap:6px; }
 .lm-legend i{ width:12px; height:12px; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,.4); }
-.lg-plot{ background:linear-gradient(180deg,#568636,#365b21); }
+.lg-avail{ background:linear-gradient(180deg,#568636,#365b21); }
+.lg-int{ background:linear-gradient(180deg,#f5b942,#d98a1f); }
+.lg-sold{ background:linear-gradient(180deg,#e0504a,#a52a24); }
 .lg-ca{ background:linear-gradient(180deg,#a9d475,#77a648); }
-.lg-park{ background:linear-gradient(180deg,#a9d475,#77a648); }
 .lg-stp{ background:linear-gradient(180deg,#cdb4ec,#9772c6); }
 
 /* ===== Hint ===== */
@@ -1146,6 +1245,7 @@ const css = `
 @media (min-width:640px){
   .lm-brand-name{ font-size:24px; }
   .lm-panel{ max-width:420px; left:auto; right:22px; bottom:22px; border-radius:20px; }
+  .lm-filters{ top:calc(env(safe-area-inset-top,0px) + 92px); }
 }
 @media (prefers-reduced-motion:reduce){
   .lm-panel, .lm-plot-shape{ transition:none; }
