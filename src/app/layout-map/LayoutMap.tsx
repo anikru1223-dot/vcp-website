@@ -370,11 +370,19 @@ export default function LayoutMap() {
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
         baseScaleRef.current = computeBaseScale();
+        paint(cur.current); // initial transform so the map starts correctly placed
         el.addEventListener("wheel", onWheel, { passive: false });
-        const onResize = () => { baseScaleRef.current = computeBaseScale(); };
+        const onResize = () => { baseScaleRef.current = computeBaseScale(); paint(cur.current); };
         window.addEventListener("resize", onResize);
         return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
+
+    // Re-apply the camera transform after EVERY render. React re-renders the SVG on any
+    // state change (opening the filter, Photos, etc.) and would otherwise discard the
+    // imperatively-set transform, making the map appear to jump. This keeps it fixed.
+    useEffect(() => {
+        paint(cur.current);
+    });
 
     const trees: [number, number, number][] = [];
     const stones: [number, number, number][] = [];
