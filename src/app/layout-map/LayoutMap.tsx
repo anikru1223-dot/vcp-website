@@ -840,7 +840,7 @@ export default function LayoutMap() {
                     </button>
                 </div>
 
-                {/* Filter menu — direct child of the stage so it overlays without moving the map */}
+                {/* Filter menu — fixed overlay, floats ABOVE the map without shifting it */}
                 {filterOpen && (
                     <div className="lm-filtermenu">
                         {(["all", "available", "reserved", "sold"] as const).map((f) => (
@@ -1013,22 +1013,24 @@ const css = `
 
 /* ===== Stage ===== */
 .lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
-  overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230); }
+  overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230);
+  contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* ===== Status filter — menu opens UPWARD above the Filter button (overlay, no layout push) ===== */
+/* ===== Status filter — menu opens UPWARD above the Filter button (fixed overlay, no layout push) ===== */
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
 .lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
 .lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
-.lm-filterbackdrop{ position:absolute; inset:0; z-index:15; }
-.lm-filtermenu{ position:absolute; left:50%; transform:translateX(-50%);
+.lm-filterbackdrop{ position:fixed; inset:0; z-index:15; }
+.lm-filtermenu{ position:fixed; left:50%;
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:17;
   background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
-  display:flex; flex-direction:column; gap:2px; min-width:200px; animation:fmenu .18s ease; }
+  display:flex; flex-direction:column; gap:2px; min-width:200px;
+  transform:translateX(-50%); animation:fmenu .18s ease; }
 @keyframes fmenu{ from{ opacity:0; transform:translate(-50%,8px);} to{ opacity:1; transform:translate(-50%,0);} }
 .lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; white-space:nowrap; }
 .lm-filteritem:hover{ background:rgba(212,171,84,.1); }
