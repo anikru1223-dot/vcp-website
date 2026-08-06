@@ -187,6 +187,18 @@ export default function LayoutMap() {
         return () => window.clearTimeout(t);
     }, []);
 
+    // Lock page scroll while the map is on screen so nothing shifts underneath it.
+    useEffect(() => {
+        const prevBody = document.body.style.overflow;
+        const prevHtml = document.documentElement.style.overflow;
+        document.body.style.overflow = "hidden";
+        document.documentElement.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = prevBody;
+            document.documentElement.style.overflow = prevHtml;
+        };
+    }, []);
+
     useEffect(() => {
         let active = true;
 
@@ -234,7 +246,7 @@ export default function LayoutMap() {
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
-    const S_MIN = 1, S_MAX = 4.5;
+    const S_MIN = 0.35, S_MAX = 14;
 
     const baseScaleRef = useRef(1);
     const computeBaseScale = () => {
@@ -961,9 +973,10 @@ const css = `
 .lm-root{
   --gold:#d4ab54; --gold-lt:#f2dd9a; --line:rgba(212,171,84,.32);
   --txt:#f3f6ee; --muted:#aeb6a4; --glass:rgba(18,22,16,.62);
-  position:fixed; inset:0; height:100dvh;
+  position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%;
   background:radial-gradient(120% 90% at 30% 10%,#20261a,#0c0f0a);
-  color:var(--txt); font-family:'Inter',system-ui,-apple-system,sans-serif; overflow:hidden;
+  color:var(--txt); font-family:'Inter',system-ui,-apple-system,sans-serif;
+  overflow:hidden; overscroll-behavior:none; touch-action:none;
 }
 
 /* ===== Header (glass) ===== */
@@ -994,8 +1007,8 @@ const css = `
 .lm-search input::placeholder{ color:#8b9280; }
 
 /* ===== Stage ===== */
-.lm-stage{ position:absolute; inset:0; touch-action:none; user-select:none; cursor:grab;
-  background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230); }
+.lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
+  overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230); }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
