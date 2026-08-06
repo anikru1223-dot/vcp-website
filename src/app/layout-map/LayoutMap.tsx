@@ -810,20 +810,6 @@ export default function LayoutMap() {
                 {/* Bottom action row — Filter · Maps · Photos (side by side) */}
                 <div className="lm-actionrow">
                     <div className="lm-filterwrap">
-                        {filterOpen && (
-                            <div className="lm-filtermenu">
-                                {(["all", "available", "reserved", "sold"] as const).map((f) => (
-                                    <button
-                                        key={f}
-                                        className={`lm-filteritem ${filter === f ? "active" : ""}`}
-                                        onClick={() => { setFilter(f); setFilterOpen(false); }}
-                                    >
-                                        <span className={`lm-filteritem-dot lm-fchip-${f}`} />
-                                        {f === "all" ? "All Plots" : STATUS_META[f].label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                         <button
                             className={`lm-actbtn lm-filterbtn lm-fchip-${filter}`}
                             onClick={() => setFilterOpen((v) => !v)}
@@ -853,6 +839,22 @@ export default function LayoutMap() {
                         <span className="lm-actbtn-txt">Photos</span>
                     </button>
                 </div>
+
+                {/* Filter menu — direct child of the stage so it overlays without moving the map */}
+                {filterOpen && (
+                    <div className="lm-filtermenu">
+                        {(["all", "available", "reserved", "sold"] as const).map((f) => (
+                            <button
+                                key={f}
+                                className={`lm-filteritem ${filter === f ? "active" : ""}`}
+                                onClick={() => { setFilter(f); setFilterOpen(false); }}
+                            >
+                                <span className={`lm-filteritem-dot lm-fchip-${f}`} />
+                                {f === "all" ? "All Plots" : STATUS_META[f].label}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 {/* backdrop closes the filter menu when tapping the map */}
                 {filterOpen && <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />}
@@ -1021,8 +1023,8 @@ const css = `
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
 .lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
 .lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
-.lm-filterbackdrop{ position:fixed; inset:0; z-index:15; }
-.lm-filtermenu{ position:fixed; left:50%; transform:translateX(-50%);
+.lm-filterbackdrop{ position:absolute; inset:0; z-index:15; }
+.lm-filtermenu{ position:absolute; left:50%; transform:translateX(-50%);
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:17;
   background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
