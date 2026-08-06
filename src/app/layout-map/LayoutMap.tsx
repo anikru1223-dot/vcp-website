@@ -937,7 +937,7 @@ export default function LayoutMap() {
                             {/* STATUS row — coloured badge; only shows a status if admin set one */}
                             <div className="lm-row">
                                 <span className="lm-row-l">STATUS</span>
-                                <span className={`lm-status-badge lm-status-${selStatus || "unset"}`}>
+                                <span className={`lm-status-badge lm-status-${selStatus || "available"}`}>
                                     {selStatus ? STATUS_META[selStatus].label : "Available"}
                                 </span>
                             </div>
