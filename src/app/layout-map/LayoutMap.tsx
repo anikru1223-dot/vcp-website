@@ -5,12 +5,9 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
 
 /**
  * Basava Ganguru — Interactive Master Layout (AR3D style)
- * Geometry built from the OWNER-SUPPLIED dimensions. Odd/corner plots are true
- * quadrilaterals. Plot sizes are proportional to real metres (one global scale),
- * so bigger plots genuinely look bigger. Tap a plot for exact dimensions.
- *
- * Plot status (available / reserved / sold) is loaded live from Supabase and
- * colour-coded on the map. Admin sets status from the [plotId] details page.
+ * Plot status (available / reserved / sold) is loaded live from Supabase.
+ * Plots only show a status COLOUR once the admin has explicitly set a status;
+ * un-set plots render neutral until then.
  */
 
 type Plot = {
@@ -60,7 +57,6 @@ const PLOTS: Plot[] = [
     { id: "32", pts: "858,850 986,850 972,948 858,948", dim: "15.00/16.10 × 9.00/7.65 m", facing: "South", sqm: 129.5, sqft: 1394 },
 ];
 
-// Four-side dimensions (metres) + correct facing per plot, from the sanctioned drawing.
 type Sides = { n: string; e: string; s: string; w: string; facing: string };
 const SIDES: Record<string, Sides> = {
     "1": { n: "9.00", e: "15.00", s: "9.00", w: "15.00", facing: "North" },
@@ -97,26 +93,21 @@ const SIDES: Record<string, Sides> = {
     "32": { n: "15.00", e: "9.00", s: "16.10", w: "7.65", facing: "South-West" },
 };
 
-// Odd irregular property boundary (traced to the sanctioned red line).
 const BOUNDARY = "118,232 1108,268 1150,700 900,1090 118,1150 118,232";
 
-// Amenities
 const CA = "140,262 250,262 250,470 140,470";
 const STP = "434,690 502,690 502,760 434,760";
 const KARAB = "118,690 434,690 502,760 502,948 118,948";
 const KARAB_LAKE = { cx: 290, cy: 830, rx: 140, ry: 70 };
 
-// Roads (all 9m carriageways drawn at the SAME 58px width; 12m top wider).
-// Roads. Top = 12m (WIDER). The three internal carriageways are all 9m (SAME width).
-// 3m pathway is narrower. Left 9m road runs full height (plot 11 → 17) with no overlap.
-const R9 = 58;   // 9m road width (all three identical)
-const R12 = 78;  // 12m road width (wider, since it's a bigger road)
+const R9 = 58;
+const R12 = 78;
 const ROADS = {
-    top: `118,${262 - R12} 1108,${262 - R12} 1108,262 118,262`, // 12m approved layout road — uniform width full length
-    leftV: { x: 502, y: 262, w: R9, h: 686 },   // 9m road: right of 7-10 & left of 11-17, full height 262→948
-    rightV: { x: 786, y: 262, w: 72, h: 686 },   // 9m road: right of 11-18 & left of 26-32 (72 spans block gap)
-    midH: { x: 118, y: 470, w: 442, h: R9 },   // 9m road: below 1-6 block, above 7-10
-    path: { x: 118, y: 648, w: 384, h: 42 },   // 3m pathway: touches 7-10 plots (648) AND KARAB top (690)
+    top: `118,${262 - R12} 1108,${262 - R12} 1108,262 118,262`,
+    leftV: { x: 502, y: 262, w: R9, h: 686 },
+    rightV: { x: 786, y: 262, w: 72, h: 686 },
+    midH: { x: 118, y: 470, w: 442, h: R9 },
+    path: { x: 118, y: 648, w: 384, h: 42 },
 };
 
 type ViewBox = { x: number; y: number; w: number; h: number };
@@ -131,10 +122,8 @@ const centroid = (pts: string): Point => {
     return { x: x / c, y: y / c };
 };
 
-/* Lush top-down tree with cast shadow and layered canopy */
 function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
     const fill = ["#3c6624", "#436f2c", "#345c20"][v % 3];
-    // Light 2D tree: 1 shadow + 1 canopy circle + 1 highlight = 3 nodes (no filter).
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
             <ellipse cx="3" cy="7" rx="12" ry="4" fill="#0a1c08" opacity="0.32" />
@@ -156,7 +145,6 @@ function StreetLight({ x, y, night = false }: { x: number; y: number; night?: bo
 }
 
 function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
-    // Light 2D stone: 1 shadow + 1 rock ellipse = 2 nodes.
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
             <ellipse cx="1.5" cy="2.5" rx="7" ry="2.6" fill="#000" opacity="0.18" />
@@ -176,16 +164,29 @@ export default function LayoutMap() {
     // Plot status (from Supabase) + active filter
     const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
     const [filter, setFilter] = useState<Status | "all">("all");
-    const projectId = "basava-ganguru"; // change or pull from props/route if needed
+    const [filterOpen, setFilterOpen] = useState(false);
+    const projectId = "basava-ganguru";
     const supabase = createClient();
 
-    // 2-second intro splash when the map first loads
+    // Log WhatsApp / Call taps to Supabase (non-blocking)
+    const logEnquiry = async (type: "whatsapp" | "call", plotId: string) => {
+        try {
+            await supabase.from("enquiries").insert({
+                project_id: projectId,
+                plot_id: plotId,
+                type,
+                message: type === "whatsapp" ? `Interested in Plot ${plotId}` : `Call requested for Plot ${plotId}`,
+            });
+        } catch {
+            /* never block the user */
+        }
+    };
+
     useEffect(() => {
         const t = window.setTimeout(() => setSplash(false), 2000);
         return () => window.clearTimeout(t);
     }, []);
 
-    // Load plot statuses from Supabase + subscribe to admin changes (realtime)
     useEffect(() => {
         let active = true;
 
@@ -221,8 +222,6 @@ export default function LayoutMap() {
     const cameraRef = useRef<SVGGElement | null>(null);
     const compassRef = useRef<SVGGElement | null>(null);
 
-    // Camera state: scale (s), translate (tx,ty in screen px), rotation (deg).
-    // Applied as a CSS transform on ONE group → GPU-composited, no re-rasterization → smooth on mobile.
     type Cam = { s: number; tx: number; ty: number; rot: number };
     const cur = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
     const target = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
@@ -233,11 +232,10 @@ export default function LayoutMap() {
     const [, forceCompass] = useState(0);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
+    const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
-    // Zoom limits: min 1 = layout fills the viewport (~78%); max 4.5 for readability.
     const S_MIN = 1, S_MAX = 4.5;
 
-    // Screen→user scale: how many user units per screen pixel at base zoom.
     const baseScaleRef = useRef(1);
     const computeBaseScale = () => {
         const el = wrapRef.current; if (!el) return 1;
@@ -245,21 +243,17 @@ export default function LayoutMap() {
         return Math.min(r.width / BASE_VB.w, r.height / BASE_VB.h) || 1;
     };
 
-    // Clamp pan so the layout can't be dragged off-screen. Returns clamped {tx,ty}
-    // plus how far past the limit we were (for elastic feel while dragging).
     const clampPan = (c: Cam, elastic = false): Cam => {
         const el = wrapRef.current; if (!el) return c;
         const r = el.getBoundingClientRect();
-        // content size on screen at current scale
         const bs = baseScaleRef.current || 1;
         const contentW = BASE_VB.w * bs * c.s;
         const contentH = BASE_VB.h * bs * c.s;
-        // allow some slack so surroundings (drawn beyond BASE_VB) can show at edges
         const slackX = r.width * 0.18, slackY = r.height * 0.18;
         const minTx = r.width - contentW - slackX, maxTx = slackX;
         const minTy = r.height - contentH - slackY, maxTy = slackY;
         const soft = (val: number, lo: number, hi: number) => {
-            if (lo > hi) { const mid = (lo + hi) / 2; return mid; } // content smaller than view → center
+            if (lo > hi) { const mid = (lo + hi) / 2; return mid; }
             if (val < lo) return elastic ? lo - (lo - val) * 0.35 : lo;
             if (val > hi) return elastic ? hi + (val - hi) * 0.35 : hi;
             return val;
@@ -267,12 +261,9 @@ export default function LayoutMap() {
         return { ...c, tx: soft(c.tx, minTx, maxTx), ty: soft(c.ty, minTy, maxTy) };
     };
 
-    // Write the transform straight to the DOM (fast path).
     const paint = (c: Cam) => {
         if (cameraRef.current) {
             const bs = baseScaleRef.current || 1;
-            // Rotation pivots around the map centre (in viewBox user units) so it spins in place,
-            // not around the corner. Order: pan → scale (from 0,0, compensated by zoomAt) → rotate-about-centre.
             const cx = BASE_VB.x + BASE_VB.w / 2;
             const cy = BASE_VB.y + BASE_VB.h / 2;
             cameraRef.current.style.transform =
@@ -300,18 +291,15 @@ export default function LayoutMap() {
         if (!animating.current) { animating.current = true; raf.current = requestAnimationFrame(tick); }
     }, [tick]);
 
-    // Direct (no easing) set — used during finger drag/pinch for 1:1 response.
     const setNow = (c: Cam) => {
         if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
         animating.current = false;
         cur.current = { ...c }; target.current = { ...c }; paint(c);
     };
 
-    // Zoom toward a screen point (cx,cy relative to wrapper), keeping that point fixed.
     const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
         const ns = Math.min(S_MAX, Math.max(S_MIN, base.s * factor));
         const f = ns / base.s;
-        // keep the point under the cursor stationary: tx' = cx - f*(cx - tx)
         return { s: ns, tx: cx - f * (cx - base.tx), ty: cy - f * (cy - base.ty), rot: base.rot };
     };
 
@@ -376,17 +364,15 @@ export default function LayoutMap() {
         return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
 
-    // Trees clustered into dense groves (like the AR3D reference) + stones.
     const trees: [number, number, number][] = [];
     const stones: [number, number, number][] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
-    // Grove centres — fewer, bigger 2D trees (light on the DOM, still fills the screen).
     for (let g = 0; g < 34; g++) {
         const gx = -120 + rnd() * 1440;
         const gy = -60 + rnd() * 1420;
-        const count = 5 + Math.floor(rnd() * 7); // 5–11 trees per grove
+        const count = 5 + Math.floor(rnd() * 7);
         const spread = 55 + rnd() * 90;
         for (let j = 0; j < count; j++) {
             const ox = ((rnd() + rnd() - 1)) * spread;
@@ -396,7 +382,6 @@ export default function LayoutMap() {
             trees.push([x, y, 1.1 + rnd() * 0.8]);
         }
     }
-    // scattered singles to fill gaps
     for (let i = 0; i < 60; i++) {
         const x = -140 + rnd() * 1480;
         const y = -80 + rnd() * 1460;
@@ -414,7 +399,6 @@ export default function LayoutMap() {
         <div className={`lm-root ${night ? "is-night" : ""}`}>
             <style>{css}</style>
 
-            {/* Intro splash (5s) */}
             {splash && (
                 <div className="lm-splash" onClick={() => setSplash(false)}>
                     <div className="lm-splash-inner">
@@ -463,7 +447,6 @@ export default function LayoutMap() {
                 onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
                 <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
-                        {/* Terrain — layered earth with warm sun */}
                         <radialGradient id="terrain" cx="0.32" cy="0.22" r="1.15">
                             <stop offset="0" stopColor="#b6a468" /><stop offset="0.45" stopColor="#9c8a54" />
                             <stop offset="0.8" stopColor="#84733f" /><stop offset="1" stopColor="#6b5c32" />
@@ -475,31 +458,34 @@ export default function LayoutMap() {
                             <circle cx="12" cy="22" r="0.8" fill="#b6a468" opacity="0.2" />
                             <circle cx="22" cy="4" r="0.7" fill="#8a7846" opacity="0.25" />
                         </pattern>
-                        {/* faint dry-grass patches */}
                         <radialGradient id="patch" cx="0.5" cy="0.5" r="0.5">
                             <stop offset="0" stopColor="#8a9a4a" stopOpacity="0.35" /><stop offset="1" stopColor="#8a9a4a" stopOpacity="0" />
                         </radialGradient>
 
-                        {/* Plots — dark green, subtle turf sheen */}
                         <linearGradient id="plotFill" x1="0" y1="0" x2="0.35" y2="1">
                             <stop offset="0" stopColor="#568636" /><stop offset="0.5" stopColor="#457029" /><stop offset="1" stopColor="#365b21" />
                         </linearGradient>
                         <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#8fd257" /><stop offset="1" stopColor="#5fa538" />
                         </linearGradient>
-                        {/* reserved — amber/gold */}
                         <linearGradient id="plotInt" x1="0" y1="0" x2="0.35" y2="1">
                             <stop offset="0" stopColor="#f5b942" /><stop offset="0.5" stopColor="#e09a2a" /><stop offset="1" stopColor="#b8791c" />
                         </linearGradient>
                         <linearGradient id="plotIntSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#ffd076" /><stop offset="1" stopColor="#e5a536" />
                         </linearGradient>
-                        {/* sold — red */}
                         <linearGradient id="plotSold" x1="0" y1="0" x2="0.35" y2="1">
                             <stop offset="0" stopColor="#e0504a" /><stop offset="0.5" stopColor="#c23a34" /><stop offset="1" stopColor="#96271f" />
                         </linearGradient>
                         <linearGradient id="plotSoldSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#f27a74" /><stop offset="1" stopColor="#cc4038" />
+                        </linearGradient>
+                        {/* Neutral fill for plots with NO admin-set status */}
+                        <linearGradient id="plotNeutral" x1="0" y1="0" x2="0.35" y2="1">
+                            <stop offset="0" stopColor="#c7b98d" /><stop offset="0.5" stopColor="#b6a877" /><stop offset="1" stopColor="#a2946a" />
+                        </linearGradient>
+                        <linearGradient id="plotNeutralSel" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#e6dbb4" /><stop offset="1" stopColor="#c9bb8c" />
                         </linearGradient>
                         <pattern id="turf" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
                             <rect width="8" height="8" fill="transparent" />
@@ -507,7 +493,6 @@ export default function LayoutMap() {
                             <line x1="5" y1="8" x2="5.5" y2="4" stroke="#3c6424" strokeWidth="0.5" opacity="0.3" />
                         </pattern>
 
-                        {/* Asphalt roads — textured with sheen */}
                         <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#2e2a22" /><stop offset="0.12" stopColor="#413a2e" />
                             <stop offset="0.5" stopColor="#4c4436" /><stop offset="0.88" stopColor="#413a2e" /><stop offset="1" stopColor="#2e2a22" />
@@ -522,11 +507,9 @@ export default function LayoutMap() {
                             <circle cx="6" cy="6" r="0.45" fill="#232019" opacity="0.5" />
                         </pattern>
 
-                        {/* Water */}
                         <radialGradient id="lake" cx="0.38" cy="0.28" r="0.95">
                             <stop offset="0" stopColor="#bdeee6" /><stop offset="0.5" stopColor="#63b5ac" /><stop offset="1" stopColor="#2f7d78" />
                         </radialGradient>
-                        {/* Light-green amenity turf */}
                         <radialGradient id="grass" cx="0.4" cy="0.3" r="1">
                             <stop offset="0" stopColor="#a9d475" /><stop offset="0.6" stopColor="#8fbe5a" /><stop offset="1" stopColor="#77a648" />
                         </radialGradient>
@@ -540,7 +523,6 @@ export default function LayoutMap() {
                             <stop offset="0" stopColor="#cdb4ec" /><stop offset="1" stopColor="#9772c6" />
                         </linearGradient>
 
-                        {/* Shadows & lighting */}
                         <filter id="plotSh" x="-25%" y="-25%" width="150%" height="150%">
                             <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000" floodOpacity="0.42" />
                         </filter>
@@ -568,7 +550,6 @@ export default function LayoutMap() {
                         <linearGradient id="headBeam" x1="0" y1="0" x2="1" y2="0">
                             <stop offset="0" stopColor="#fff3c4" stopOpacity="0.7" /><stop offset="1" stopColor="#fff3c4" stopOpacity="0" />
                         </linearGradient>
-                        {/* warm sun wash + vignette over the whole plan */}
                         <radialGradient id="sun" cx="0.28" cy="0.16" r="0.9">
                             <stop offset="0" stopColor="#ffe4a0" stopOpacity="0.22" /><stop offset="0.5" stopColor="#ffd48a" stopOpacity="0.05" /><stop offset="1" stopColor="#000" stopOpacity="0" />
                         </radialGradient>
@@ -578,10 +559,8 @@ export default function LayoutMap() {
                     </defs>
 
                     <g ref={cameraRef} className="lm-camera">
-                        {/* terrain base + texture */}
                         <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
                         <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
-                        {/* scattered dry-grass patches for realism */}
                         <g pointerEvents="none">
                             <ellipse cx="220" cy="380" rx="130" ry="80" fill="url(#patch)" />
                             <ellipse cx="1000" cy="450" rx="150" ry="90" fill="url(#patch)" />
@@ -590,9 +569,7 @@ export default function LayoutMap() {
                             <ellipse cx="700" cy="1120" rx="180" ry="70" fill="url(#patch)" />
                         </g>
 
-                        {/* ===== SURROUNDINGS (lightweight, drawn beyond the project boundary) ===== */}
                         <g pointerEvents="none">
-                            {/* agricultural fields — green parcels with subtle furrow lines */}
                             {[
                                 { x: -700, y: -400, w: 520, h: 360, c: "#7ba045" },
                                 { x: -700, y: 20, w: 520, h: 380, c: "#8caf52" },
@@ -613,22 +590,15 @@ export default function LayoutMap() {
                                 </g>
                             ))}
 
-                            {/* ===== EXISTING approach roads (black, like the sanctioned drawing) ===== */}
-                            {/* three EXISTING 9m ROAD stubs coming down from the top into the 12m road */}
                             <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
                             <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
                             <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
-                            {/* EXISTING 12m ROAD on the right, running vertically, joined to the top 12m road */}
                             <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
-                            {/* connector: top 12m road extends right to meet the existing 12m road */}
                             <rect x="1108" y="184" width="62" height="78" fill="#3a342a" />
-                            {/* EXISTING 9m ROAD on the left */}
                             <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
-                            {/* left & bottom road continuations (black) */}
                             <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
                             <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
 
-                            {/* dashed lane lines on the existing roads */}
                             <g stroke="#e8d9a0" strokeWidth="2" strokeDasharray="10 12" opacity="0.5">
                                 <line x1="321" y1="-110" x2="321" y2="180" />
                                 <line x1="583" y1="-110" x2="583" y2="180" />
@@ -636,7 +606,6 @@ export default function LayoutMap() {
                                 <line x1="1138" y1="200" x2="1138" y2="1070" />
                             </g>
 
-                            {/* Survey number labels (Sy.No.) on all four sides */}
                             <g className="lm-syno">
                                 <text x="300" y="-140" textAnchor="middle">Sy.No.39</text>
                                 <text x="581" y="-140" textAnchor="middle">Sy.No.42</text>
@@ -647,7 +616,6 @@ export default function LayoutMap() {
                                 <text x="600" y="1090" textAnchor="middle">Sy.No.46</text>
                             </g>
 
-                            {/* EXISTING road name labels */}
                             <g pointerEvents="none">
                                 <text x="321" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 321 60)">EXISTING 9m ROAD</text>
                                 <text x="583" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 583 60)">EXISTING 9m ROAD</text>
@@ -655,7 +623,6 @@ export default function LayoutMap() {
                                 <text x="1138" y="640" className="lm-exist-lbl" textAnchor="middle" transform="rotate(90 1138 640)">EXISTING 12m ROAD</text>
                             </g>
 
-                            {/* scattered farmhouses (roof + body) */}
                             {[
                                 { x: -520, y: 120, s: 1.2 }, { x: 1420, y: 300, s: 1.1 }, { x: -420, y: 720, s: 1 },
                                 { x: 1480, y: 820, s: 1.2 }, { x: 560, y: 1360, s: 1.1 }, { x: -560, y: 1080, s: 1 },
@@ -668,56 +635,45 @@ export default function LayoutMap() {
                                 </g>
                             ))}
 
-                            {/* compound wall hint around the project */}
                             <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.45" />
                         </g>
 
 
                         <g>
-                            {/* (parcel base removed — terrain shows through, no boundary shape) */}
-
-
-                            {/* roads — recessed asphalt with texture */}
                             <g filter="url(#plotSh)">
                                 <polygon points={ROADS.top} fill="url(#asphalt)" />
                                 <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
                                 <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
                                 <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphalt)" />
                             </g>
-                            {/* asphalt grain */}
                             <g opacity="0.9" pointerEvents="none">
                                 <polygon points={ROADS.top} fill="url(#asphaltTex)" />
                                 <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltTex)" />
                                 <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltTex)" />
                                 <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphaltTex)" />
                             </g>
-                            {/* light concrete kerbs */}
                             <g className="lm-kerb" pointerEvents="none">
                                 <polygon points={ROADS.top} />
                                 <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
                                 <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
                                 <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
                             </g>
-                            {/* interlocking-paver pathway */}
                             <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
                             <g className="lm-paver" pointerEvents="none">
                                 {Array.from({ length: Math.floor((ROADS.path.w - 14) / 30) }).map((_, i) => (
                                     <line key={i} x1={ROADS.path.x + 14 + i * 30} y1={ROADS.path.y} x2={ROADS.path.x + 14 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
                                 ))}
                             </g>
-                            {/* lane markings — bright centre dashes */}
                             <g className="lm-lane" pointerEvents="none">
                                 <line x1="531" y1="270" x2="531" y2="944" />
                                 <line x1="822" y1="270" x2="822" y2="944" />
                                 <line x1="122" y1="499" x2="500" y2="499" />
                                 <line x1="118" y1="223" x2="1108" y2="223" />
                             </g>
-                            {/* manhole covers */}
                             <g className="lm-drain" pointerEvents="none">
                                 <circle cx="531" cy="360" r="3.4" /><circle cx="531" cy="640" r="3.4" /><circle cx="531" cy="880" r="3.4" />
                                 <circle cx="822" cy="420" r="3.4" /><circle cx="822" cy="700" r="3.4" /><circle cx="822" cy="900" r="3.4" />
                             </g>
-                            {/* ROAD NAME LABELS */}
                             <g pointerEvents="none">
                                 <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
                                 <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
@@ -726,29 +682,22 @@ export default function LayoutMap() {
                                 <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
                             </g>
 
-                            {/* KARAB (open space) — turf + stone edge + landscaped lake */}
                             <polygon points={KARAB} fill="url(#grass)" filter="url(#plotSh)" />
                             <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                             <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
                             <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
-                            {/* jogging path loop */}
                             <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
-                            {/* lake — layered water with ripples + stone edging */}
                             <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx + 6} ry={KARAB_LAKE.ry + 5} fill="#7d8a5c" opacity="0.6" pointerEvents="none" />
                             <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#lake)" filter="url(#softSh)" />
-                            {/* deeper centre + reflection highlight */}
                             <ellipse cx={KARAB_LAKE.cx + 10} cy={KARAB_LAKE.cy + 6} rx={KARAB_LAKE.rx * 0.62} ry={KARAB_LAKE.ry * 0.6} fill="#3f8f96" opacity="0.5" pointerEvents="none" />
                             <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 22} rx="54" ry="18" fill="#fff" opacity="0.28" pointerEvents="none" />
-                            {/* concentric ripples */}
                             {[0.78, 0.55, 0.34].map((k, i) => (
                                 <ellipse key={`rip${i}`} cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx * k} ry={KARAB_LAKE.ry * k} fill="none" stroke="#cfeef0" strokeWidth="1" opacity={0.22 - i * 0.04} pointerEvents="none" />
                             ))}
-                            {/* stone edging ring */}
                             {Array.from({ length: 30 }).map((_, i) => {
                                 const a = (i / 30) * Math.PI * 2;
                                 return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 6)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 5)} r={2.4 + (i % 3) * 0.8} fill={i % 2 ? "#b3ab94" : "#9a927c"} opacity="0.85" pointerEvents="none" />;
                             })}
-                            {/* flower beds */}
                             {[[200, 760, "#e07aa8"], [420, 770, "#f0b429"], [180, 905, "#c85a9a"], [440, 900, "#e8a020"]].map(([x, y, col], i) => (
                                 <g key={i} pointerEvents="none">
                                     <circle cx={x as number} cy={y as number} r="9" fill="#3c6424" />
@@ -758,7 +707,6 @@ export default function LayoutMap() {
                             ))}
                             <text x="300" y="835" className="lm-amen-label">KARAB</text>
 
-                            {/* CA — light-green turf with clubhouse hint */}
                             <polygon points={CA} fill="url(#ca)" filter="url(#plotSh)" />
                             <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                             <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
@@ -772,27 +720,29 @@ export default function LayoutMap() {
                             <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
                             <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
 
-                            {/* STP — utility compound (building fits inside box, clear of road at x=502) */}
                             <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
                             <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
                             <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
-                            {/* PLOTS — colour reflects Supabase status; dimmed when filtered out */}
+                            {/* PLOTS — colour ONLY when admin has explicitly set a status */}
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
-                                const st: Status = statusMap[p.id] || "available";
-                                const meta = STATUS_META[st];
-                                const dimmed = filter !== "all" && filter !== st;
+                                const st = statusMap[p.id]; // undefined until admin sets it
+                                const hasStatus = st !== undefined;
+                                const meta = hasStatus ? STATUS_META[st] : null;
+                                const fillNormal = meta ? meta.fill : "url(#plotNeutral)";
+                                const fillSel = meta ? meta.sel : "url(#plotNeutralSel)";
+                                const dimmed = filter !== "all" && st !== filter;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
                                         <polygon points={p.pts} className="lm-plot-shape"
-                                            fill={isSel ? meta.sel : meta.fill}
+                                            fill={isSel ? fillSel : fillNormal}
                                             stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3}
                                             filter={isSel ? "url(#selGlow)" : undefined} />
                                         <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
@@ -800,35 +750,26 @@ export default function LayoutMap() {
                                 );
                             })}
 
-                            {/* Decoration layer — hidden during zoom/pan for smoothness */}
                             <g>
-                                {/* trees (with shadows) */}
                                 {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
-                                {/* stones scattered on open land */}
                                 {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
                             </g>
 
-                            {/* Day: warm sun wash. Night: dark overlay dimming everything below. */}
                             {night
                                 ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />
                                 : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
 
-                            {/* Lights & vehicles render ABOVE the night overlay so they stay bright */}
                             <g style={{ transition: "opacity .18s ease" }}>
-                                {/* At night: re-draw roads LIT so they stay clearly visible */}
                                 {night && (
                                     <g pointerEvents="none">
-                                        {/* soft warm glow bed under roads (from streetlights) */}
                                         <polygon points={ROADS.top} fill="#5a5548" opacity="0.5" />
                                         <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#5a5548" opacity="0.5" />
                                         <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#5a5548" opacity="0.5" />
                                         <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#5a5548" opacity="0.5" />
-                                        {/* lit asphalt surface */}
                                         <polygon points={ROADS.top} fill="#4a463a" />
                                         <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#4a463a" />
                                         <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#4a463a" />
                                         <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#4a463a" />
-                                        {/* bright centre lane markings */}
                                         <g stroke="#fff0b8" strokeWidth="2.6" strokeDasharray="14 16" opacity="0.85" strokeLinecap="round">
                                             <line x1="531" y1="266" x2="531" y2="944" />
                                             <line x1="822" y1="266" x2="822" y2="944" />
@@ -837,22 +778,16 @@ export default function LayoutMap() {
                                         </g>
                                     </g>
                                 )}
-                                {/* street lights at ROAD CORNERS & JUNCTIONS */}
                                 {[
-                                    // top 12m road — evenly spaced along it
                                     [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
-                                    // left 9m road — top junction, mid-road junction, bottom corner
                                     [531, 300], [531, 499], [531, 720], [531, 930],
-                                    // right 9m road — top junction, middle, bottom corner
                                     [822, 300], [822, 560], [822, 820], [822, 930],
-                                    // mid 9m road — left end and junction with left road
                                     [150, 499], [340, 499],
                                 ].map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
                             </g>
                         </g>
                     </g>
 
-                    {/* compass — fixed on screen */}
                     <g transform="translate(1120,250)">
                         <circle r="20" fill="rgba(20,24,16,.72)" stroke="url(#gold)" strokeWidth="1.6" />
                         <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" fill="#e0504a" />
@@ -861,20 +796,37 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                {/* Status filter chips */}
-                <div className="lm-filters">
-                    {(["all", "available", "reserved", "sold"] as const).map((f) => (
-                        <button
-                            key={f}
-                            className={`lm-fchip ${filter === f ? "active" : ""} lm-fchip-${f}`}
-                            onClick={() => setFilter(f)}
-                        >
-                            {f === "all" ? "All" : STATUS_META[f].label}
-                        </button>
-                    ))}
+                {/* Status filter — single button + dropdown */}
+                <div className="lm-filterwrap">
+                    <button
+                        className={`lm-filterbtn lm-fchip-${filter}`}
+                        onClick={() => setFilterOpen((v) => !v)}
+                    >
+                        <span className="lm-filterdot" />
+                        <span>{filter === "all" ? "All Plots" : STATUS_META[filter].label}</span>
+                        <svg viewBox="0 0 24 24" width="16" height="16" className={`lm-filtercaret ${filterOpen ? "open" : ""}`}>
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                    {filterOpen && (
+                        <>
+                            <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />
+                            <div className="lm-filtermenu">
+                                {(["all", "available", "reserved", "sold"] as const).map((f) => (
+                                    <button
+                                        key={f}
+                                        className={`lm-filteritem ${filter === f ? "active" : ""}`}
+                                        onClick={() => { setFilter(f); setFilterOpen(false); }}
+                                    >
+                                        <span className={`lm-filteritem-dot lm-fchip-${f}`} />
+                                        {f === "all" ? "All Plots" : STATUS_META[f].label}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
 
-                {/* Action buttons — Maps + Photos, stacked below the header/search */}
                 <div className="lm-actionbtns">
                     <a className="lm-actbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
                         <svg viewBox="0 0 24 24" width="22" height="22">
@@ -891,7 +843,6 @@ export default function LayoutMap() {
                     </button>
                 </div>
 
-                {/* Photos popup (empty for now) */}
                 {photosOpen && (
                     <div className="lm-photos-overlay" onClick={() => setPhotosOpen(false)}>
                         <div className="lm-photos-modal" onClick={(e) => e.stopPropagation()}>
@@ -909,7 +860,6 @@ export default function LayoutMap() {
                     </div>
                 )}
 
-                {/* controls */}
                 <div className="lm-ctrl">
                     <button onClick={() => btnZoom(1.8)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={() => btnZoom(1 / 1.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
@@ -932,7 +882,6 @@ export default function LayoutMap() {
                     <span><i className="lg-stp" />STP</span>
                 </div>
 
-                {/* Train IQ credit — tap to open popup */}
                 <div className="lm-tiq-wrap">
                     {tiqOpen && (
                         <a className="lm-tiq-pop" href="https://trainiq.in" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
@@ -950,7 +899,7 @@ export default function LayoutMap() {
                 </div>
             </div>
 
-            {/* Detail panel (AR3D style) */}
+            {/* Detail panel */}
             <div className={`lm-panel ${sel ? "open" : ""}`}>
                 {sel && (
                     <>
@@ -977,18 +926,24 @@ export default function LayoutMap() {
                             </div>
                         </div>
                         <div className="lm-rows">
-                            <Row label="STATUS" value={STATUS_META[statusMap[sel.id] || "available"].label} />
+                            {/* STATUS row — coloured badge; only shows a status if admin set one */}
+                            <div className="lm-row">
+                                <span className="lm-row-l">STATUS</span>
+                                <span className={`lm-status-badge lm-status-${selStatus || "unset"}`}>
+                                    {selStatus ? STATUS_META[selStatus].label : "Not listed"}
+                                </span>
+                            </div>
                             <Row label="SQ. FEET" value={`${sel.sqft.toLocaleString()} Sq.Ft`} />
                             <Row label="SQ. YARDS" value={`${Math.round(sel.sqft / 9)} Sq.Yrd`} />
                             <Row label="SQ. METERS" value={`${sel.sqm} Sq.M`} />
                             <Row label="FACING" value={SIDES[sel.id]?.facing || sel.facing} />
                         </div>
                         <div className="lm-cta-row">
-                            <a className="lm-cta lm-cta-wa" href={`https://wa.me/919980061727?text=${encodeURIComponent(`Hi, I'm interested in Plot ${sel.id} at Basava Ganguru. Please share details.`)}`} target="_blank" rel="noopener noreferrer">
+                            <a className="lm-cta lm-cta-wa" onClick={() => logEnquiry("whatsapp", sel.id)} href={`https://wa.me/919980061727?text=${encodeURIComponent(`Hi, I'm interested in Plot ${sel.id} at Basava Ganguru. Please share details.`)}`} target="_blank" rel="noopener noreferrer">
                                 <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 2.1.55 4.06 1.6 5.83L2 22l4.4-1.15a9.86 9.86 0 0 0 5.64 1.72c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.1c-.24.68-1.42 1.3-1.95 1.34-.5.04-1.13.23-3.7-.77-3.12-1.23-5.11-4.42-5.26-4.62-.15-.2-1.26-1.67-1.26-3.19 0-1.52.8-2.27 1.08-2.58.28-.31.61-.39.82-.39.2 0 .41 0 .59.01.19.01.44-.07.69.53.24.58.83 2.02.9 2.17.07.15.12.32.02.52-.1.2-.15.32-.29.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.6.17.29.76 1.25 1.63 2.03 1.12 1 2.06 1.31 2.35 1.46.29.15.46.12.63-.07.17-.2.72-.84.91-1.13.19-.29.39-.24.65-.15.27.1 1.7.8 1.99.95.29.15.48.22.55.34.07.13.07.72-.17 1.4z" /></svg>
                                 WhatsApp
                             </a>
-                            <a className="lm-cta lm-cta-call" href="tel:+919980061727">
+                            <a className="lm-cta lm-cta-call" onClick={() => logEnquiry("call", sel.id)} href="tel:+919980061727">
                                 <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" /></svg>
                                 Call
                             </a>
@@ -1054,18 +1009,29 @@ const css = `
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* ===== Status filter chips ===== */
-.lm-filters{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 108px); left:50%; transform:translateX(-50%);
-  z-index:8; display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:92vw; }
-.lm-fchip{ background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px; font-weight:600;
-  padding:8px 14px; border-radius:999px; cursor:pointer; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-  box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .12s, background .2s, border-color .2s; white-space:nowrap; }
-.lm-fchip:active{ transform:scale(.95); }
-.lm-fchip.active{ border-color:var(--gold); color:#fff; }
-.lm-fchip-available.active{ background:linear-gradient(180deg,#3f7a28,#2c5a1c); border-color:#5fa538; }
-.lm-fchip-reserved.active{ background:linear-gradient(180deg,#d98a1f,#b06e14); border-color:#f5b942; }
-.lm-fchip-sold.active{ background:linear-gradient(180deg,#c23a34,#96271f); border-color:#e0504a; }
-.lm-fchip-all.active{ background:linear-gradient(180deg,#3a4256,#252b3a); }
+/* ===== Status filter — single button + dropdown ===== */
+.lm-filterwrap{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 108px); left:50%; transform:translateX(-50%); z-index:9; }
+.lm-filterbtn{ display:flex; align-items:center; gap:9px; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:13px; font-weight:600; padding:10px 16px; border-radius:999px; cursor:pointer; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 6px 18px rgba(0,0,0,.35); transition:border-color .2s, transform .1s; white-space:nowrap; }
+.lm-filterbtn:active{ transform:scale(.97); }
+.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
+.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
+.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
+.lm-filterdot{ width:9px; height:9px; border-radius:50%; background:#8b93a4; }
+.lm-filterbtn.lm-fchip-available .lm-filterdot{ background:#568636; }
+.lm-filterbtn.lm-fchip-reserved .lm-filterdot{ background:#f5b942; }
+.lm-filterbtn.lm-fchip-sold .lm-filterdot{ background:#e0504a; }
+.lm-filtercaret{ transition:transform .2s; opacity:.7; }
+.lm-filtercaret.open{ transform:rotate(180deg); }
+.lm-filterbackdrop{ position:fixed; inset:0; z-index:-1; }
+.lm-filtermenu{ margin-top:8px; background:rgba(18,22,16,.96); border:1px solid var(--line); border-radius:16px; padding:6px; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5); display:flex; flex-direction:column; gap:2px; min-width:190px; animation:fmenu .18s ease; }
+@keyframes fmenu{ from{ opacity:0; transform:translateY(-6px);} to{ opacity:1; transform:none;} }
+.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; }
+.lm-filteritem:hover{ background:rgba(212,171,84,.1); }
+.lm-filteritem.active{ background:rgba(212,171,84,.16); }
+.lm-filteritem-dot{ width:11px; height:11px; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.4); background:#8b93a4; }
+.lm-filteritem-dot.lm-fchip-available{ background:#568636; }
+.lm-filteritem-dot.lm-fchip-reserved{ background:#f5b942; }
+.lm-filteritem-dot.lm-fchip-sold{ background:#e0504a; }
 
 /* ===== Train IQ credit logo + popup ===== */
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
@@ -1233,6 +1199,15 @@ const css = `
 .lm-row:last-child{ border-bottom:none; }
 .lm-row-l{ font-size:11.5px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
 .lm-row-v{ font-size:14.5px; font-weight:700; text-align:right; }
+
+/* ===== Status badge in info table ===== */
+.lm-status-badge{ font-size:12.5px; font-weight:800; letter-spacing:.02em; padding:5px 14px; border-radius:999px;
+  border:1px solid transparent; }
+.lm-status-available{ background:rgba(86,134,54,.18); color:#8fd257; border-color:rgba(86,134,54,.5); }
+.lm-status-reserved{ background:rgba(245,185,66,.16); color:#ffcf72; border-color:rgba(245,185,66,.5); }
+.lm-status-sold{ background:rgba(224,80,74,.16); color:#ff8079; border-color:rgba(224,80,74,.5); }
+.lm-status-unset{ background:rgba(139,147,164,.15); color:#b7bdc9; border-color:rgba(139,147,164,.4); }
+
 .lm-cta-row{ display:flex; gap:10px; }
 .lm-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
   padding:14px; border:none; border-radius:14px; cursor:pointer; color:#fff; font-weight:800; font-size:15px;
@@ -1245,7 +1220,7 @@ const css = `
 @media (min-width:640px){
   .lm-brand-name{ font-size:24px; }
   .lm-panel{ max-width:420px; left:auto; right:22px; bottom:22px; border-radius:20px; }
-  .lm-filters{ top:calc(env(safe-area-inset-top,0px) + 92px); }
+  .lm-filterwrap{ top:calc(env(safe-area-inset-top,0px) + 92px); }
 }
 @media (prefers-reduced-motion:reduce){
   .lm-panel, .lm-plot-shape{ transition:none; }
