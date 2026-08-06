@@ -480,13 +480,6 @@ export default function LayoutMap() {
                         <linearGradient id="plotSoldSel" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0" stopColor="#f27a74" /><stop offset="1" stopColor="#cc4038" />
                         </linearGradient>
-                        {/* Neutral fill for plots with NO admin-set status */}
-                        <linearGradient id="plotNeutral" x1="0" y1="0" x2="0.35" y2="1">
-                            <stop offset="0" stopColor="#c7b98d" /><stop offset="0.5" stopColor="#b6a877" /><stop offset="1" stopColor="#a2946a" />
-                        </linearGradient>
-                        <linearGradient id="plotNeutralSel" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#e6dbb4" /><stop offset="1" stopColor="#c9bb8c" />
-                        </linearGradient>
                         <pattern id="turf" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
                             <rect width="8" height="8" fill="transparent" />
                             <line x1="2" y1="7" x2="2.6" y2="3" stroke="#6aa347" strokeWidth="0.5" opacity="0.3" />
@@ -731,11 +724,12 @@ export default function LayoutMap() {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
                                 const st = statusMap[p.id]; // undefined until admin sets it
-                                const hasStatus = st !== undefined;
-                                const meta = hasStatus ? STATUS_META[st] : null;
-                                const fillNormal = meta ? meta.fill : "url(#plotNeutral)";
-                                const fillSel = meta ? meta.sel : "url(#plotNeutralSel)";
-                                const dimmed = filter !== "all" && st !== filter;
+                                // Default look = Available (green). Colour only differs once admin sets reserved/sold.
+                                const effective: Status = st || "available";
+                                const meta = STATUS_META[effective];
+                                const fillNormal = meta.fill;
+                                const fillSel = meta.sel;
+                                const dimmed = filter !== "all" && effective !== filter;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
@@ -796,38 +790,39 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                {/* Status filter — single button + dropdown */}
-                <div className="lm-filterwrap">
-                    <button
-                        className={`lm-filterbtn lm-fchip-${filter}`}
-                        onClick={() => setFilterOpen((v) => !v)}
-                    >
-                        <span className="lm-filterdot" />
-                        <span>{filter === "all" ? "All Plots" : STATUS_META[filter].label}</span>
-                        <svg viewBox="0 0 24 24" width="16" height="16" className={`lm-filtercaret ${filterOpen ? "open" : ""}`}>
-                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                    {filterOpen && (
-                        <>
-                            <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />
-                            <div className="lm-filtermenu">
-                                {(["all", "available", "reserved", "sold"] as const).map((f) => (
-                                    <button
-                                        key={f}
-                                        className={`lm-filteritem ${filter === f ? "active" : ""}`}
-                                        onClick={() => { setFilter(f); setFilterOpen(false); }}
-                                    >
-                                        <span className={`lm-filteritem-dot lm-fchip-${f}`} />
-                                        {f === "all" ? "All Plots" : STATUS_META[f].label}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-
                 <div className="lm-actionbtns">
+                    {/* Filter button — opens the plot-status dropdown */}
+                    <div className="lm-filterwrap">
+                        <button
+                            className={`lm-actbtn lm-filterbtn lm-fchip-${filter}`}
+                            onClick={() => setFilterOpen((v) => !v)}
+                            aria-label="Filter plots"
+                        >
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#d4ab54" strokeWidth="2">
+                                <path d="M4 5h16M7 12h10M10 19h4" strokeLinecap="round" />
+                            </svg>
+                            <span className="lm-actbtn-txt">
+                                {filter === "all" ? "All" : STATUS_META[filter].label}
+                            </span>
+                        </button>
+                        {filterOpen && (
+                            <>
+                                <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />
+                                <div className="lm-filtermenu">
+                                    {(["all", "available", "reserved", "sold"] as const).map((f) => (
+                                        <button
+                                            key={f}
+                                            className={`lm-filteritem ${filter === f ? "active" : ""}`}
+                                            onClick={() => { setFilter(f); setFilterOpen(false); }}
+                                        >
+                                            <span className={`lm-filteritem-dot lm-fchip-${f}`} />
+                                            {f === "all" ? "All Plots" : STATUS_META[f].label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <a className="lm-actbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
                         <svg viewBox="0 0 24 24" width="22" height="22">
                             <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#ea4335" />
@@ -1009,26 +1004,23 @@ const css = `
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* ===== Status filter — single button + dropdown ===== */
-.lm-filterwrap{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 108px); left:50%; transform:translateX(-50%); z-index:9; }
-.lm-filterbtn{ display:flex; align-items:center; gap:9px; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:13px; font-weight:600; padding:10px 16px; border-radius:999px; cursor:pointer; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 6px 18px rgba(0,0,0,.35); transition:border-color .2s, transform .1s; white-space:nowrap; }
-.lm-filterbtn:active{ transform:scale(.97); }
-.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
-.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
-.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
-.lm-filterdot{ width:9px; height:9px; border-radius:50%; background:#8b93a4; }
-.lm-filterbtn.lm-fchip-available .lm-filterdot{ background:#568636; }
-.lm-filterbtn.lm-fchip-reserved .lm-filterdot{ background:#f5b942; }
-.lm-filterbtn.lm-fchip-sold .lm-filterdot{ background:#e0504a; }
-.lm-filtercaret{ transition:transform .2s; opacity:.7; }
-.lm-filtercaret.open{ transform:rotate(180deg); }
-.lm-filterbackdrop{ position:fixed; inset:0; z-index:-1; }
-.lm-filtermenu{ margin-top:8px; background:rgba(18,22,16,.96); border:1px solid var(--line); border-radius:16px; padding:6px; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5); display:flex; flex-direction:column; gap:2px; min-width:190px; animation:fmenu .18s ease; }
-@keyframes fmenu{ from{ opacity:0; transform:translateY(-6px);} to{ opacity:1; transform:none;} }
-.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; }
+/* ===== Status filter — button lives in the left action stack; menu opens to the right ===== */
+.lm-filterwrap{ position:relative; }
+.lm-actbtn.lm-filterbtn{ /* inherits .lm-actbtn box; just tint the border by active filter */ }
+.lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
+.lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
+.lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
+.lm-filterbackdrop{ position:fixed; inset:0; z-index:14; }
+.lm-filtermenu{ position:absolute; top:0; left:calc(100% + 10px); z-index:15;
+  background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
+  display:flex; flex-direction:column; gap:2px; min-width:180px; animation:fmenu .18s ease; }
+@keyframes fmenu{ from{ opacity:0; transform:translateX(-6px);} to{ opacity:1; transform:none;} }
+.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; white-space:nowrap; }
 .lm-filteritem:hover{ background:rgba(212,171,84,.1); }
 .lm-filteritem.active{ background:rgba(212,171,84,.16); }
-.lm-filteritem-dot{ width:11px; height:11px; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.4); background:#8b93a4; }
+.lm-filteritem-dot{ width:11px; height:11px; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.4); background:#568636; }
+.lm-filteritem-dot.lm-fchip-all{ background:#8b93a4; }
 .lm-filteritem-dot.lm-fchip-available{ background:#568636; }
 .lm-filteritem-dot.lm-fchip-reserved{ background:#f5b942; }
 .lm-filteritem-dot.lm-fchip-sold{ background:#e0504a; }
@@ -1220,7 +1212,6 @@ const css = `
 @media (min-width:640px){
   .lm-brand-name{ font-size:24px; }
   .lm-panel{ max-width:420px; left:auto; right:22px; bottom:22px; border-radius:20px; }
-  .lm-filterwrap{ top:calc(env(safe-area-inset-top,0px) + 92px); }
 }
 @media (prefers-reduced-motion:reduce){
   .lm-panel, .lm-plot-shape{ transition:none; }
