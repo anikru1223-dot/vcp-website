@@ -723,10 +723,12 @@ export default function LayoutMap() {
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
-                                const st = statusMap[p.id]; // undefined until admin sets it
-                                // Default look = Available (green). Colour only differs once admin sets reserved/sold.
+                                const st = statusMap[p.id]; // real status from DB (may be undefined)
                                 const effective: Status = st || "available";
-                                const meta = STATUS_META[effective];
+                                // At "All": every plot renders GREEN (available look), ignoring real status.
+                                // Once a filter is chosen, plots show their REAL colour.
+                                const shown: Status = filter === "all" ? "available" : effective;
+                                const meta = STATUS_META[shown];
                                 const fillNormal = meta.fill;
                                 const fillSel = meta.sel;
                                 const dimmed = filter !== "all" && effective !== filter;
@@ -790,9 +792,23 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                <div className="lm-actionbtns">
-                    {/* Filter button — opens the plot-status dropdown */}
+                {/* Bottom action row — Filter · Maps · Photos (side by side) */}
+                <div className="lm-actionrow">
                     <div className="lm-filterwrap">
+                        {filterOpen && (
+                            <div className="lm-filtermenu">
+                                {(["all", "available", "reserved", "sold"] as const).map((f) => (
+                                    <button
+                                        key={f}
+                                        className={`lm-filteritem ${filter === f ? "active" : ""}`}
+                                        onClick={() => { setFilter(f); setFilterOpen(false); }}
+                                    >
+                                        <span className={`lm-filteritem-dot lm-fchip-${f}`} />
+                                        {f === "all" ? "All Plots" : STATUS_META[f].label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <button
                             className={`lm-actbtn lm-filterbtn lm-fchip-${filter}`}
                             onClick={() => setFilterOpen((v) => !v)}
@@ -805,24 +821,8 @@ export default function LayoutMap() {
                                 {filter === "all" ? "All" : STATUS_META[filter].label}
                             </span>
                         </button>
-                        {filterOpen && (
-                            <>
-                                <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />
-                                <div className="lm-filtermenu">
-                                    {(["all", "available", "reserved", "sold"] as const).map((f) => (
-                                        <button
-                                            key={f}
-                                            className={`lm-filteritem ${filter === f ? "active" : ""}`}
-                                            onClick={() => { setFilter(f); setFilterOpen(false); }}
-                                        >
-                                            <span className={`lm-filteritem-dot lm-fchip-${f}`} />
-                                            {f === "all" ? "All Plots" : STATUS_META[f].label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </>
-                        )}
                     </div>
+
                     <a className="lm-actbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
                         <svg viewBox="0 0 24 24" width="22" height="22">
                             <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#ea4335" />
@@ -830,6 +830,7 @@ export default function LayoutMap() {
                         </svg>
                         <span className="lm-actbtn-txt">Maps</span>
                     </a>
+
                     <button className="lm-actbtn" onClick={() => setPhotosOpen(true)} aria-label="Photos">
                         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#d4ab54" strokeWidth="2">
                             <rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" fill="#d4ab54" stroke="none" /><path d="M4 17l5-5 4 4 3-3 4 4" />
@@ -837,6 +838,9 @@ export default function LayoutMap() {
                         <span className="lm-actbtn-txt">Photos</span>
                     </button>
                 </div>
+
+                {/* backdrop closes the filter menu when tapping the map */}
+                {filterOpen && <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />}
 
                 {photosOpen && (
                     <div className="lm-photos-overlay" onClick={() => setPhotosOpen(false)}>
@@ -867,14 +871,6 @@ export default function LayoutMap() {
                             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" strokeLinejoin="round" /></svg>
                         )}
                     </button>
-                </div>
-
-                <div className="lm-legend">
-                    <span><i className="lg-avail" />Available</span>
-                    <span><i className="lg-int" />Reserved</span>
-                    <span><i className="lg-sold" />Sold</span>
-                    <span><i className="lg-ca" />CA</span>
-                    <span><i className="lg-stp" />STP</span>
                 </div>
 
                 <div className="lm-tiq-wrap">
@@ -1004,18 +1000,17 @@ const css = `
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* ===== Status filter — button lives in the left action stack; menu opens to the right ===== */
+/* ===== Status filter — menu opens UPWARD above the Filter button (overlay, no layout push) ===== */
 .lm-filterwrap{ position:relative; }
-.lm-actbtn.lm-filterbtn{ /* inherits .lm-actbtn box; just tint the border by active filter */ }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
 .lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
 .lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
-.lm-filterbackdrop{ position:fixed; inset:0; z-index:14; }
-.lm-filtermenu{ position:absolute; top:0; left:calc(100% + 10px); z-index:15;
+.lm-filterbackdrop{ position:fixed; inset:0; z-index:15; }
+.lm-filtermenu{ position:absolute; bottom:calc(100% + 10px); left:0; z-index:17;
   background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
   display:flex; flex-direction:column; gap:2px; min-width:180px; animation:fmenu .18s ease; }
-@keyframes fmenu{ from{ opacity:0; transform:translateX(-6px);} to{ opacity:1; transform:none;} }
+@keyframes fmenu{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
 .lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; white-space:nowrap; }
 .lm-filteritem:hover{ background:rgba(212,171,84,.1); }
 .lm-filteritem.active{ background:rgba(212,171,84,.16); }
@@ -1098,17 +1093,18 @@ const css = `
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
 .lm-stp-label{ fill:#3a2358; font-size:12px; font-weight:800; text-anchor:middle; }
 
-/* ===== Action buttons (Maps + Photos), stacked below header ===== */
-.lm-actionbtns{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
-  top:calc(env(safe-area-inset-top,0px) + 108px); z-index:8; display:flex; flex-direction:column; gap:10px; }
-.lm-actbtn{ text-decoration:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  width:54px; height:54px; border-radius:15px; cursor:pointer;
+/* ===== Bottom action row — Filter | Maps | Photos (side by side) ===== */
+.lm-actionrow{ position:absolute; left:50%; transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:16;
+  display:flex; gap:10px; align-items:flex-end; }
+.lm-actbtn{ text-decoration:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; height:60px; border-radius:16px; cursor:pointer;
   border:1px solid var(--line); background:var(--glass); color:var(--txt);
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
   box-shadow:0 8px 24px rgba(0,0,0,.45); transition:transform .15s, background .2s; }
 .lm-actbtn:hover{ background:rgba(212,171,84,.12); }
 .lm-actbtn:active{ transform:scale(.95); }
-.lm-actbtn-txt{ font-size:8px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; opacity:.85; }
+.lm-actbtn-txt{ font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.9; }
 
 /* ===== Photos modal ===== */
 .lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
@@ -1134,20 +1130,6 @@ const css = `
 .lm-ctrl button.lm-ctrl-on{ background:linear-gradient(180deg,#2a3550,#1a2338); color:#ffd76a; }
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
-
-/* ===== Legend (glass card) ===== */
-.lm-legend{ position:absolute; left:calc(env(safe-area-inset-left,0px) + 14px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:8; display:flex; gap:14px; flex-wrap:wrap; max-width:62vw;
-  background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  border:1px solid var(--line); border-radius:14px; padding:10px 14px; font-size:11.5px; color:var(--txt);
-  box-shadow:0 10px 30px rgba(0,0,0,.45); }
-.lm-legend span{ display:flex; align-items:center; gap:6px; }
-.lm-legend i{ width:12px; height:12px; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,.4); }
-.lg-avail{ background:linear-gradient(180deg,#568636,#365b21); }
-.lg-int{ background:linear-gradient(180deg,#f5b942,#d98a1f); }
-.lg-sold{ background:linear-gradient(180deg,#e0504a,#a52a24); }
-.lg-ca{ background:linear-gradient(180deg,#a9d475,#77a648); }
-.lg-stp{ background:linear-gradient(180deg,#cdb4ec,#9772c6); }
 
 /* ===== Hint ===== */
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
