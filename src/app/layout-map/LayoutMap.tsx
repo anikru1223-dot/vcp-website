@@ -938,7 +938,7 @@ export default function LayoutMap() {
                             <div className="lm-row">
                                 <span className="lm-row-l">STATUS</span>
                                 <span className={`lm-status-badge lm-status-${selStatus || "unset"}`}>
-                                    {selStatus ? STATUS_META[selStatus].label : "Not listed"}
+                                    {selStatus ? STATUS_META[selStatus].label : "Available"}
                                 </span>
                             </div>
                             <Row label="SQ. FEET" value={`${sel.sqft.toLocaleString()} Sq.Ft`} />
