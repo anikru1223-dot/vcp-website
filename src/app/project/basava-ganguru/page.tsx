@@ -52,11 +52,11 @@ const INVEST_REASONS = [
 ];
 
 const APPRECIATION = [
-    { year: '2024', value: 1300 },
-    { year: '2025', value: 1900 },
-    { year: '2026', value: 2300 },
+    { year: '2024', value: 2300 },
+    { year: '2025', value: 2600 },
+    { year: '2026', value: 2900 },
     { year: '2027', value: 3300 },
-    { year: '2028', value: 4000 },
+    { year: '2028', value: 3800 },
 ];
 
 function Reveal({ children, delay = 0, className, style }: { children: React.ReactNode; delay?: number; className?: string; style?: React.CSSProperties }) {
@@ -130,7 +130,7 @@ export default function BasavaGanguruPage() {
 
                     <div className="bg-cta-row">
                         <button className="bg-btn bg-btn-primary" onClick={() => router.push('/layout-map')}>
-                            <Compass size={17} /> Interactive Map
+                            <Compass size={17} /> View Map
                         </button>
                         <a className="bg-btn bg-btn-wa" href={WA_URL} target="_blank" rel="noopener noreferrer">
                             <MessageCircle size={17} /> WhatsApp
@@ -284,7 +284,7 @@ export default function BasavaGanguruPage() {
                         </p>
                         <div className="bg-cta-row bg-cta-center">
                             <button className="bg-btn bg-btn-primary" onClick={() => router.push('/layout-map')}>
-                                <Compass size={17} /> Interactive Map
+                                <Compass size={17} /> View Map
                             </button>
                             <a className="bg-btn bg-btn-wa" href={WA_URL} target="_blank" rel="noopener noreferrer">
                                 <MessageCircle size={17} /> WhatsApp
@@ -400,7 +400,9 @@ function Styles() {
 /* buttons */
 .bg-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
   font-family:var(--font-body);font-weight:700;font-size:14px;padding:13px 20px;border-radius:999px;border:none;
-  transition:transform .26s cubic-bezier(.22,.98,.28,1), box-shadow .26s, filter .2s;text-decoration:none;white-space:nowrap;}
+  transition:transform .26s cubic-bezier(.22,.98,.28,1), box-shadow .26s, filter .2s;text-decoration:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bg-btn svg{flex-shrink:0;}
 .bg-btn:active{transform:scale(.97);}
 .bg-btn-sm{padding:10px 18px;font-size:13px;}
 .bg-btn-primary{background:linear-gradient(135deg,var(--brass-light),var(--brass) 55%,var(--brass-dark));color:#1a1305;
@@ -408,7 +410,7 @@ function Styles() {
 .bg-btn-wa{background:var(--wa);color:#fff;box-shadow:0 10px 26px -12px rgba(37,211,102,0.55);}
 .bg-btn-call{background:var(--call);color:#fff;box-shadow:0 10px 26px -12px rgba(61,139,240,0.5);}
 .bg-cta-row{display:flex;flex-wrap:wrap;gap:10px;}
-.bg-cta-row .bg-btn{flex:1;min-width:0;}
+.bg-cta-row .bg-btn{flex:1 1 0;min-width:0;padding-left:12px;padding-right:12px;}
 .bg-cta-center{justify-content:center;}
 
 /* MASTER PLAN */
