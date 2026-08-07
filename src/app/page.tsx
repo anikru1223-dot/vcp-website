@@ -575,7 +575,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 .projects-feature:hover{transform:translateY(-5px);box-shadow:0 40px 90px -30px rgba(11,17,32,0.7);}
 .projects-feature img{
-  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;
   transition:transform 0.8s cubic-bezier(.22,.98,.28,1);
 }
 .projects-feature:hover img{transform:scale(1.06);}
@@ -1538,8 +1538,8 @@ function ProjectsSection() {
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/projects')}
             >
               <img
-                src="https://images.unsplash.com/photo-1499631507243-7290571550ed?auto=format&fit=crop&w=1000&q=75"
-                alt="Basava Ganguru residential layout"
+                src="/basava-ganguru-layout.png"
+                alt="Basava Ganguru residential layout master plan"
               />
               <div className="pf-inner">
                 <span className="pf-badge">Live now</span>
