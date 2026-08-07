@@ -52,9 +52,9 @@ const INVEST_REASONS = [
 ];
 
 const APPRECIATION = [
-    { year: '2024', value: 2300 },
-    { year: '2025', value: 2600 },
-    { year: '2026', value: 2900 },
+    { year: '2024', value: 1200 },
+    { year: '2025', value: 1800 },
+    { year: '2026', value: 2300 },
     { year: '2027', value: 3300 },
     { year: '2028', value: 3800 },
 ];
