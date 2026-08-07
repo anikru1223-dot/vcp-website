@@ -5,9 +5,6 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
 
 /**
  * Basava Ganguru — Interactive Master Layout (AR3D style)
- * Plot status (available / reserved / sold) is loaded live from Supabase.
- * Plots only show a status COLOUR once the admin has explicitly set a status;
- * un-set plots render neutral until then.
  */
 
 type Plot = {
@@ -15,6 +12,8 @@ type Plot = {
 };
 
 type Status = "available" | "reserved" | "sold";
+
+type MediaItem = { id: string; type: "image" | "video"; url: string; caption: string | null };
 
 const STATUS_META: Record<Status, { label: string; fill: string; sel: string; legend: string }> = {
     available: { label: "Available", fill: "url(#plotFill)", sel: "url(#plotSel)", legend: "linear-gradient(180deg,#568636,#365b21)" },
@@ -158,6 +157,8 @@ export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
     const [tiqOpen, setTiqOpen] = useState(false);
     const [photosOpen, setPhotosOpen] = useState(false);
+    const [media, setMedia] = useState<MediaItem[]>([]);
+    const [lightbox, setLightbox] = useState<number | null>(null);
     const [night, setNight] = useState(false);
     const [splash, setSplash] = useState(true);
 
@@ -227,6 +228,21 @@ export default function LayoutMap() {
             .subscribe();
 
         return () => { active = false; supabase.removeChannel(channel); };
+    }, [projectId]);
+
+    // Load project media (photos/videos) for the Photos popup
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const { data } = await supabase
+                .from("project_media")
+                .select("id,type,url,caption")
+                .eq("project_id", projectId)
+                .order("sort_order", { ascending: true })
+                .order("created_at", { ascending: false });
+            if (alive && data) setMedia(data as MediaItem[]);
+        })();
+        return () => { alive = false; };
     }, [projectId]);
 
     const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -370,14 +386,12 @@ export default function LayoutMap() {
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
         baseScaleRef.current = computeBaseScale();
-        paint(cur.current); // initial transform so the map starts correctly placed
+        paint(cur.current);
         el.addEventListener("wheel", onWheel, { passive: false });
         const onResize = () => { baseScaleRef.current = computeBaseScale(); paint(cur.current); };
         window.addEventListener("resize", onResize);
         return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
-
-
 
     const trees: [number, number, number][] = [];
     const stones: [number, number, number][] = [];
@@ -545,15 +559,6 @@ export default function LayoutMap() {
                         </filter>
                         <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
                             <stop offset="0" stopColor="#ffe9b0" stopOpacity="0.6" /><stop offset="0.5" stopColor="#ffce6e" stopOpacity="0.2" /><stop offset="1" stopColor="#ffce6e" stopOpacity="0" />
-                        </radialGradient>
-                        <radialGradient id="foliage1" cx="0.4" cy="0.35" r="0.72">
-                            <stop offset="0" stopColor="#5a8a38" /><stop offset="0.5" stopColor="#3c6624" /><stop offset="1" stopColor="#1e3813" />
-                        </radialGradient>
-                        <radialGradient id="foliage2" cx="0.4" cy="0.35" r="0.72">
-                            <stop offset="0" stopColor="#65934a" /><stop offset="0.5" stopColor="#436f2c" /><stop offset="1" stopColor="#233f16" />
-                        </radialGradient>
-                        <radialGradient id="foliage3" cx="0.42" cy="0.34" r="0.75">
-                            <stop offset="0" stopColor="#4f8030" /><stop offset="0.5" stopColor="#345c20" /><stop offset="1" stopColor="#1a3310" />
                         </radialGradient>
                         <linearGradient id="headBeam" x1="0" y1="0" x2="1" y2="0">
                             <stop offset="0" stopColor="#fff3c4" stopOpacity="0.7" /><stop offset="1" stopColor="#fff3c4" stopOpacity="0" />
@@ -734,14 +739,11 @@ export default function LayoutMap() {
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
-                            {/* PLOTS — colour ONLY when admin has explicitly set a status */}
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
-                                const st = statusMap[p.id]; // real status from DB (may be undefined)
+                                const st = statusMap[p.id];
                                 const effective: Status = st || "available";
-                                // At "All": every plot renders GREEN (available look), ignoring real status.
-                                // Once a filter is chosen, plots show their REAL colour.
                                 const shown: Status = filter === "all" ? "available" : effective;
                                 const meta = STATUS_META[shown];
                                 const fillNormal = meta.fill;
@@ -856,23 +858,70 @@ export default function LayoutMap() {
                     </div>
                 )}
 
-                {/* backdrop closes the filter menu when tapping the map */}
                 {filterOpen && <div className="lm-filterbackdrop" onClick={() => setFilterOpen(false)} />}
 
                 {photosOpen && (
                     <div className="lm-photos-overlay" onClick={() => setPhotosOpen(false)}>
                         <div className="lm-photos-modal" onClick={(e) => e.stopPropagation()}>
                             <div className="lm-photos-head">
-                                <span>Project Photos</span>
+                                <span>Project Gallery</span>
                                 <button className="lm-close" onClick={() => setPhotosOpen(false)} aria-label="Close">
                                     <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
                                 </button>
                             </div>
-                            <div className="lm-photos-empty">
-                                <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#8b9280" strokeWidth="1.6"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
-                                <div>Photos coming soon</div>
-                            </div>
+                            {media.length === 0 ? (
+                                <div className="lm-photos-empty">
+                                    <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#8b9280" strokeWidth="1.6"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
+                                    <div>Photos coming soon</div>
+                                </div>
+                            ) : (
+                                <div className="lm-photos-grid">
+                                    {media.map((m, i) => (
+                                        <button key={m.id} className="lm-photo-cell" onClick={() => setLightbox(i)}>
+                                            {m.type === "video" ? (
+                                                <>
+                                                    <video src={m.url} muted playsInline preload="metadata" />
+                                                    <span className="lm-photo-play">
+                                                        <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={m.url} alt={m.caption || "photo"} loading="lazy" />
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
+                    </div>
+                )}
+
+                {/* Lightbox — tap to enlarge */}
+                {lightbox !== null && media[lightbox] && (
+                    <div className="lm-lightbox" onClick={() => setLightbox(null)}>
+                        <button className="lm-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close">
+                            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+                        </button>
+                        <div className="lm-lightbox-inner" onClick={(e) => e.stopPropagation()}>
+                            {media[lightbox].type === "video" ? (
+                                <video src={media[lightbox].url} controls autoPlay playsInline className="lm-lightbox-media" />
+                            ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={media[lightbox].url} alt={media[lightbox].caption || "photo"} className="lm-lightbox-media" />
+                            )}
+                            {media[lightbox].caption && <div className="lm-lightbox-cap">{media[lightbox].caption}</div>}
+                        </div>
+                        {media.length > 1 && (
+                            <>
+                                <button className="lm-lightbox-nav lm-prev" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox - 1 + media.length) % media.length); }} aria-label="Previous">
+                                    <svg viewBox="0 0 24 24" width="26" height="26"><path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                </button>
+                                <button className="lm-lightbox-nav lm-next" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox + 1) % media.length); }} aria-label="Next">
+                                    <svg viewBox="0 0 24 24" width="26" height="26"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
 
@@ -934,7 +983,6 @@ export default function LayoutMap() {
                             </div>
                         </div>
                         <div className="lm-rows">
-                            {/* STATUS row — coloured badge; only shows a status if admin set one */}
                             <div className="lm-row">
                                 <span className="lm-row-l">STATUS</span>
                                 <span className={`lm-status-badge lm-status-${selStatus || "available"}`}>
@@ -984,7 +1032,6 @@ const css = `
   overflow:hidden; overscroll-behavior:none; touch-action:none;
 }
 
-/* ===== Header (glass) ===== */
 .lm-head{ position:absolute; top:0; left:0; right:0; z-index:6;
   display:flex; align-items:center; gap:14px; flex-wrap:wrap;
   padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
@@ -997,7 +1044,6 @@ const css = `
   -webkit-background-clip:text; background-clip:text; color:transparent; letter-spacing:-.01em; }
 .lm-brand-sub{ font-size:10px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-top:3px; }
 
-/* ===== Search (glass pill) ===== */
 .lm-search{ flex:1; min-width:160px; position:relative; }
 .lm-search::before{ content:""; position:absolute; left:14px; top:50%; transform:translateY(-50%);
   width:15px; height:15px; border:2px solid var(--gold); border-radius:50%;
@@ -1011,7 +1057,6 @@ const css = `
 .lm-search input:focus{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,171,84,.18); }
 .lm-search input::placeholder{ color:#8b9280; }
 
-/* ===== Stage ===== */
 .lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
   overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230);
   contain:layout size; }
@@ -1019,7 +1064,6 @@ const css = `
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* ===== Status filter — menu opens UPWARD above the Filter button (fixed overlay, no layout push) ===== */
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
 .lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
@@ -1041,7 +1085,6 @@ const css = `
 .lm-filteritem-dot.lm-fchip-reserved{ background:#f5b942; }
 .lm-filteritem-dot.lm-fchip-sold{ background:#e0504a; }
 
-/* ===== Train IQ credit logo + popup ===== */
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
   bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:9; display:flex; align-items:center; gap:10px; }
 .lm-tiq-logo{ display:flex; align-items:center; justify-content:center; cursor:pointer;
@@ -1055,7 +1098,6 @@ const css = `
 .lm-tiq-pop-sub{ font-size:11px; color:#a9c4e6; margin-top:1px; }
 @keyframes tiqpop{ from{ opacity:0; transform:translateX(8px); } to{ opacity:1; transform:translateX(0); } }
 
-/* ===== SVG map elements ===== */
 .lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#b9b39c; stroke-width:2.4; opacity:.4; }
 .lm-paver line{ stroke:#5f5945; stroke-width:1; opacity:.55; }
 .lm-lane line{ stroke:#f4e6b0; stroke-width:2.4; stroke-dasharray:12 16; opacity:.62; stroke-linecap:round; }
@@ -1069,7 +1111,6 @@ const css = `
 .lm-turf-edge{ fill:none; stroke:#1e3510; stroke-width:3.5; opacity:.95; stroke-linejoin:round; }
 .lm-amen-border{ fill:none; stroke:#14260a; stroke-width:1.6; stroke-dasharray:7 5; opacity:.9; stroke-linejoin:round; }
 
-/* ===== Intro splash ===== */
 .lm-splash{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column;
   align-items:center; justify-content:center; cursor:pointer;
   background:radial-gradient(120% 100% at 50% 30%,#1c2417,#0a0d07 80%);
@@ -1114,7 +1155,6 @@ const css = `
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
 .lm-stp-label{ fill:#3a2358; font-size:12px; font-weight:800; text-anchor:middle; }
 
-/* ===== Bottom action row — Filter | Maps | Photos (side by side) ===== */
 .lm-actionrow{ position:absolute; left:50%; transform:translateX(-50%);
   bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:16;
   display:flex; gap:10px; align-items:flex-end; }
@@ -1127,10 +1167,9 @@ const css = `
 .lm-actbtn:active{ transform:scale(.95); }
 .lm-actbtn-txt{ font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.9; }
 
-/* ===== Photos modal ===== */
 .lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
   background:rgba(6,9,6,.6); backdrop-filter:blur(6px); animation:fadein .2s ease; }
-.lm-photos-modal{ width:min(88vw,420px); background:linear-gradient(180deg,#1a2116,#0d120a);
+.lm-photos-modal{ width:min(88vw,460px); background:linear-gradient(180deg,#1a2116,#0d120a);
   border:1px solid var(--line); border-radius:20px; padding:16px 18px 22px; box-shadow:0 24px 60px rgba(0,0,0,.6); }
 .lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;
   font-size:15px; font-weight:700; font-family:'Playfair Display',serif; color:var(--gold-lt); }
@@ -1138,7 +1177,24 @@ const css = `
   color:var(--muted); font-size:13px; letter-spacing:.02em; }
 @keyframes fadein{ from{opacity:0} to{opacity:1} }
 
-/* ===== Apple-Maps-style control stack ===== */
+.lm-photos-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:60vh; overflow-y:auto; padding:2px; }
+.lm-photo-cell{ position:relative; aspect-ratio:1; border:none; border-radius:12px; overflow:hidden; cursor:pointer; background:#000; padding:0; }
+.lm-photo-cell img, .lm-photo-cell video{ width:100%; height:100%; object-fit:cover; display:block; }
+.lm-photo-cell:active{ transform:scale(.97); }
+.lm-photo-play{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.28); }
+.lm-lightbox{ position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.92); backdrop-filter:blur(4px); animation:fadein .2s ease; }
+.lm-lightbox-inner{ max-width:92vw; max-height:82vh; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.lm-lightbox-media{ max-width:92vw; max-height:76vh; border-radius:12px; object-fit:contain; box-shadow:0 20px 60px rgba(0,0,0,.6); }
+.lm-lightbox-cap{ color:#f3f6ee; font-size:14px; text-align:center; max-width:80vw; }
+.lm-lightbox-close{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); right:16px; z-index:2;
+  width:42px; height:42px; border-radius:12px; border:1px solid var(--line); background:rgba(20,24,16,.7); color:#fff;
+  display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.lm-lightbox-nav{ position:absolute; top:50%; transform:translateY(-50%); width:46px; height:46px; border-radius:50%;
+  border:1px solid var(--line); background:rgba(20,24,16,.7); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.lm-lightbox-nav.lm-prev{ left:12px; }
+.lm-lightbox-nav.lm-next{ right:12px; }
+
 .lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:8;
   display:flex; flex-direction:column; gap:1px; border-radius:16px; overflow:hidden;
@@ -1152,14 +1208,12 @@ const css = `
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
 
-/* ===== Hint ===== */
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
   z-index:7; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px;
   padding:9px 18px; border-radius:999px; backdrop-filter:blur(14px); white-space:nowrap; pointer-events:none;
   box-shadow:0 8px 24px rgba(0,0,0,.4); animation:fade 6s ease forwards; }
 @keyframes fade{ 0%,70%{opacity:1;} 100%{opacity:0;} }
 
-/* ===== Premium bottom sheet ===== */
 .lm-panel{ position:absolute; left:0; right:0; bottom:0; z-index:20;
   background:linear-gradient(180deg,rgba(24,30,20,.96),rgba(11,15,10,.98));
   border-top:1px solid var(--line); border-radius:24px 24px 0 0;
@@ -1195,13 +1249,11 @@ const css = `
 .lm-row-l{ font-size:11.5px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
 .lm-row-v{ font-size:14.5px; font-weight:700; text-align:right; }
 
-/* ===== Status badge in info table ===== */
 .lm-status-badge{ font-size:12.5px; font-weight:800; letter-spacing:.02em; padding:5px 14px; border-radius:999px;
   border:1px solid transparent; }
 .lm-status-available{ background:rgba(86,134,54,.18); color:#8fd257; border-color:rgba(86,134,54,.5); }
 .lm-status-reserved{ background:rgba(245,185,66,.16); color:#ffcf72; border-color:rgba(245,185,66,.5); }
 .lm-status-sold{ background:rgba(224,80,74,.16); color:#ff8079; border-color:rgba(224,80,74,.5); }
-.lm-status-unset{ background:rgba(139,147,164,.15); color:#b7bdc9; border-color:rgba(139,147,164,.4); }
 
 .lm-cta-row{ display:flex; gap:10px; }
 .lm-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;

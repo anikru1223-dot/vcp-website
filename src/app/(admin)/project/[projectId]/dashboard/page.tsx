@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Map, Users, MessageCircle, Phone, ChevronRight } from "lucide-react";
+import MediaManager from "./MediaManager";
 
 type Status = "available" | "reserved" | "sold";
 
@@ -152,6 +153,9 @@ export default function DashboardPage() {
                     </div>
                 )}
             </div>
+
+            {/* Photos & videos shown on the public map */}
+            <MediaManager projectId={projectId} />
         </div>
     );
 }
