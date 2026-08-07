@@ -845,6 +845,12 @@ export default function LayoutMap() {
                 {/* Filter menu — fixed overlay, floats ABOVE the map without shifting it */}
                 {filterOpen && (
                     <div className="lm-filtermenu">
+                        <div className="lm-filtermenu-head">
+                            <span>Filter Plots</span>
+                            <button className="lm-menu-close" onClick={() => setFilterOpen(false)} aria-label="Close">
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
+                            </button>
+                        </div>
                         {(["all", "available", "reserved", "sold"] as const).map((f) => (
                             <button
                                 key={f}
@@ -1068,8 +1074,11 @@ const css = `
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
 .lm-actbtn.lm-filterbtn.lm-fchip-reserved{ border-color:#f5b942; }
 .lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
-.lm-filterbackdrop{ position:fixed; inset:0; z-index:15; }
-.lm-filtermenu{ position:fixed; left:50%;
+.lm-filterbackdrop{ position:absolute; inset:0; z-index:15; }
+.lm-filtermenu-head{ display:flex; align-items:center; justify-content:space-between; padding:6px 8px 8px 12px; margin-bottom:2px; border-bottom:1px solid rgba(212,171,84,.16); font-size:13px; font-weight:700; color:var(--gold-lt); font-family:'Playfair Display',serif; }
+.lm-menu-close{ width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
+.lm-menu-close:hover{ background:rgba(255,255,255,.06); }
+.lm-filtermenu{ position:absolute; left:50%;
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:17;
   background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
   backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
@@ -1086,7 +1095,7 @@ const css = `
 .lm-filteritem-dot.lm-fchip-sold{ background:#e0504a; }
 
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:9; display:flex; align-items:center; gap:10px; }
+  bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:40; display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px; }
 .lm-tiq-logo{ display:flex; align-items:center; justify-content:center; cursor:pointer;
   background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:12px;
   padding:6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .15s; }
@@ -1096,7 +1105,7 @@ const css = `
   white-space:nowrap; animation:tiqpop .2s ease; }
 .lm-tiq-pop-title{ font-size:12px; font-weight:700; letter-spacing:.01em; }
 .lm-tiq-pop-sub{ font-size:11px; color:#a9c4e6; margin-top:1px; }
-@keyframes tiqpop{ from{ opacity:0; transform:translateX(8px); } to{ opacity:1; transform:translateX(0); } }
+@keyframes tiqpop{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
 
 .lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#b9b39c; stroke-width:2.4; opacity:.4; }
 .lm-paver line{ stroke:#5f5945; stroke-width:1; opacity:.55; }
