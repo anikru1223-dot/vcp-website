@@ -568,6 +568,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   border-radius:22px;
   overflow:hidden;
   min-height:440px;
+  background:#0a0f1c;
   border:1px solid rgba(184,137,74,0.28);
   box-shadow:0 30px 70px -30px rgba(11,17,32,0.6);
   cursor:pointer;
@@ -575,7 +576,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 .projects-feature:hover{transform:translateY(-5px);box-shadow:0 40px 90px -30px rgba(11,17,32,0.7);}
 .projects-feature img{
-  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;
   transition:transform 0.8s cubic-bezier(.22,.98,.28,1);
 }
 .projects-feature:hover img{transform:scale(1.06);}
@@ -1532,10 +1533,10 @@ function ProjectsSection() {
           <Reveal>
             <div
               className="projects-feature"
-              onClick={() => router.push('/projects')}
+              onClick={() => router.push('/project/basava-ganguru')}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/projects')}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/project/basava-ganguru')}
             >
               <img
                 src="/basava-ganguru-layout.png"
@@ -1578,7 +1579,7 @@ function ProjectsSection() {
             </div>
 
             <Reveal delay={0.3}>
-              <Magnetic onClick={() => router.push('/projects')} className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>
+              <Magnetic onClick={() => router.push('/project/basava-ganguru')} className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>
                 View All Projects <ArrowRight size={18} />
               </Magnetic>
             </Reveal>
