@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Bricolage_Grotesque, Manrope, IBM_Plex_Mono } from 'next/font/google';
 import {
     Phone,
@@ -13,6 +13,7 @@ import {
     Check,
     Building2,
     Home as HomeIcon,
+    Briefcase,
     Shield,
     Users,
     Zap,
@@ -24,30 +25,12 @@ import {
     KeyIcon,
     LandPlot,
     Hammer,
-    Map as MapIcon,
-    Navigation as NavigationIcon,
-    Trees,
-    Droplets,
-    GraduationCap,
-    Hospital,
-    Train,
-    TrendingUp,
-    Ruler,
-    Route,
+    Compass,
+    Layers,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// External links / constants for THIS project
-// ---------------------------------------------------------------------------
-const PHONE = '+919980061727';
-const PHONE_DISPLAY = '+91 99800 61727';
-const WHATSAPP = 'https://wa.me/919980061727';
-const EMAIL = 'anilkrui223@gmail.com';
-const MAPS_LINK = 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw';
-const LAYOUT_MAP_ROUTE = '/layout-map'; // routes to LayoutMap.tsx page
-
-// ---------------------------------------------------------------------------
-// Fonts (identical to company site)
+// Fonts
 // ---------------------------------------------------------------------------
 const display = Bricolage_Grotesque({
     subsets: ['latin'],
@@ -66,7 +49,7 @@ const mono = IBM_Plex_Mono({
 });
 
 // ---------------------------------------------------------------------------
-// Global styles (same design tokens + section CSS as the company site)
+// Global styles
 // ---------------------------------------------------------------------------
 function GlobalStyles() {
     return (
@@ -161,6 +144,19 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   margin-bottom:64px;
 }
 
+/* ============ REVEAL ANIMATION ============ */
+.reveal{
+  opacity:0;
+  transform:translateY(28px);
+  transition:opacity 0.8s cubic-bezier(.22,.98,.28,1), transform 0.8s cubic-bezier(.22,.98,.28,1);
+}
+.reveal.is-visible{opacity:1;transform:translateY(0);}
+.reveal-delay-1{transition-delay:0.08s;}
+.reveal-delay-2{transition-delay:0.16s;}
+.reveal-delay-3{transition-delay:0.24s;}
+.reveal-delay-4{transition-delay:0.32s;}
+.reveal-delay-5{transition-delay:0.4s;}
+
 /* ============ BUTTONS ============ */
 .btn{
   position:relative;
@@ -192,6 +188,15 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .btn-ghost:hover{background:rgba(245,241,230,0.12);border-color:rgba(245,241,230,0.6);}
 .btn-ghost.dark{border-color:rgba(43,42,38,0.25);color:var(--ink);background:rgba(43,42,38,0.04);}
 .btn-ghost.dark:hover{background:rgba(43,42,38,0.08);border-color:rgba(43,42,38,0.45);}
+.btn-ripple{
+  position:absolute;
+  border-radius:50%;
+  background:rgba(255,255,255,0.5);
+  transform:scale(0);
+  animation:ripple 0.6s ease-out;
+  pointer-events:none;
+}
+@keyframes ripple{to{transform:scale(3);opacity:0;}}
 
 /* ============ NAVIGATION ============ */
 .nav-wrap{
@@ -280,7 +285,12 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   display:flex;
   flex-direction:column;
   gap:2px;
+  opacity:0;
+  transform:translateY(-12px);
+  pointer-events:none;
+  transition:opacity 0.3s ease, transform 0.3s ease;
 }
+.nav-mobile.is-open{opacity:1;transform:translateY(0);pointer-events:auto;}
 .nav-mobile a, .nav-mobile button{
   padding:14px 16px;
   border-radius:14px;
@@ -340,28 +350,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   color:rgba(245,241,230,0.68);
   max-width:480px;
   line-height:1.65;
-  margin-bottom:24px;
-}
-.hero-price{
-  display:inline-flex;
-  align-items:baseline;
-  gap:10px;
-  padding:14px 24px;
-  border:1px solid rgba(184,137,74,0.35);
-  border-radius:14px;
-  background:rgba(184,137,74,0.08);
-  margin-bottom:36px;
-}
-.hero-price .amt{
-  font-family:var(--font-mono);
-  font-size:30px;
-  font-weight:600;
-  color:var(--brass-light);
-}
-.hero-price .unit{
-  font-size:13px;
-  color:rgba(245,241,230,0.6);
-  letter-spacing:0.04em;
+  margin-bottom:40px;
 }
 .hero-actions{
   display:flex;
@@ -405,6 +394,9 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   stroke:var(--brass);
   stroke-width:1.4;
   opacity:0.85;
+  stroke-dasharray:1400;
+  stroke-dashoffset:1400;
+  animation:draw-plot 2.2s cubic-bezier(.22,.98,.28,1) forwards;
 }
 .plot-road{
   stroke:rgba(231,225,210,0.16);
@@ -412,6 +404,17 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   stroke-dasharray:2 10;
   stroke-linecap:round;
 }
+@keyframes draw-plot{to{stroke-dashoffset:0;}}
+.plot-fill-fade{
+  opacity:0;
+  animation:fade-plot 1s ease forwards;
+}
+@keyframes fade-plot{to{opacity:1;}}
+.plot-compass{
+  transform-origin:center;
+  animation:spin-slow 40s linear infinite;
+}
+@keyframes spin-slow{to{transform:rotate(360deg);}}
 .scroll-cue{
   position:absolute;
   bottom:28px;left:50%;
@@ -516,7 +519,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 .about-check-item span{font-weight:600;font-size:15px;color:var(--ink);}
 
-/* ============ HIGHLIGHTS (services-style grid) ============ */
+/* ============ SERVICES ============ */
 .services-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
@@ -553,71 +556,67 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .service-card h3{font-size:20px;color:var(--ink);margin-bottom:10px;}
 .service-card p{font-size:14.5px;color:var(--graphite-soft);line-height:1.6;}
 
-/* ============ LAYOUT MAP CTA (dark, signature block) ============ */
-.map-cta{
-  position:relative;
+/* ============ PROJECTS SHOWCASE ============ */
+.projects-showcase{
   display:grid;
   grid-template-columns:1.05fr 0.95fr;
-  gap:0;
-  border:1px solid rgba(184,137,74,0.28);
-  overflow:hidden;
-  background:var(--ink-soft);
+  gap:56px;
+  align-items:stretch;
 }
-.map-cta-copy{
-  padding:64px 56px;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-}
-.map-cta-copy .eyebrow{color:var(--brass-light);}
-.map-cta-copy h2{
-  font-size:clamp(28px,3.4vw,42px);
-  color:var(--linen);
-  margin-bottom:18px;
-}
-.map-cta-copy h2 em{font-style:normal;color:var(--brass-light);}
-.map-cta-copy p{
-  font-size:16px;
-  color:rgba(245,241,230,0.68);
-  line-height:1.7;
-  max-width:440px;
-  margin-bottom:32px;
-}
-.map-cta-actions{display:flex;flex-wrap:wrap;gap:14px;}
-.map-cta-visual{
+.projects-feature{
   position:relative;
-  min-height:360px;
-  background:
-    radial-gradient(ellipse 600px 400px at 70% 30%, rgba(184,137,74,0.14), transparent 65%),
-    var(--ink);
-  border-left:1px solid rgba(184,137,74,0.2);
+  border-radius:22px;
   overflow:hidden;
+  min-height:440px;
+  border:1px solid rgba(184,137,74,0.28);
+  box-shadow:0 30px 70px -30px rgba(11,17,32,0.6);
+  cursor:pointer;
+  transition:transform 0.45s cubic-bezier(.22,.98,.28,1), box-shadow 0.45s ease;
 }
-.map-cta-visual::before{
-  content:'';
-  position:absolute;inset:0;
-  background-image:
-    linear-gradient(rgba(184,137,74,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(184,137,74,0.06) 1px, transparent 1px);
-  background-size:40px 40px;
-  mask-image:radial-gradient(ellipse 80% 80% at 50% 50%, black, transparent);
+.projects-feature:hover{transform:translateY(-5px);box-shadow:0 40px 90px -30px rgba(11,17,32,0.7);}
+.projects-feature img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  transition:transform 0.8s cubic-bezier(.22,.98,.28,1);
 }
-.map-cta-visual svg{position:absolute;inset:0;width:100%;height:100%;}
-.mini-plot{
-  fill:rgba(227,190,134,0.08);
-  stroke:var(--brass);
-  stroke-width:1;
-  transition:fill 0.3s ease;
+.projects-feature:hover img{transform:scale(1.06);}
+.projects-feature::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(0deg, rgba(11,17,32,0.92) 0%, rgba(11,17,32,0.4) 45%, rgba(11,17,32,0.15) 100%);
 }
-.mini-plot-label{
-  font-family:var(--font-mono);
-  font-size:11px;
-  fill:var(--brass-light);
-  text-anchor:middle;
-  dominant-baseline:central;
+.pf-inner{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;
+  padding:34px 34px 32px;
+  display:flex;flex-direction:column;gap:14px;
 }
-.mini-park{fill:rgba(124,143,110,0.16);stroke:var(--moss-light);stroke-width:1;}
-.mini-ca{fill:rgba(110,150,190,0.14);stroke:#6e96be;stroke-width:1;}
+.pf-badge{
+  align-self:flex-start;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;
+  color:#8fe0a0;background:rgba(75,160,90,0.18);border:1px solid rgba(120,220,140,0.4);
+  padding:6px 13px;border-radius:999px;backdrop-filter:blur(6px);
+}
+.pf-name{font-size:30px;color:var(--linen);}
+.pf-meta{display:flex;flex-wrap:wrap;gap:8px 20px;}
+.pf-meta span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:rgba(245,241,230,0.72);}
+.pf-meta svg{color:var(--brass-light);flex-shrink:0;}
+.pf-open{
+  margin-top:6px;display:inline-flex;align-items:center;gap:9px;
+  font-weight:700;font-size:14.5px;color:var(--brass-light);
+}
+.pf-open svg:last-child{transition:transform 0.3s cubic-bezier(.22,.98,.28,1);}
+.projects-feature:hover .pf-open svg:last-child{transform:translateX(5px);}
+
+.projects-copy{display:flex;flex-direction:column;justify-content:center;}
+.projects-copy .eyebrow{margin-bottom:20px;}
+.projects-copy p{color:var(--graphite-soft);font-size:16px;line-height:1.75;margin-bottom:20px;max-width:440px;}
+.projects-points{display:flex;flex-direction:column;gap:16px;margin:8px 0 34px;}
+.projects-point{display:flex;align-items:flex-start;gap:14px;}
+.projects-point-mark{
+  width:20px;height:20px;flex-shrink:0;margin-top:2px;
+  border:1.5px solid var(--brass);transform:rotate(45deg);
+  display:flex;align-items:center;justify-content:center;position:relative;
+}
+.projects-point-mark::after{content:'';position:absolute;width:7px;height:7px;background:var(--brass);}
+.projects-point span{font-size:14.5px;font-weight:600;color:var(--ink);}
 
 /* ============ WHY CHOOSE US (dark) ============ */
 .why-grid{
@@ -645,59 +644,54 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .why-item h3{font-size:17px;color:var(--linen);margin-bottom:6px;}
 .why-item p{font-size:14px;color:rgba(245,241,230,0.55);line-height:1.55;}
 
-/* ============ LOCATION ADVANTAGES ============ */
-.loc-grid{
+/* ============ PROCESS ============ */
+.process-desktop{position:relative;padding-top:20px;}
+.process-line{
+  position:absolute;
+  top:64px;left:60px;right:60px;
+  height:1px;
+  background:repeating-linear-gradient(90deg, var(--brass) 0 8px, transparent 8px 16px);
+  opacity:0.5;
+}
+.process-row{
   display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:56px;
-  align-items:start;
+  grid-template-columns:repeat(6,1fr);
+  gap:16px;
+  position:relative;
 }
-.loc-list{display:flex;flex-direction:column;}
-.loc-row{
-  display:flex;
-  align-items:center;
-  gap:18px;
-  padding:18px 0;
-  border-bottom:1px solid rgba(184,137,74,0.15);
-}
-.loc-row:first-child{padding-top:0;}
-.loc-dist{
-  font-family:var(--font-mono);
-  font-size:19px;
-  font-weight:600;
-  color:var(--brass-light);
-  min-width:82px;
-  flex-shrink:0;
-}
-.loc-place{font-size:15px;color:rgba(245,241,230,0.82);}
-.loc-icon{
-  width:42px;height:42px;
-  border:1px solid rgba(184,137,74,0.35);
+.process-step{display:flex;flex-direction:column;align-items:center;text-align:center;}
+.process-num{
+  width:88px;height:88px;
+  border-radius:50%;
+  background:var(--paper);
+  border:2px solid var(--brass);
   display:flex;align-items:center;justify-content:center;
-  color:var(--brass-light);
-  flex-shrink:0;
-  transform:rotate(45deg);
-}
-.loc-icon svg{transform:rotate(-45deg);}
-.loc-map-card{
-  border:1px solid rgba(184,137,74,0.28);
-  background:var(--ink-soft);
-  padding:30px;
-  display:flex;
   flex-direction:column;
-  gap:20px;
-  position:sticky;
-  top:100px;
+  margin-bottom:20px;
+  position:relative;
+  z-index:2;
+  transition:transform 0.35s cubic-bezier(.22,.98,.28,1), box-shadow 0.35s ease;
 }
-.loc-map-card h3{font-size:22px;color:var(--linen);}
-.loc-map-card p{font-size:14.5px;color:rgba(245,241,230,0.6);line-height:1.6;}
-.loc-map-frame{
-  border:1px solid rgba(184,137,74,0.25);
-  height:240px;
-  overflow:hidden;
-  filter:grayscale(0.3) contrast(1.05);
+.process-step:hover .process-num{transform:scale(1.08);box-shadow:0 16px 30px -12px rgba(184,137,74,0.5);}
+.process-num-index{font-family:var(--font-mono);font-size:11px;color:var(--brass-dark);position:absolute;top:9px;}
+.process-num svg{color:var(--brass-dark);margin-top:6px;}
+.process-step h3{font-size:15px;color:var(--ink);font-weight:700;}
+.process-mobile{display:none;flex-direction:column;gap:0;position:relative;}
+.process-mobile::before{
+  content:'';
+  position:absolute;left:29px;top:10px;bottom:10px;
+  width:1px;
+  background:repeating-linear-gradient(180deg, var(--brass) 0 6px, transparent 6px 12px);
+  opacity:0.5;
 }
-.loc-map-frame iframe{width:100%;height:100%;border:0;display:block;}
+.process-mobile-item{display:flex;align-items:center;gap:20px;padding:18px 0;position:relative;z-index:1;}
+.process-mobile-num{
+  width:60px;height:60px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--brass);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--brass-dark);flex-shrink:0;
+}
+.process-mobile-item h3{font-size:16px;color:var(--ink);}
 
 /* ============ STATISTICS ============ */
 .stats-grid{
@@ -717,6 +711,8 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .stat-ring-bg{fill:none;stroke:rgba(184,137,74,0.15);stroke-width:4;}
 .stat-ring-fg{
   fill:none;stroke:var(--brass-light);stroke-width:4;stroke-linecap:round;
+  stroke-dasharray:220;stroke-dashoffset:220;
+  transition:stroke-dashoffset 1.6s cubic-bezier(.22,.98,.28,1);
 }
 .stat-num{
   font-family:var(--font-mono);
@@ -726,34 +722,6 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 .stat-num .plus{color:var(--brass-light);}
 .stat-label{font-size:13px;color:rgba(245,241,230,0.5);margin-top:8px;letter-spacing:0.02em;}
-
-/* ============ PLOT DETAILS TABLE ============ */
-.plot-table-wrap{
-  border:1px solid var(--line);
-  overflow:hidden;
-  border-radius:4px;
-}
-.plot-table{width:100%;border-collapse:collapse;}
-.plot-table thead th{
-  background:var(--ink);
-  color:var(--brass-light);
-  font-family:var(--font-mono);
-  font-size:12px;
-  letter-spacing:0.08em;
-  text-transform:uppercase;
-  padding:16px 18px;
-  text-align:left;
-  font-weight:500;
-}
-.plot-table tbody td{
-  padding:15px 18px;
-  font-size:14.5px;
-  color:var(--graphite);
-  border-top:1px solid var(--line-soft);
-}
-.plot-table tbody tr:nth-child(even){background:rgba(184,137,74,0.04);}
-.plot-table tbody tr:hover{background:rgba(184,137,74,0.09);}
-.plot-table td:first-child{font-family:var(--font-mono);font-weight:600;color:var(--brass-dark);}
 
 /* ============ GALLERY ============ */
 .gallery-grid{
@@ -799,7 +767,10 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   background:rgba(11,17,32,0.92);
   display:flex;align-items:center;justify-content:center;
   padding:40px;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.3s ease;
 }
+.lightbox.is-open{opacity:1;pointer-events:auto;}
 .lightbox img{max-width:min(900px,90vw);max-height:80vh;object-fit:contain;box-shadow:0 40px 80px rgba(0,0,0,0.5);}
 .lightbox-close{
   position:absolute;top:28px;right:32px;
@@ -810,6 +781,81 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   color:var(--linen);
 }
 .lightbox-caption{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);text-align:center;color:var(--linen);font-family:var(--font-mono);font-size:13px;letter-spacing:0.06em;}
+
+/* ============ LEADERSHIP ============ */
+.leadership-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;}
+.leader-card{
+  background:var(--paper);
+  border:1px solid var(--line-soft);
+  padding:44px;
+  position:relative;
+  overflow:hidden;
+}
+.leader-card::before{
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg, var(--brass), transparent 70%);
+}
+.leader-top{display:flex;gap:22px;align-items:center;margin-bottom:26px;}
+.leader-avatar{
+  width:84px;height:84px;
+  border-radius:50%;
+  background:linear-gradient(135deg, var(--ink), var(--brass-dark));
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);
+  font-size:26px;font-weight:700;
+  color:var(--brass-light);
+  flex-shrink:0;
+  position:relative;
+}
+.leader-avatar::after{
+  content:'';
+  position:absolute;inset:-5px;
+  border:1px solid rgba(184,137,74,0.35);
+  border-radius:50%;
+}
+.leader-badge{
+  display:inline-block;
+  font-family:var(--font-mono);
+  font-size:10.5px;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:var(--brass-dark);
+  background:rgba(184,137,74,0.1);
+  padding:5px 12px;
+  margin-bottom:8px;
+}
+.leader-card h3{font-size:22px;color:var(--ink);}
+.leader-card p{font-size:14.5px;color:var(--graphite-soft);line-height:1.7;}
+
+/* ============ TESTIMONIALS ============ */
+.testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.testimonial-card{
+  background:var(--white);
+  border:1px solid var(--line-soft);
+  padding:36px 32px;
+  position:relative;
+  transition:transform 0.35s ease, box-shadow 0.35s ease;
+}
+.testimonial-card:hover{transform:translateY(-6px);box-shadow:0 26px 50px -20px rgba(43,42,38,0.2);}
+.quote-mark{
+  font-family:var(--font-display);
+  font-size:52px;
+  color:var(--brass);
+  opacity:0.35;
+  line-height:1;
+  margin-bottom:6px;
+}
+.stars{display:flex;gap:3px;margin-bottom:16px;}
+.testimonial-card p{font-size:15px;color:var(--graphite-soft);line-height:1.7;margin-bottom:22px;font-style:italic;}
+.testimonial-name{display:flex;align-items:center;gap:12px;}
+.t-initial{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--mist);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--brass-dark);
+}
+.testimonial-name span{font-weight:700;font-size:14.5px;color:var(--ink);}
 
 /* ============ CONTACT ============ */
 .contact-grid{display:grid;grid-template-columns:0.9fr 1.1fr;gap:56px;}
@@ -870,10 +916,11 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   border:1px solid rgba(184,137,74,0.3);
   color:var(--brass-light);
   font-size:14px;
-  display:flex;
+  display:none;
   align-items:center;
   gap:10px;
 }
+.form-success.is-visible{display:flex;}
 
 /* ============ FOOTER ============ */
 .footer{background:#080c18;padding:90px 0 32px;position:relative;}
@@ -888,8 +935,8 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .footer p{color:rgba(245,241,230,0.5);font-size:14.5px;line-height:1.7;max-width:320px;}
 .footer h5{font-family:var(--font-mono);font-size:11.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(245,241,230,0.4);margin-bottom:18px;}
 .footer ul{display:flex;flex-direction:column;gap:12px;}
-.footer ul a, .footer ul button{color:rgba(245,241,230,0.65);font-size:14.5px;transition:color 0.25s ease, padding-left 0.25s ease;text-align:left;}
-.footer ul a:hover, .footer ul button:hover{color:var(--brass-light);padding-left:4px;}
+.footer ul a{color:rgba(245,241,230,0.65);font-size:14.5px;transition:color 0.25s ease, padding-left 0.25s ease;}
+.footer ul a:hover{color:var(--brass-light);padding-left:4px;}
 .footer-bottom{border-top:1px solid rgba(245,241,230,0.1);padding-top:28px;text-align:center;color:rgba(245,241,230,0.35);font-size:13px;}
 
 /* ============ FLOATING BUTTONS ============ */
@@ -905,7 +952,6 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .fab:hover{transform:scale(1.08);}
 .fab-wa{background:#25D366;}
 .fab-call{background:linear-gradient(135deg, var(--brass-light), var(--brass-dark));}
-.fab-map{background:linear-gradient(135deg,#4285F4,#2b5fc4);}
 .fab-tooltip{
   position:absolute;right:70px;top:50%;transform:translateY(-50%) translateX(6px);
   background:var(--ink);color:var(--linen);
@@ -922,16 +968,18 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   .hero-visual{max-width:440px;margin:0 auto;order:-1;}
   .about-grid{grid-template-columns:1fr;gap:60px;}
   .services-grid{grid-template-columns:repeat(2,1fr);}
+  .projects-showcase{grid-template-columns:1fr;gap:44px;}
+  .projects-feature{min-height:380px;}
   .why-grid{grid-template-columns:repeat(2,1fr);}
+  .process-row{display:none;}
+  .process-line{display:none;}
+  .process-mobile{display:flex;}
   .stats-grid{grid-template-columns:repeat(2,1fr);}
   .gallery-grid{grid-template-columns:repeat(2,1fr);}
   .g-span-2c{grid-column:span 2;}
+  .leadership-grid{grid-template-columns:1fr;}
+  .testimonials-grid{grid-template-columns:1fr;}
   .contact-grid{grid-template-columns:1fr;gap:50px;}
-  .loc-grid{grid-template-columns:1fr;gap:40px;}
-  .loc-map-card{position:static;}
-  .map-cta{grid-template-columns:1fr;}
-  .map-cta-visual{min-height:280px;order:-1;}
-  .map-cta-copy{padding:48px 36px;}
   .footer-grid{grid-template-columns:1fr;gap:40px;}
   .nav-links{display:none;}
   .nav-cta{display:none;}
@@ -947,7 +995,9 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   .hero-stats{gap:0;}
   .hero-stat{padding:0 16px;}
   .section-head{margin-bottom:44px;}
-  .plot-table thead th, .plot-table tbody td{padding:12px 12px;font-size:13px;}
+  .projects-feature{min-height:340px;}
+  .pf-inner{padding:26px 24px 24px;}
+  .pf-name{font-size:25px;}
 }
 
     `}</style>
@@ -955,7 +1005,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 
 // ---------------------------------------------------------------------------
-// Magnetic wrapper (same as company site) — supports href, route push, onClick
+// Magnetic
 // ---------------------------------------------------------------------------
 function Magnetic({
     children,
@@ -1029,11 +1079,11 @@ function Magnetic({
 // Navigation
 // ---------------------------------------------------------------------------
 const NAV_ITEMS = [
-    { label: 'Overview', id: 'home' },
+    { label: 'Home', id: 'home' },
     { label: 'About', id: 'about' },
-    { label: 'Highlights', id: 'highlights' },
-    { label: 'Layout', id: 'layout' },
-    { label: 'Location', id: 'location' },
+    { label: 'Services', id: 'services' },
+    { label: 'Projects', id: 'projects' },
+    { label: 'Why Choose Us', id: 'why-choose-us' },
     { label: 'Contact', id: 'contact' },
 ];
 
@@ -1075,8 +1125,8 @@ function Navigation() {
                             <line x1="8" y1="14" x2="12" y2="14" stroke="#B8894A" strokeWidth="1" opacity="0.6" />
                         </svg>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1.15 }}>
-                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--brass-light)', letterSpacing: '0.04em' }}>Basava Ganguru</span>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--linen)' }}>Residential Layout</span>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--brass-light)', letterSpacing: '0.04em' }}>Vijayalaxmi C Patil</span>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--linen)' }}>Developers & Promoters</span>
                         </div>
                     </button>
 
@@ -1088,7 +1138,7 @@ function Navigation() {
                         ))}
                     </div>
 
-                    <Magnetic href={`tel:${PHONE}`} className="btn btn-primary nav-cta">
+                    <Magnetic href="tel:+919980061727" className="btn btn-primary nav-cta">
                         Call Now
                     </Magnetic>
 
@@ -1101,7 +1151,7 @@ function Navigation() {
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
-                        className="nav-mobile"
+                        className="nav-mobile is-open"
                         initial={{ opacity: 0, y: -12 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -12 }}
@@ -1116,8 +1166,8 @@ function Navigation() {
                                 {item.label}
                             </button>
                         ))}
-                        <a href={`tel:${PHONE}`} style={{ color: 'var(--brass-light)' }}>
-                            Call {PHONE_DISPLAY}
+                        <a href="tel:+919980061727" style={{ color: 'var(--brass-light)' }}>
+                            Call +91 99800 61727
                         </a>
                     </motion.div>
                 )}
@@ -1127,26 +1177,21 @@ function Navigation() {
 }
 
 // ---------------------------------------------------------------------------
-// Hero — site-plan line drawing mirrors the sanctioned SBUDA survey layout:
-// two 12-plot columns, a 10-plot block, CA site and park, roads between.
+// Hero
 // ---------------------------------------------------------------------------
 const PLOTS: string[][] = [
-    // top-left 1-6 block (CA sits to its left)
-    ['300,60', '380,58', '380,140', '300,142'],
-    ['380,58', '460,56', '460,138', '380,140'],
-    ['460,56', '540,54', '540,136', '460,138'],
-    ['300,142', '380,140', '380,222', '300,224'],
-    ['380,140', '460,138', '460,220', '380,222'],
-    ['460,138', '540,136', '540,218', '460,220'],
-    // middle column 11-17 (left)
-    ['600,60', '700,58', '700,556', '600,558'],
-    // middle column 18-25 (center)
-    ['720,58', '820,56', '820,554', '720,556'],
-    // right column 26-32
-    ['870,54', '970,52', '970,552', '870,554'],
+    ['32,34', '272,22', '286,188', '28,198'],
+    ['272,22', '498,44', '492,190', '286,188'],
+    ['498,44', '752,28', '762,168', '492,190'],
+    ['28,198', '286,188', '272,364', '22,378'],
+    ['286,188', '492,190', '476,368', '272,364'],
+    ['492,190', '762,168', '772,350', '476,368'],
+    ['22,378', '272,364', '256,556', '14,562'],
+    ['272,364', '476,368', '462,558', '256,556'],
+    ['476,368', '772,350', '782,556', '462,558'],
 ];
 
-function HeroSection({ onViewMap }: { onViewMap: () => void }) {
+function HeroSection() {
     return (
         <section id="home" className="hero">
             <div className="container hero-grid">
@@ -1157,7 +1202,7 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6 }}
                     >
-                        Basava Ganguru &middot; Shivamogga
+                        Shivamogga &middot; Karnataka
                     </motion.div>
 
                     <motion.h1
@@ -1166,8 +1211,8 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.7, delay: 0.1 }}
                     >
-                        Build Your Dream Home
-                        <span className="accent">in Shivamogga.</span>
+                        Building Dreams.
+                        <span className="accent">Creating Communities.</span>
                     </motion.h1>
 
                     <motion.p
@@ -1176,20 +1221,9 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.7, delay: 0.2 }}
                     >
-                        A premium plotted development of 32 SBUDA-approved residential sites,
-                        with wide roads, a landscaped park, civic amenity site and
-                        ready-for-registration titles.
+                        Premium Residential Layout Development, Plot Sales, Home Loans &amp;
+                        Complete House Construction Services in Shivamogga
                     </motion.p>
-
-                    <motion.div
-                        className="hero-price"
-                        initial={{ opacity: 0, y: 18 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.7, delay: 0.25 }}
-                    >
-                        <span className="amt">&#8377;2,300</span>
-                        <span className="unit">PER SQ.FT &middot; STARTING</span>
-                    </motion.div>
 
                     <motion.div
                         className="hero-actions"
@@ -1197,11 +1231,11 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.7, delay: 0.3 }}
                     >
-                        <Magnetic onClick={onViewMap} className="btn btn-primary">
-                            <MapIcon size={18} />
-                            View Layout Map
+                        <Magnetic href="tel:+919980061727" className="btn btn-primary">
+                            <Phone size={18} />
+                            Call Now
                         </Magnetic>
-                        <Magnetic href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn btn-ghost">
+                        <Magnetic href="https://wa.me/919980061727" target="_blank" rel="noopener noreferrer" className="btn btn-ghost">
                             <MessageCircle size={18} />
                             WhatsApp
                         </Magnetic>
@@ -1214,51 +1248,71 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                         transition={{ duration: 0.7, delay: 0.45 }}
                     >
                         <div className="hero-stat">
-                            <span className="hero-stat-num">32</span>
-                            <span className="hero-stat-label">Residential Plots</span>
+                            <span className="hero-stat-num">15+</span>
+                            <span className="hero-stat-label">Years Experience</span>
                         </div>
                         <div className="hero-stat">
-                            <span className="hero-stat-num">40ft</span>
-                            <span className="hero-stat-label">Main Road</span>
+                            <span className="hero-stat-num">45+</span>
+                            <span className="hero-stat-label">Projects Done</span>
                         </div>
                         <div className="hero-stat">
-                            <span className="hero-stat-num">7,219</span>
-                            <span className="hero-stat-label">Sq.M Extent</span>
+                            <span className="hero-stat-num">2.8k+</span>
+                            <span className="hero-stat-label">Happy Families</span>
                         </div>
                     </motion.div>
                 </div>
 
                 <div className="hero-visual">
-                    <svg viewBox="0 0 1000 620">
-                        {/* roads mirroring the survey drawing */}
-                        <motion.line className="plot-road" x1={280} y1={30} x2={280} y2={590}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }} />
-                        <motion.line className="plot-road" x1={570} y1={30} x2={570} y2={590}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }} />
-                        <motion.line className="plot-road" x1={840} y1={30} x2={840} y2={590}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }} />
-                        <motion.line className="plot-road" x1={40} y1={40} x2={990} y2={40}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }} />
+                    <svg viewBox="0 0 900 600">
+                        <defs>
+                            <clipPath id="clipPlot5">
+                                <polygon points="286,188 492,190 476,368 272,364" />
+                            </clipPath>
+                            <clipPath id="clipPlot9">
+                                <polygon points="476,368 772,350 782,556 462,558" />
+                            </clipPath>
+                        </defs>
 
-                        {/* CA site */}
-                        <motion.polygon
-                            points="150,60 270,58 270,224 150,226"
-                            fill="rgba(110,150,190,0.14)" stroke="#6e96be" strokeWidth={1}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.6, duration: 0.8 }}
+                        <motion.line
+                            className="plot-road"
+                            x1={279} y1={10} x2={279} y2={590}
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }}
                         />
-                        <motion.text x={210} y={145} fill="#8fb4d6" fontSize={16} fontFamily="var(--font-mono)" textAnchor="middle"
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2, duration: 0.6 }}>CA</motion.text>
-
-                        {/* park */}
-                        <motion.polygon
-                            points="150,300 540,300 500,560 150,580"
-                            fill="rgba(124,143,110,0.16)" stroke="#7c8f6e" strokeWidth={1}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.8, duration: 0.8 }}
+                        <motion.line
+                            className="plot-road"
+                            x1={485} y1={10} x2={485} y2={590}
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }}
                         />
-                        <motion.text x={330} y={440} fill="#a7bd97" fontSize={16} fontFamily="var(--font-mono)" textAnchor="middle"
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.1, duration: 0.6 }}>PARK</motion.text>
+                        <motion.line
+                            className="plot-road"
+                            x1={10} y1={193} x2={890} y2={193}
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }}
+                        />
+                        <motion.line
+                            className="plot-road"
+                            x1={10} y1={371} x2={890} y2={371}
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4, duration: 0.6 }}
+                        />
 
-                        {/* plot outlines draw in */}
+                        <motion.image
+                            href="https://images.unsplash.com/photo-1563873414958-cd82f797b03a?auto=format&fit=crop&w=500&q=70"
+                            x={272} y={184} width={224} height={188}
+                            preserveAspectRatio="xMidYMid slice"
+                            clipPath="url(#clipPlot5)"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 1.6, duration: 1 }}
+                        />
+                        <motion.image
+                            href="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=70"
+                            x={460} y={348} width={326} height={212}
+                            preserveAspectRatio="xMidYMid slice"
+                            clipPath="url(#clipPlot9)"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 1.9, duration: 1 }}
+                        />
+
                         {PLOTS.map((pts, i) => (
                             <motion.polygon
                                 key={i}
@@ -1270,9 +1324,8 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
                             />
                         ))}
 
-                        {/* rotating compass */}
                         <motion.g
-                            transform="translate(930,80)"
+                            transform="translate(820,68)"
                             opacity={0.55}
                             animate={{ rotate: 360 }}
                             transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
@@ -1298,7 +1351,7 @@ function HeroSection({ onViewMap }: { onViewMap: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Reveal wrapper
+// Reveal
 // ---------------------------------------------------------------------------
 function Reveal({
     children,
@@ -1331,10 +1384,10 @@ function Reveal({
 // About
 // ---------------------------------------------------------------------------
 const ABOUT_CHECKLIST = [
-    'SBUDA-approved residential layout',
-    'Clear titles, ready for registration',
-    'Wide 40ft & 30ft internal roads',
-    'Green, peaceful & well-connected',
+    'Transparency in every transaction',
+    'Quality construction standards',
+    'Complete legal documentation',
+    'Customer-centric approach',
 ];
 
 function AboutSection() {
@@ -1345,40 +1398,39 @@ function AboutSection() {
                     <img
                         className="about-img-main"
                         src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=75"
-                        alt="Basava Ganguru Residential Layout"
+                        alt="Modern residential development by VCP Developers"
                     />
                     <img
                         className="about-img-accent"
-                        src="https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?auto=format&fit=crop&w=700&q=75"
-                        alt="Wide landscaped internal roads at the layout"
+                        src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=700&q=75"
+                        alt="Construction team building a VCP Developers layout"
                     />
                     <div className="about-badge">
-                        <span className="about-badge-num">32</span>
-                        <span className="about-badge-label">Premium&nbsp;Plots</span>
+                        <span className="about-badge-num">15+</span>
+                        <span className="about-badge-label">Years&nbsp;Trusted</span>
                     </div>
                 </Reveal>
 
                 <div className="about-copy">
-                    <div className="eyebrow">About The Project</div>
+                    <div className="eyebrow">Our Story</div>
                     <Reveal>
                         <h2 className="section-title">
-                            A Premium Plotted <em>Development</em> in Basava Ganguru
+                            Trusted Real Estate <em>Excellence</em> in Shivamogga
                         </h2>
                     </Reveal>
                     <Reveal delay={0.1}>
                         <p>
-                            Basava Ganguru Residential Layout is a premium plotted development
-                            designed to offer the perfect blend of comfort, convenience and
-                            future growth. Thoughtfully planned with wide roads, modern
-                            infrastructure and green open spaces.
+                            Vijayalaxmi C. Patil Developers &amp; Promoters is a trusted real
+                            estate developer specializing in developing premium residential
+                            layouts, converting large land parcels into well-planned
+                            residential sites, and delivering complete key-in-hand solutions.
                         </p>
                     </Reveal>
                     <Reveal delay={0.18}>
                         <p>
-                            Developed by Vijayalaxmi C. Patil Developers &amp; Promoters on
-                            Sy. No. 43/1 of Basava Ganguru village, Shivamogga Taluk &mdash;
-                            a sanctioned SBUDA layout ideal for building your dream home or
-                            making a smart investment.
+                            Our mission is to make home ownership simple by offering
+                            everything from purchasing a plot to delivering a fully
+                            completed dream home.
                         </p>
                     </Reveal>
 
@@ -1397,38 +1449,38 @@ function AboutSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Key Highlights (services-style grid)
+// Services
 // ---------------------------------------------------------------------------
-const HIGHLIGHTS = [
-    { icon: Route, tag: 'H · 01', title: 'Wide Roads', desc: 'Well-planned internal roads, 40ft & 30ft wide, for smooth movement and easy access.' },
-    { icon: Droplets, tag: 'H · 02', title: 'Underground Drainage', desc: 'Modern underground drainage system ensuring a clean and healthy environment.' },
-    { icon: Trees, tag: 'H · 03', title: 'Landscaped Park', desc: 'Beautifully designed park with green spaces for leisure and recreation.' },
-    { icon: Building2, tag: 'H · 04', title: 'Civic Amenity Site', desc: 'Designated civic amenity space for community facilities and social infrastructure.' },
-    { icon: Zap, tag: 'H · 05', title: '24×7 Electricity', desc: 'Uninterrupted power supply for a modern and comfortable lifestyle.' },
-    { icon: Shield, tag: 'H · 06', title: 'Ready For Registration', desc: 'Clear titles and all approvals in place. Ready for immediate registration.' },
+const SERVICES = [
+    { icon: LandPlot, tag: 'SVC · 01', title: 'Residential Layout Development', desc: 'Premium residential layouts with modern infrastructure and planning' },
+    { icon: HomeIcon, tag: 'SVC · 02', title: 'Residential Site Sales', desc: 'Prime residential plots in well-planned communities' },
+    { icon: Hammer, tag: 'SVC · 03', title: 'House Construction', desc: 'Complete construction from foundation to finish' },
+    { icon: DollarSign, tag: 'SVC · 04', title: 'Housing Loan Assistance', desc: 'Expert guidance for housing loan approvals' },
+    { icon: FileText, tag: 'SVC · 05', title: 'Legal Documentation', desc: 'Complete documentation and compliance support' },
+    { icon: KeyIcon, tag: 'SVC · 06', title: 'End-to-End Key Handover', desc: 'From plot purchase to key handover solutions' },
 ];
 
-function HighlightsSection() {
+function ServicesSection() {
     return (
-        <section id="highlights" className="section section-mist">
+        <section id="services" className="section section-mist">
             <div className="container">
                 <div className="section-head">
                     <Reveal>
-                        <div className="eyebrow">What You Get</div>
+                        <div className="eyebrow">What We Do</div>
                         <h2 className="section-title" style={{ marginBottom: 0 }}>
-                            Key <em>Highlights</em>
+                            Our <em>Services</em>
                         </h2>
                     </Reveal>
                     <Reveal delay={0.1}>
                         <p className="section-lede">
-                            Crafted with thoughtful planning and premium infrastructure for a
-                            lifestyle of comfort, convenience and long-term value.
+                            From the first survey line to the final key in hand &mdash; every
+                            step of the journey, handled in-house.
                         </p>
                     </Reveal>
                 </div>
 
                 <div className="services-grid">
-                    {HIGHLIGHTS.map((s, i) => {
+                    {SERVICES.map((s, i) => {
                         const Icon = s.icon;
                         return (
                             <Reveal key={s.title} delay={(i % 3) * 0.1} className="service-card">
@@ -1448,63 +1500,88 @@ function HighlightsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Layout Map CTA — the signature block. Button routes to LayoutMap.tsx page.
+// Projects showcase — links out to the /projects page & live layout map
 // ---------------------------------------------------------------------------
-function LayoutMapSection({ onViewMap }: { onViewMap: () => void }) {
-    return (
-        <section id="layout" className="section section-linen">
-            <div className="container">
-                <div className="map-cta">
-                    <div className="map-cta-copy">
-                        <div className="eyebrow">Master Layout Plan</div>
-                        <h2>
-                            Explore All 32 Plots on the <em>Interactive Map</em>
-                        </h2>
-                        <p>
-                            Well planned. Well connected. Well designed. Browse every
-                            residential site, the civic amenity block, landscaped park and STP
-                            exactly as sanctioned &mdash; tap any plot to see its dimensions,
-                            area and facing.
-                        </p>
-                        <div className="map-cta-actions">
-                            <Magnetic onClick={onViewMap} className="btn btn-primary">
-                                <MapIcon size={18} />
-                                Open Interactive Layout
-                            </Magnetic>
-                            <Magnetic href={MAPS_LINK} target="_blank" rel="noopener noreferrer" className="btn btn-ghost dark">
-                                <NavigationIcon size={18} />
-                                View Location
-                            </Magnetic>
-                        </div>
-                    </div>
+const PROJECT_POINTS = [
+    'Walk the sanctioned site plan plot by plot',
+    'See live availability — available, reserved, sold',
+    'Enquire on any plot by WhatsApp or call, instantly',
+];
 
-                    <div className="map-cta-visual">
-                        <svg viewBox="0 0 480 360" preserveAspectRatio="xMidYMid meet">
-                            {/* CA */}
-                            <rect className="mini-ca" x={40} y={40} width={90} height={80} />
-                            <text className="mini-plot-label" x={85} y={82} style={{ fill: '#8fb4d6' }}>CA</text>
-                            {/* 1-6 block */}
-                            {[0, 1, 2].map((c) =>
-                                [0, 1].map((r) => (
-                                    <g key={`a${c}${r}`}>
-                                        <rect className="mini-plot" x={140 + c * 34} y={40 + r * 40} width={32} height={38} />
-                                        <text className="mini-plot-label" x={156 + c * 34} y={59 + r * 40}>{r * 3 + c + 1}</text>
-                                    </g>
-                                ))
-                            )}
-                            {/* park */}
-                            <rect className="mini-park" x={40} y={200} width={200} height={120} rx={6} />
-                            <text className="mini-plot-label" x={140} y={262} style={{ fill: '#a7bd97' }}>PARK</text>
-                            {/* right columns 11-32 abbreviated */}
-                            {[0, 1, 2].map((col) =>
-                                [0, 1, 2, 3, 4, 5, 6].map((r) => (
-                                    <rect key={`b${col}${r}`} className="mini-plot" x={270 + col * 66} y={40 + r * 44} width={58} height={40} />
-                                ))
-                            )}
-                            <text className="mini-plot-label" x={299} y={62}>11</text>
-                            <text className="mini-plot-label" x={365} y={62}>24</text>
-                            <text className="mini-plot-label" x={431} y={62}>26</text>
-                        </svg>
+function ProjectsSection() {
+    const router = useRouter();
+    return (
+        <section id="projects" className="section section-linen">
+            <div className="container">
+                <div className="section-head">
+                    <Reveal>
+                        <div className="eyebrow">Live Inventory</div>
+                        <h2 className="section-title" style={{ marginBottom: 0 }}>
+                            Our <em>Projects</em>
+                        </h2>
+                    </Reveal>
+                    <Reveal delay={0.1}>
+                        <p className="section-lede">
+                            Every layout, mapped and interactive. Open a project to explore its
+                            plots in real time.
+                        </p>
+                    </Reveal>
+                </div>
+
+                <div className="projects-showcase">
+                    <Reveal>
+                        <div
+                            className="projects-feature"
+                            onClick={() => router.push('/projects')}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/projects')}
+                        >
+                            <img
+                                src="https://images.unsplash.com/photo-1499631507243-7290571550ed?auto=format&fit=crop&w=1000&q=75"
+                                alt="Basava Ganguru residential layout"
+                            />
+                            <div className="pf-inner">
+                                <span className="pf-badge">Live now</span>
+                                <h3 className="pf-name">Basava Ganguru</h3>
+                                <div className="pf-meta">
+                                    <span><MapPin size={14} /> Shivamogga, Karnataka</span>
+                                    <span><LandPlot size={14} /> 32 plots</span>
+                                    <span><Layers size={14} /> SBUDA Approved</span>
+                                </div>
+                                <span className="pf-open">
+                                    <Compass size={17} /> Explore layout <ArrowRight size={18} />
+                                </span>
+                            </div>
+                        </div>
+                    </Reveal>
+
+                    <div className="projects-copy">
+                        <Reveal>
+                            <div className="eyebrow">Interactive Site Plans</div>
+                        </Reveal>
+                        <Reveal delay={0.08}>
+                            <p>
+                                No more static PDFs. Our projects come alive as interactive maps
+                                drawn straight from the sanctioned survey &mdash; pan, zoom, and tap
+                                any plot to see its size, facing, and current status.
+                            </p>
+                        </Reveal>
+
+                        <div className="projects-points">
+                            {PROJECT_POINTS.map((point, i) => (
+                                <Reveal key={point} delay={0.1 + i * 0.08} className="projects-point">
+                                    <span className="projects-point-mark" />
+                                    <span>{point}</span>
+                                </Reveal>
+                            ))}
+                        </div>
+
+                        <Reveal delay={0.3}>
+                            <Magnetic onClick={() => router.push('/projects')} className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>
+                                View All Projects <ArrowRight size={18} />
+                            </Magnetic>
+                        </Reveal>
                     </div>
                 </div>
             </div>
@@ -1513,15 +1590,15 @@ function LayoutMapSection({ onViewMap }: { onViewMap: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Why Choose Us (dark)
+// Why Choose Us
 // ---------------------------------------------------------------------------
 const WHY_REASONS = [
-    { icon: MapPin, title: 'Prime Location', desc: 'Excellent connectivity to institutions, hospitals and essentials' },
-    { icon: Route, title: 'Well-Planned Roads', desc: '40ft & 30ft wide internal roads throughout' },
-    { icon: Trees, title: 'Green Environment', desc: 'Dedicated park and open green spaces' },
-    { icon: Check, title: 'All Approvals', desc: 'Sanctioned SBUDA layout with clear titles' },
-    { icon: HomeIcon, title: 'Ready To Build', desc: 'Ready for registration and immediate construction' },
-    { icon: TrendingUp, title: 'High Appreciation', desc: 'Fast-developing corridor with strong growth' },
+    { icon: Shield, title: 'Trusted Developers', desc: 'Proven track record in real estate' },
+    { icon: Briefcase, title: 'Transparent Process', desc: 'Clear and honest dealing always' },
+    { icon: Zap, title: 'Complete Solutions', desc: 'End-to-end services from plot to home' },
+    { icon: Users, title: 'Customer Focus', desc: 'Your satisfaction is our priority' },
+    { icon: HomeIcon, title: 'Premium Quality', desc: 'Superior construction standards' },
+    { icon: Check, title: 'Full Documentation', desc: 'Legal compliance and clarity' },
 ];
 
 function WhyChooseUsSection() {
@@ -1532,13 +1609,13 @@ function WhyChooseUsSection() {
                     <Reveal>
                         <div className="eyebrow on-dark">The Difference</div>
                         <h2 className="section-title on-dark" style={{ marginBottom: 0 }}>
-                            Why <em>Choose This Project</em>
+                            Why <em>Choose Us</em>
                         </h2>
                     </Reveal>
                     <Reveal delay={0.1}>
                         <p className="section-lede on-dark">
-                            A perfect blend of comfort, connectivity and community living &mdash;
-                            premium living, promising future.
+                            Fifteen years of the same promise: clear terms, solid
+                            construction, and a team that answers the phone.
                         </p>
                     </Reveal>
                 </div>
@@ -1565,24 +1642,88 @@ function WhyChooseUsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Process
+// ---------------------------------------------------------------------------
+const PROCESS_STEPS = [
+    { icon: LandPlot, title: 'Choose Plot' },
+    { icon: FileText, title: 'Documentation' },
+    { icon: DollarSign, title: 'Loan Approval' },
+    { icon: Hammer, title: 'Construction' },
+    { icon: HomeIcon, title: 'Final Finish' },
+    { icon: KeyIcon, title: 'Key Handover' },
+];
+
+function ProcessSection() {
+    return (
+        <section id="process" className="section section-linen">
+            <div className="container">
+                <div className="section-head">
+                    <Reveal>
+                        <div className="eyebrow">The Journey</div>
+                        <h2 className="section-title" style={{ marginBottom: 0 }}>
+                            Our <em>Process</em>
+                        </h2>
+                    </Reveal>
+                    <Reveal delay={0.1}>
+                        <p className="section-lede">
+                            Six steps, in order, from choosing a plot to holding the keys.
+                        </p>
+                    </Reveal>
+                </div>
+
+                <div className="process-desktop">
+                    <div className="process-line" />
+                    <div className="process-row">
+                        {PROCESS_STEPS.map((step, i) => {
+                            const Icon = step.icon;
+                            return (
+                                <Reveal key={step.title} delay={i * 0.08} className="process-step">
+                                    <div className="process-num">
+                                        <span className="process-num-index">{String(i + 1).padStart(2, '0')}</span>
+                                        <Icon size={26} />
+                                    </div>
+                                    <h3>{step.title}</h3>
+                                </Reveal>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="process-mobile">
+                    {PROCESS_STEPS.map((step, i) => {
+                        const Icon = step.icon;
+                        return (
+                            <div className="process-mobile-item" key={step.title}>
+                                <div className="process-mobile-num">
+                                    <Icon size={22} />
+                                </div>
+                                <h3>
+                                    {String(i + 1).padStart(2, '0')} &middot; {step.title}
+                                </h3>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Statistics
 // ---------------------------------------------------------------------------
 function StatCard({
     icon: Icon,
     value,
-    suffix,
     label,
     ringPercent,
     delay,
-    decimals = 0,
 }: {
     icon: React.ComponentType<any>;
     value: number;
-    suffix?: string;
     label: string;
     ringPercent: number;
     delay: number;
-    decimals?: number;
 }) {
     const [count, setCount] = useState(0);
     const [started, setStarted] = useState(false);
@@ -1597,7 +1738,7 @@ function StatCard({
             if (startTime === null) startTime = ts;
             const progress = Math.min((ts - startTime) / duration, 1);
             const eased = 1 - Math.pow(1 - progress, 3);
-            setCount(eased * value);
+            setCount(Math.floor(eased * value));
             if (progress < 1) requestAnimationFrame(step);
             else setCount(value);
         };
@@ -1627,12 +1768,12 @@ function StatCard({
                     />
                 </svg>
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon {...({ size: 24, color: 'var(--brass-light)' } as any)} />
+                    <Icon {...({ size: 24, color: "var(--brass-light)" } as any)} />
                 </div>
             </div>
             <div className="stat-num">
-                {decimals ? count.toFixed(decimals) : Math.floor(count).toLocaleString()}
-                {suffix ? <span className="plus">{suffix}</span> : null}
+                {count.toLocaleString()}
+                <span className="plus">+</span>
             </div>
             <div className="stat-label">{label}</div>
         </motion.div>
@@ -1641,96 +1782,19 @@ function StatCard({
 
 function StatisticsSection() {
     const stats = [
-        { icon: LandPlot, value: 32, suffix: '', label: 'Residential Plots', ring: 100, decimals: 0 },
-        { icon: Ruler, value: 2300, suffix: '/sqft', label: 'Starting Price (₹)', ring: 60, decimals: 0 },
-        { icon: Route, value: 40, suffix: 'ft', label: 'Main Road Width', ring: 80, decimals: 0 },
-        { icon: Trees, value: 10, suffix: '%', label: 'Open / Park Space', ring: 45, decimals: 0 },
+        { icon: Briefcase, value: 15, label: 'Years of Experience', ring: 72 },
+        { icon: Building2, value: 45, label: 'Projects Completed', ring: 60 },
+        { icon: Users, value: 2800, label: 'Happy Families', ring: 95 },
+        { icon: LandPlot, value: 1200, label: 'Residential Sites Sold', ring: 85 },
     ];
     return (
-        <section id="statistics" className="section section-ink" style={{ paddingTop: 0 }}>
+        <section id="statistics" className="section section-ink">
             <div className="container">
                 <div className="stats-grid">
                     {stats.map((s, i) => (
-                        <StatCard
-                            key={s.label}
-                            icon={s.icon}
-                            value={s.value}
-                            suffix={s.suffix}
-                            label={s.label}
-                            ringPercent={s.ring}
-                            delay={i * 0.1}
-                            decimals={s.decimals}
-                        />
+                        <StatCard key={s.label} icon={s.icon} value={s.value} label={s.label} ringPercent={s.ring} delay={i * 0.1} />
                     ))}
                 </div>
-            </div>
-        </section>
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Plot Details table (from sanctioned site-details schedule)
-// ---------------------------------------------------------------------------
-const PLOT_ROWS = [
-    { no: '1 – 6', dim: 'Varies (corner & mid sites)', facing: 'E / W', status: 'Available' },
-    { no: '7 – 10', dim: '9.00 × 12.00 m', facing: 'N', status: 'Available' },
-    { no: '11 – 17', dim: '9.00 × 15.00 m', facing: 'E', status: 'Available' },
-    { no: '18 – 25', dim: '9.00 × 16.05 m', facing: 'W', status: 'Available' },
-    { no: '26 – 32', dim: '9.00 × 15.00 m', facing: 'W', status: 'Available' },
-];
-
-function PlotDetailsSection({ onViewMap }: { onViewMap: () => void }) {
-    return (
-        <section id="plots" className="section section-mist">
-            <div className="container">
-                <div className="section-head">
-                    <Reveal>
-                        <div className="eyebrow">Site Schedule</div>
-                        <h2 className="section-title" style={{ marginBottom: 0 }}>
-                            Plot <em>Details</em>
-                        </h2>
-                    </Reveal>
-                    <Reveal delay={0.1}>
-                        <p className="section-lede">
-                            Dimensions follow the sanctioned SBUDA site-details schedule. Tap
-                            the interactive map for the exact figures on any individual plot.
-                        </p>
-                    </Reveal>
-                </div>
-
-                <Reveal>
-                    <div className="plot-table-wrap">
-                        <table className="plot-table">
-                            <thead>
-                                <tr>
-                                    <th>Plot No.</th>
-                                    <th>Dimensions</th>
-                                    <th>Facing</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {PLOT_ROWS.map((r) => (
-                                    <tr key={r.no}>
-                                        <td>{r.no}</td>
-                                        <td>{r.dim}</td>
-                                        <td>{r.facing}</td>
-                                        <td>{r.status}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Reveal>
-
-                <Reveal delay={0.1}>
-                    <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
-                        <Magnetic onClick={onViewMap} className="btn btn-primary">
-                            <MapIcon size={18} />
-                            Open Interactive Layout Map
-                        </Magnetic>
-                    </div>
-                </Reveal>
             </div>
         </section>
     );
@@ -1740,31 +1804,31 @@ function PlotDetailsSection({ onViewMap }: { onViewMap: () => void }) {
 // Gallery
 // ---------------------------------------------------------------------------
 const GALLERY_ITEMS = [
-    { tag: 'Entrance', title: 'Grand Arch Gateway', img: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c', span: 'g-span-2c g-span-2r' },
-    { tag: 'Roads', title: 'Wide Internal Roads', img: 'https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6', span: '' },
-    { tag: 'Park', title: 'Landscaped Park', img: 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f', span: 'g-span-2r' },
-    { tag: 'Plots', title: 'Ready Residential Sites', img: 'https://images.unsplash.com/photo-1449844908441-8829872d2607', span: '' },
-    { tag: 'Aerial', title: 'Layout Overview', img: 'https://images.unsplash.com/photo-1524813686514-a57563d77965', span: 'g-span-2c' },
-    { tag: 'Amenity', title: 'Civic Amenity Site', img: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c', span: '' },
+    { tag: 'Layout', title: 'Residential Layouts', img: 'https://images.unsplash.com/photo-1499631507243-7290571550ed', span: 'g-span-2c g-span-2r' },
+    { tag: 'Construction', title: 'Construction Phase', img: 'https://images.unsplash.com/photo-1508450859948-4e04fabaa4ea', span: '' },
+    { tag: 'Infrastructure', title: 'Modern Infrastructure', img: 'https://images.unsplash.com/photo-1499310392581-322cec0355a6', span: 'g-span-2r' },
+    { tag: 'Completed', title: 'Completed Homes', img: 'https://images.unsplash.com/photo-1721815693498-cc28507c0ba2', span: '' },
+    { tag: 'Drone', title: 'Aerial View', img: 'https://images.unsplash.com/photo-1524813686514-a57563d77965', span: 'g-span-2c' },
+    { tag: 'Community', title: 'Community Spaces', img: 'https://images.unsplash.com/photo-1780732658907-33c2e90a902c', span: '' },
 ];
 
 function GallerySection() {
     const [selected, setSelected] = useState<number | null>(null);
 
     return (
-        <section id="gallery" className="section section-linen">
+        <section id="gallery" className="section section-mist">
             <div className="container">
                 <div className="section-head">
                     <Reveal>
-                        <div className="eyebrow">Project Views</div>
+                        <div className="eyebrow">Field Notes</div>
                         <h2 className="section-title" style={{ marginBottom: 0 }}>
                             Project <em>Gallery</em>
                         </h2>
                     </Reveal>
                     <Reveal delay={0.1}>
                         <p className="section-lede">
-                            A look across the layout &mdash; from the grand gateway to the
-                            finished streets.
+                            A look across our layouts &mdash; from first survey to finished
+                            street.
                         </p>
                     </Reveal>
                 </div>
@@ -1792,7 +1856,7 @@ function GallerySection() {
             <AnimatePresence>
                 {selected !== null && (
                     <motion.div
-                        className="lightbox"
+                        className="lightbox is-open"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -1821,77 +1885,91 @@ function GallerySection() {
 }
 
 // ---------------------------------------------------------------------------
-// Location Advantages
+// Leadership
 // ---------------------------------------------------------------------------
-const LOCATION_ROWS = [
-    { icon: Route, dist: '200 m', place: 'From Existing 80ft Road' },
-    { icon: Route, dist: '300 m', place: 'From Upcoming 200ft Ring Road' },
-    { icon: GraduationCap, dist: '800 m', place: 'Keladi Shivappa Nayaka University' },
-    { icon: Hospital, dist: '1 km', place: 'Bapuji Ayurvedic Medical College' },
-    { icon: GraduationCap, dist: '1.3 km', place: 'JNNCE Engineering College' },
-    { icon: Star, dist: '5 min', place: 'KSCA Cricket Stadium' },
-    { icon: Hospital, dist: '10 min', place: 'Usha / Chandragiri Multispeciality Hospital' },
-    { icon: Train, dist: '12 min', place: 'Shivamogga Railway Station' },
-    { icon: Building2, dist: '13 min', place: 'DC Office' },
+const LEADERS = [
+    {
+        initials: 'VP',
+        name: 'Vijayalaxmi C. Patil',
+        title: 'Founder',
+        desc: 'Leading the company with a vision of developing trusted residential communities and delivering quality real estate solutions with integrity.',
+    },
+    {
+        initials: 'AP',
+        name: 'Anil Kumar C. Patil',
+        title: 'Co-Founder',
+        desc: 'Committed to providing transparent property solutions, guiding customers through every step from plot purchase to complete home construction.',
+    },
 ];
 
-function LocationSection() {
+function LeadershipSection() {
     return (
-        <section id="location" className="section section-ink">
+        <section id="leadership" className="section section-linen">
             <div className="container">
                 <div className="section-head">
                     <Reveal>
-                        <div className="eyebrow on-dark">Where It Is</div>
-                        <h2 className="section-title on-dark" style={{ marginBottom: 0 }}>
-                            Location <em>Advantages</em>
+                        <div className="eyebrow">Meet The Team</div>
+                        <h2 className="section-title" style={{ marginBottom: 0 }}>
+                            Our <em>Leadership</em>
                         </h2>
                     </Reveal>
-                    <Reveal delay={0.1}>
-                        <p className="section-lede on-dark">
-                            Strategically located in the fast-growing corridor of Shivamogga,
-                            with unmatched connectivity to institutions, healthcare and
-                            transport hubs.
-                        </p>
+                </div>
+                <div className="leadership-grid">
+                    {LEADERS.map((leader, i) => (
+                        <Reveal key={leader.name} delay={i * 0.12} className="leader-card">
+                            <div className="leader-top">
+                                <div className="leader-avatar">{leader.initials}</div>
+                                <div>
+                                    <span className="leader-badge">{leader.title}</span>
+                                    <h3>{leader.name}</h3>
+                                </div>
+                            </div>
+                            <p>{leader.desc}</p>
+                        </Reveal>
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Testimonials
+// ---------------------------------------------------------------------------
+const TESTIMONIALS = [
+    { initials: 'RK', name: 'Rajesh Kumar', rating: 5, review: 'Excellent service from start to finish. The team was transparent and professional throughout the entire process.' },
+    { initials: 'PS', name: 'Priya Sharma', rating: 5, review: 'Built my dream home with VCP Developers. Their attention to detail and quality construction is outstanding.' },
+    { initials: 'AP', name: 'Amit Patel', rating: 5, review: 'Highly satisfied with the plot location, documentation support, and loan assistance provided. Highly recommended!' },
+];
+
+function TestimonialsSection() {
+    return (
+        <section id="testimonials" className="section section-mist">
+            <div className="container">
+                <div className="section-head">
+                    <Reveal>
+                        <div className="eyebrow">Client Words</div>
+                        <h2 className="section-title" style={{ marginBottom: 0 }}>
+                            What Our Customers <em>Say</em>
+                        </h2>
                     </Reveal>
                 </div>
-
-                <div className="loc-grid">
-                    <div className="loc-list">
-                        {LOCATION_ROWS.map((r, i) => {
-                            const Icon = r.icon;
-                            return (
-                                <Reveal key={r.place} delay={(i % 4) * 0.06} className="loc-row">
-                                    <div className="loc-icon">
-                                        <Icon size={18} />
-                                    </div>
-                                    <span className="loc-dist">{r.dist}</span>
-                                    <span className="loc-place">{r.place}</span>
-                                </Reveal>
-                            );
-                        })}
-                    </div>
-
-                    <Reveal delay={0.15}>
-                        <div className="loc-map-card">
-                            <h3>Prime Location. Excellent Connectivity.</h3>
-                            <p>
-                                Basava Ganguru village, Shivamogga Taluk, Karnataka &mdash;
-                                well connected today, built for tomorrow.
-                            </p>
-                            <div className="loc-map-frame">
-                                <iframe
-                                    src="https://www.google.com/maps?q=Basava+Ganguru,Shivamogga,Karnataka,India&output=embed"
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer-when-downgrade"
-                                    title="Basava Ganguru location map"
-                                />
+                <div className="testimonials-grid">
+                    {TESTIMONIALS.map((t, i) => (
+                        <Reveal key={t.name} delay={i * 0.1} className="testimonial-card">
+                            <div className="quote-mark">&ldquo;</div>
+                            <div className="stars">
+                                {Array.from({ length: t.rating }).map((_, j) => (
+                                    <Star key={j} size={15} color="var(--brass)" fill="var(--brass)" />
+                                ))}
                             </div>
-                            <Magnetic href={MAPS_LINK} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ width: '100%' }}>
-                                <NavigationIcon size={18} />
-                                Open in Google Maps
-                            </Magnetic>
-                        </div>
-                    </Reveal>
+                            <p>{t.review}</p>
+                            <div className="testimonial-name">
+                                <div className="t-initial">{t.initials}</div>
+                                <span>{t.name}</span>
+                            </div>
+                        </Reveal>
+                    ))}
                 </div>
             </div>
         </section>
@@ -1913,12 +1991,12 @@ function ContactSection() {
     };
 
     return (
-        <section id="contact" className="section section-ink" style={{ paddingTop: 0 }}>
+        <section id="contact" className="section section-ink">
             <div className="container contact-grid">
                 <Reveal>
                     <div className="eyebrow on-dark">Get In Touch</div>
                     <h2 className="section-title on-dark">
-                        Book Your <em>Site Visit</em>
+                        Let&rsquo;s Talk <em>Plots &amp; Plans</em>
                     </h2>
 
                     <div style={{ marginTop: 12 }}>
@@ -1928,7 +2006,7 @@ function ContactSection() {
                             </div>
                             <div>
                                 <h4>Phone</h4>
-                                <a href={`tel:${PHONE}`}>{PHONE_DISPLAY}</a>
+                                <a href="tel:+919980061727">+91 9980061727</a>
                             </div>
                         </div>
                         <div className="contact-card">
@@ -1937,7 +2015,7 @@ function ContactSection() {
                             </div>
                             <div>
                                 <h4>Email</h4>
-                                <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
+                                <a href="mailto:anilkrui223@gmail.com">anilkrui223@gmail.com</a>
                             </div>
                         </div>
                         <div className="contact-card">
@@ -1946,17 +2024,17 @@ function ContactSection() {
                             </div>
                             <div>
                                 <h4>Location</h4>
-                                <p>Basava Ganguru, Shivamogga, Karnataka</p>
+                                <p>Shivamogga, Karnataka, India</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="map-frame">
                         <iframe
-                            src="https://www.google.com/maps?q=Basava+Ganguru,Shivamogga,Karnataka,India&output=embed"
+                            src="https://www.google.com/maps?q=Shivamogga,Karnataka,India&output=embed"
                             loading="lazy"
                             referrerPolicy="no-referrer-when-downgrade"
-                            title="Basava Ganguru map"
+                            title="Shivamogga, Karnataka map"
                         />
                     </div>
                 </Reveal>
@@ -2004,21 +2082,21 @@ function ContactSection() {
                                 value={formData.message}
                                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                             />
-                            <label htmlFor="fMessage">Which plot are you interested in?</label>
+                            <label htmlFor="fMessage">Your Message</label>
                         </div>
                         <Magnetic type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-                            Send Enquiry <ArrowRight size={18} />
+                            Send Message <ArrowRight size={18} />
                         </Magnetic>
 
                         <AnimatePresence>
                             {submitted && (
                                 <motion.div
-                                    className="form-success"
+                                    className="form-success is-visible"
                                     initial={{ opacity: 0, y: -10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
                                 >
-                                    &#10003;&nbsp; Enquiry sent successfully! We&rsquo;ll get back to you soon.
+                                    &#10003;&nbsp; Message sent successfully! We&rsquo;ll get back to you soon.
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -2032,7 +2110,8 @@ function ContactSection() {
 // ---------------------------------------------------------------------------
 // Footer
 // ---------------------------------------------------------------------------
-function Footer({ onViewMap }: { onViewMap: () => void }) {
+function Footer() {
+    const router = useRouter();
     const scrollToSection = (id: string) => {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     };
@@ -2055,26 +2134,25 @@ function Footer({ onViewMap }: { onViewMap: () => void }) {
                                 <line x1="13" y1="14" x2="17" y2="14" stroke="#B8894A" strokeWidth="0.8" />
                                 <line x1="8" y1="14" x2="12" y2="14" stroke="#B8894A" strokeWidth="1" opacity="0.6" />
                             </svg>
-                            Basava <span>Ganguru</span>
+                            VCP <span>Developers</span>
                         </div>
-                        <p>A premium residential layout by Vijayalaxmi C. Patil Developers &amp; Promoters in Shivamogga, Karnataka.</p>
+                        <p>Premium residential layouts and complete home construction solutions in Shivamogga.</p>
                     </Reveal>
                     <Reveal delay={0.1}>
                         <h5>Explore</h5>
                         <ul>
-                            <li><button onClick={() => scrollToSection('about')}>About</button></li>
-                            <li><button onClick={() => scrollToSection('highlights')}>Highlights</button></li>
-                            <li><button onClick={onViewMap}>Layout Map</button></li>
-                            <li><button onClick={() => scrollToSection('location')}>Location</button></li>
-                            <li><a href={MAPS_LINK} target="_blank" rel="noopener noreferrer">Google Maps</a></li>
+                            <li><button onClick={() => scrollToSection('home')} style={{ textTransform: 'capitalize' }}>Home</button></li>
+                            <li><button onClick={() => scrollToSection('about')} style={{ textTransform: 'capitalize' }}>About</button></li>
+                            <li><button onClick={() => scrollToSection('services')} style={{ textTransform: 'capitalize' }}>Services</button></li>
+                            <li><button onClick={() => router.push('/projects')}>Projects</button></li>
+                            <li><button onClick={() => scrollToSection('contact')} style={{ textTransform: 'capitalize' }}>Contact</button></li>
                         </ul>
                     </Reveal>
                     <Reveal delay={0.2}>
                         <h5>Contact</h5>
                         <ul>
-                            <li><a href={`tel:${PHONE}`}>{PHONE_DISPLAY}</a></li>
-                            <li><a href={`mailto:${EMAIL}`}>{EMAIL}</a></li>
-                            <li style={{ color: 'rgba(245,241,230,0.65)' }}>Basava Ganguru, Shivamogga, Karnataka</li>
+                            <li><a href="tel:+919980061727">+91 9980061727</a></li>
+                            <li><a href="mailto:anilkrui223@gmail.com">anilkrui223@gmail.com</a></li>
                         </ul>
                     </Reveal>
                 </div>
@@ -2087,28 +2165,13 @@ function Footer({ onViewMap }: { onViewMap: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Floating action buttons — WhatsApp, Call, and Location
+// Floating action buttons
 // ---------------------------------------------------------------------------
 function FloatingButtons() {
     return (
         <div className="fab-group">
             <motion.a
-                href={MAPS_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fab fab-map"
-                aria-label="Open location in Google Maps"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.5, type: 'spring' }}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-            >
-                <span className="fab-tooltip">View Location</span>
-                <NavigationIcon size={24} />
-            </motion.a>
-            <motion.a
-                href={WHATSAPP}
+                href="https://wa.me/919980061727"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="fab fab-wa"
@@ -2123,7 +2186,7 @@ function FloatingButtons() {
                 <MessageCircle size={26} />
             </motion.a>
             <motion.a
-                href={`tel:${PHONE}`}
+                href="tel:+919980061727"
                 className="fab fab-call"
                 aria-label="Call us"
                 initial={{ scale: 0 }}
@@ -2132,7 +2195,7 @@ function FloatingButtons() {
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.95 }}
             >
-                <span className="fab-tooltip">Call {PHONE_DISPLAY}</span>
+                <span className="fab-tooltip">Call +91 99800 61727</span>
                 <Phone size={24} />
             </motion.a>
         </div>
@@ -2140,13 +2203,13 @@ function FloatingButtons() {
 }
 
 // ---------------------------------------------------------------------------
-// Splash Screen (same as company site, retitled for the project)
+// Splash Screen
 // ---------------------------------------------------------------------------
 function SplashScreen({ onComplete }: { onComplete: () => void }) {
     useEffect(() => {
         const timer = setTimeout(() => {
             onComplete();
-        }, 4200);
+        }, 4500);
         return () => clearTimeout(timer);
     }, [onComplete]);
 
@@ -2191,16 +2254,34 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
             >
                 <div style={{ position: 'relative', width: 120, height: 120 }}>
                     <motion.div
-                        style={{ position: 'absolute', left: 10, top: 40, width: 30, height: 60, border: '2px solid #e3be86' }}
+                        style={{
+                            position: 'absolute',
+                            left: 10,
+                            top: 40,
+                            width: 30,
+                            height: 60,
+                            border: '2px solid #e3be86',
+                        }}
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.2 }}
                     >
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, padding: 4, height: '100%' }}>
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: 4,
+                                padding: 4,
+                                height: '100%',
+                            }}
+                        >
                             {[...Array(8)].map((_, i) => (
                                 <motion.div
                                     key={i}
-                                    style={{ background: 'rgba(184,137,74,0.3)', border: '1px solid #b8894a' }}
+                                    style={{
+                                        background: 'rgba(184,137,74,0.3)',
+                                        border: '1px solid #b8894a',
+                                    }}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.3 + i * 0.08 }}
@@ -2210,16 +2291,34 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
                     </motion.div>
 
                     <motion.div
-                        style={{ position: 'absolute', right: 10, top: 20, width: 30, height: 80, border: '2px solid #e3be86' }}
+                        style={{
+                            position: 'absolute',
+                            right: 10,
+                            top: 20,
+                            width: 30,
+                            height: 80,
+                            border: '2px solid #e3be86',
+                        }}
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.4 }}
                     >
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4, padding: 4, height: '100%' }}>
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: 4,
+                                padding: 4,
+                                height: '100%',
+                            }}
+                        >
                             {[...Array(12)].map((_, i) => (
                                 <motion.div
                                     key={i}
-                                    style={{ background: 'rgba(184,137,74,0.3)', border: '1px solid #b8894a' }}
+                                    style={{
+                                        background: 'rgba(184,137,74,0.3)',
+                                        border: '1px solid #b8894a',
+                                    }}
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.5 + i * 0.06 }}
@@ -2229,7 +2328,14 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
                     </motion.div>
 
                     <motion.div
-                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, background: '#b8894a' }}
+                        style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: 4,
+                            background: '#b8894a',
+                        }}
                         initial={{ scaleX: 0 }}
                         animate={{ scaleX: 1 }}
                         transition={{ duration: 0.8, delay: 0.8 }}
@@ -2238,36 +2344,68 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
 
                 <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
                     <motion.h1
-                        style={{ fontSize: 32, fontWeight: 700, color: 'var(--linen)', margin: 0, marginBottom: 8, fontFamily: 'Bricolage Grotesque, sans-serif' }}
+                        style={{
+                            fontSize: 32,
+                            fontWeight: 700,
+                            color: 'var(--linen)',
+                            margin: 0,
+                            marginBottom: 8,
+                            fontFamily: 'Bricolage Grotesque, sans-serif',
+                        }}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 1.2 }}
                     >
-                        Basava Ganguru
+                        Vijayalaxmi C Patil
                     </motion.h1>
                     <motion.p
-                        style={{ fontSize: 16, color: '#e3be86', margin: 0, letterSpacing: '0.05em', fontFamily: 'Manrope, sans-serif' }}
+                        style={{
+                            fontSize: 16,
+                            color: '#e3be86',
+                            margin: 0,
+                            letterSpacing: '0.05em',
+                            fontFamily: 'Manrope, sans-serif',
+                        }}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 1.4 }}
                     >
-                        Residential Layout
+                        Developers & Promoters
                     </motion.p>
                 </div>
 
                 <motion.div
-                    style={{ maxWidth: 320, textAlign: 'center', position: 'relative', zIndex: 2 }}
+                    style={{
+                        maxWidth: 300,
+                        textAlign: 'center',
+                        position: 'relative',
+                        zIndex: 2,
+                    }}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.6, delay: 1.8 }}
                 >
-                    <p style={{ fontSize: 14, color: 'rgba(245,241,230,0.6)', margin: 0, lineHeight: 1.6, fontFamily: 'Manrope, sans-serif' }}>
-                        Build Your Dream Home in Shivamogga.
+                    <p
+                        style={{
+                            fontSize: 14,
+                            color: 'rgba(245,241,230,0.6)',
+                            margin: 0,
+                            lineHeight: 1.6,
+                            fontFamily: 'Manrope, sans-serif',
+                        }}
+                    >
+                        Building Dreams. Creating Communities.
                     </p>
                 </motion.div>
 
                 <motion.div
-                    style={{ display: 'flex', gap: 8, position: 'relative', zIndex: 2, marginTop: 16 }}
+                    style={{
+                        display: 'flex',
+                        gap: 8,
+                        position: 'relative',
+                        zIndex: 2,
+                        marginTop: 16,
+                    }}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 2.2 }}
@@ -2275,9 +2413,18 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
                     {[0, 1, 2].map((i) => (
                         <motion.div
                             key={i}
-                            style={{ width: 8, height: 8, borderRadius: '50%', background: '#b8894a' }}
+                            style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: '#b8894a',
+                            }}
                             animate={{ scale: [1, 1.5, 1] }}
-                            transition={{ duration: 0.8, delay: 2.2 + i * 0.15, repeat: Infinity }}
+                            transition={{
+                                duration: 0.8,
+                                delay: 2.2 + i * 0.15,
+                                repeat: Infinity,
+                            }}
                         />
                     ))}
                 </motion.div>
@@ -2289,13 +2436,8 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-export default function BasavaGanguruProject() {
+export default function Home() {
     const [showSplash, setShowSplash] = useState(true);
-    const router = useRouter();
-
-    const goToLayoutMap = () => {
-        router.push(LAYOUT_MAP_ROUTE);
-    };
 
     return (
         <main className={`${display.variable} ${body.variable} ${mono.variable}`}>
@@ -2306,17 +2448,18 @@ export default function BasavaGanguruProject() {
             {!showSplash && (
                 <>
                     <Navigation />
-                    <HeroSection onViewMap={goToLayoutMap} />
+                    <HeroSection />
                     <AboutSection />
-                    <HighlightsSection />
-                    <LayoutMapSection onViewMap={goToLayoutMap} />
+                    <ServicesSection />
+                    <ProjectsSection />
                     <WhyChooseUsSection />
+                    <ProcessSection />
                     <StatisticsSection />
-                    <PlotDetailsSection onViewMap={goToLayoutMap} />
                     <GallerySection />
-                    <LocationSection />
+                    <LeadershipSection />
+                    <TestimonialsSection />
                     <ContactSection />
-                    <Footer onViewMap={goToLayoutMap} />
+                    <Footer />
                     <FloatingButtons />
                 </>
             )}

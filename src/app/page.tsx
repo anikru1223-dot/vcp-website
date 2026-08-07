@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bricolage_Grotesque, Manrope, IBM_Plex_Mono } from 'next/font/google';
 import {
@@ -24,13 +25,12 @@ import {
   KeyIcon,
   LandPlot,
   Hammer,
+  Compass,
+  Layers,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Fonts
-// A confident grotesk display face + a warm geometric body face + a mono face
-// used only for eyebrows/labels/numerals -- a small nod to the survey sheets
-// and site-plan documents this business runs on every day.
 // ---------------------------------------------------------------------------
 const display = Bricolage_Grotesque({
   subsets: ['latin'],
@@ -49,8 +49,7 @@ const mono = IBM_Plex_Mono({
 });
 
 // ---------------------------------------------------------------------------
-// Global styles (design tokens + every section's CSS lives here so this file
-// stays a single drop-in page, matching the original structure)
+// Global styles
 // ---------------------------------------------------------------------------
 function GlobalStyles() {
   return (
@@ -557,6 +556,68 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .service-card h3{font-size:20px;color:var(--ink);margin-bottom:10px;}
 .service-card p{font-size:14.5px;color:var(--graphite-soft);line-height:1.6;}
 
+/* ============ PROJECTS SHOWCASE ============ */
+.projects-showcase{
+  display:grid;
+  grid-template-columns:1.05fr 0.95fr;
+  gap:56px;
+  align-items:stretch;
+}
+.projects-feature{
+  position:relative;
+  border-radius:22px;
+  overflow:hidden;
+  min-height:440px;
+  border:1px solid rgba(184,137,74,0.28);
+  box-shadow:0 30px 70px -30px rgba(11,17,32,0.6);
+  cursor:pointer;
+  transition:transform 0.45s cubic-bezier(.22,.98,.28,1), box-shadow 0.45s ease;
+}
+.projects-feature:hover{transform:translateY(-5px);box-shadow:0 40px 90px -30px rgba(11,17,32,0.7);}
+.projects-feature img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  transition:transform 0.8s cubic-bezier(.22,.98,.28,1);
+}
+.projects-feature:hover img{transform:scale(1.06);}
+.projects-feature::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(0deg, rgba(11,17,32,0.92) 0%, rgba(11,17,32,0.4) 45%, rgba(11,17,32,0.15) 100%);
+}
+.pf-inner{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;
+  padding:34px 34px 32px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.pf-badge{
+  align-self:flex-start;
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;
+  color:#8fe0a0;background:rgba(75,160,90,0.18);border:1px solid rgba(120,220,140,0.4);
+  padding:6px 13px;border-radius:999px;backdrop-filter:blur(6px);
+}
+.pf-name{font-size:30px;color:var(--linen);}
+.pf-meta{display:flex;flex-wrap:wrap;gap:8px 20px;}
+.pf-meta span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:rgba(245,241,230,0.72);}
+.pf-meta svg{color:var(--brass-light);flex-shrink:0;}
+.pf-open{
+  margin-top:6px;display:inline-flex;align-items:center;gap:9px;
+  font-weight:700;font-size:14.5px;color:var(--brass-light);
+}
+.pf-open svg:last-child{transition:transform 0.3s cubic-bezier(.22,.98,.28,1);}
+.projects-feature:hover .pf-open svg:last-child{transform:translateX(5px);}
+
+.projects-copy{display:flex;flex-direction:column;justify-content:center;}
+.projects-copy .eyebrow{margin-bottom:20px;}
+.projects-copy p{color:var(--graphite-soft);font-size:16px;line-height:1.75;margin-bottom:20px;max-width:440px;}
+.projects-points{display:flex;flex-direction:column;gap:16px;margin:8px 0 34px;}
+.projects-point{display:flex;align-items:flex-start;gap:14px;}
+.projects-point-mark{
+  width:20px;height:20px;flex-shrink:0;margin-top:2px;
+  border:1.5px solid var(--brass);transform:rotate(45deg);
+  display:flex;align-items:center;justify-content:center;position:relative;
+}
+.projects-point-mark::after{content:'';position:absolute;width:7px;height:7px;background:var(--brass);}
+.projects-point span{font-size:14.5px;font-weight:600;color:var(--ink);}
+
 /* ============ WHY CHOOSE US (dark) ============ */
 .why-grid{
   display:grid;
@@ -907,6 +968,8 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   .hero-visual{max-width:440px;margin:0 auto;order:-1;}
   .about-grid{grid-template-columns:1fr;gap:60px;}
   .services-grid{grid-template-columns:repeat(2,1fr);}
+  .projects-showcase{grid-template-columns:1fr;gap:44px;}
+  .projects-feature{min-height:380px;}
   .why-grid{grid-template-columns:repeat(2,1fr);}
   .process-row{display:none;}
   .process-line{display:none;}
@@ -932,6 +995,9 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   .hero-stats{gap:0;}
   .hero-stat{padding:0 16px;}
   .section-head{margin-bottom:44px;}
+  .projects-feature{min-height:340px;}
+  .pf-inner{padding:26px 24px 24px;}
+  .pf-name{font-size:25px;}
 }
 
     `}</style>
@@ -939,8 +1005,7 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 }
 
 // ---------------------------------------------------------------------------
-// Magnetic — small reusable wrapper that gives buttons a subtle cursor-follow
-// pull, used for every primary CTA on the page.
+// Magnetic
 // ---------------------------------------------------------------------------
 function Magnetic({
   children,
@@ -1017,7 +1082,7 @@ const NAV_ITEMS = [
   { label: 'Home', id: 'home' },
   { label: 'About', id: 'about' },
   { label: 'Services', id: 'services' },
-  { label: 'Projects', id: 'gallery' },
+  { label: 'Projects', id: 'projects' },
   { label: 'Why Choose Us', id: 'why-choose-us' },
   { label: 'Contact', id: 'contact' },
 ];
@@ -1047,20 +1112,16 @@ function Navigation() {
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
           >
             <svg className="nav-logo-mark" viewBox="0 0 24 24">
-              {/* Architectural foundation/plot base */}
               <rect x="2" y="16" width="20" height="2" fill="#B8894A" />
-              {/* Left building */}
               <rect x="3" y="8" width="4" height="8" fill="none" stroke="#B8894A" strokeWidth="1.2" />
               <line x1="5" y1="8" x2="5" y2="16" stroke="#B8894A" strokeWidth="0.8" />
               <line x1="3" y1="11" x2="7" y2="11" stroke="#B8894A" strokeWidth="0.8" />
               <line x1="3" y1="14" x2="7" y2="14" stroke="#B8894A" strokeWidth="0.8" />
-              {/* Right building (taller) */}
               <rect x="13" y="5" width="4" height="11" fill="none" stroke="#B8894A" strokeWidth="1.2" />
               <line x1="15" y1="5" x2="15" y2="16" stroke="#B8894A" strokeWidth="0.8" />
               <line x1="13" y1="8" x2="17" y2="8" stroke="#B8894A" strokeWidth="0.8" />
               <line x1="13" y1="11" x2="17" y2="11" stroke="#B8894A" strokeWidth="0.8" />
               <line x1="13" y1="14" x2="17" y2="14" stroke="#B8894A" strokeWidth="0.8" />
-              {/* Center connector/road */}
               <line x1="8" y1="14" x2="12" y2="14" stroke="#B8894A" strokeWidth="1" opacity="0.6" />
             </svg>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1.15 }}>
@@ -1116,9 +1177,7 @@ function Navigation() {
 }
 
 // ---------------------------------------------------------------------------
-// Hero — the signature moment: a site-plan line drawing (this is literally
-// what the business does, subdividing land into plots) that draws itself in,
-// with two plots resolving into real photography.
+// Hero
 // ---------------------------------------------------------------------------
 const PLOTS: string[][] = [
   ['32,34', '272,22', '286,188', '28,198'],
@@ -1292,8 +1351,7 @@ function HeroSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Reveal — scroll-triggered fade/rise wrapper used across every section below
-// the fold, so each one animates in consistently without repeating props.
+// Reveal
 // ---------------------------------------------------------------------------
 function Reveal({
   children,
@@ -1442,6 +1500,96 @@ function ServicesSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Projects showcase — links out to the /projects page & live layout map
+// ---------------------------------------------------------------------------
+const PROJECT_POINTS = [
+  'Walk the sanctioned site plan plot by plot',
+  'See live availability — available, reserved, sold',
+  'Enquire on any plot by WhatsApp or call, instantly',
+];
+
+function ProjectsSection() {
+  const router = useRouter();
+  return (
+    <section id="projects" className="section section-linen">
+      <div className="container">
+        <div className="section-head">
+          <Reveal>
+            <div className="eyebrow">Live Inventory</div>
+            <h2 className="section-title" style={{ marginBottom: 0 }}>
+              Our <em>Projects</em>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <p className="section-lede">
+              Every layout, mapped and interactive. Open a project to explore its
+              plots in real time.
+            </p>
+          </Reveal>
+        </div>
+
+        <div className="projects-showcase">
+          <Reveal>
+            <div
+              className="projects-feature"
+              onClick={() => router.push('/projects')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/projects')}
+            >
+              <img
+                src="https://images.unsplash.com/photo-1499631507243-7290571550ed?auto=format&fit=crop&w=1000&q=75"
+                alt="Basava Ganguru residential layout"
+              />
+              <div className="pf-inner">
+                <span className="pf-badge">Live now</span>
+                <h3 className="pf-name">Basava Ganguru</h3>
+                <div className="pf-meta">
+                  <span><MapPin size={14} /> Shivamogga, Karnataka</span>
+                  <span><LandPlot size={14} /> 32 plots</span>
+                  <span><Layers size={14} /> SBUDA Approved</span>
+                </div>
+                <span className="pf-open">
+                  <Compass size={17} /> Explore layout <ArrowRight size={18} />
+                </span>
+              </div>
+            </div>
+          </Reveal>
+
+          <div className="projects-copy">
+            <Reveal>
+              <div className="eyebrow">Interactive Site Plans</div>
+            </Reveal>
+            <Reveal delay={0.08}>
+              <p>
+                No more static PDFs. Our projects come alive as interactive maps
+                drawn straight from the sanctioned survey &mdash; pan, zoom, and tap
+                any plot to see its size, facing, and current status.
+              </p>
+            </Reveal>
+
+            <div className="projects-points">
+              {PROJECT_POINTS.map((point, i) => (
+                <Reveal key={point} delay={0.1 + i * 0.08} className="projects-point">
+                  <span className="projects-point-mark" />
+                  <span>{point}</span>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal delay={0.3}>
+              <Magnetic onClick={() => router.push('/projects')} className="btn btn-primary" style={{ alignSelf: 'flex-start' }}>
+                View All Projects <ArrowRight size={18} />
+              </Magnetic>
+            </Reveal>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Why Choose Us
 // ---------------------------------------------------------------------------
 const WHY_REASONS = [
@@ -1494,7 +1642,7 @@ function WhyChooseUsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Process — a genuine sequence, so numbering earns its place here
+// Process
 // ---------------------------------------------------------------------------
 const PROCESS_STEPS = [
   { icon: LandPlot, title: 'Choose Plot' },
@@ -1562,7 +1710,7 @@ function ProcessSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Statistics — counts up and fills its ring once, the moment it scrolls in
+// Statistics
 // ---------------------------------------------------------------------------
 function StatCard({
   icon: Icon,
@@ -1653,8 +1801,7 @@ function StatisticsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Gallery — masonry layout with the plot-corner clip motif + a click-through
-// lightbox
+// Gallery
 // ---------------------------------------------------------------------------
 const GALLERY_ITEMS = [
   { tag: 'Layout', title: 'Residential Layouts', img: 'https://images.unsplash.com/photo-1499631507243-7290571550ed', span: 'g-span-2c g-span-2r' },
@@ -1669,11 +1816,11 @@ function GallerySection() {
   const [selected, setSelected] = useState<number | null>(null);
 
   return (
-    <section id="gallery" className="section section-linen">
+    <section id="gallery" className="section section-mist">
       <div className="container">
         <div className="section-head">
           <Reveal>
-            <div className="eyebrow">Projects</div>
+            <div className="eyebrow">Field Notes</div>
             <h2 className="section-title" style={{ marginBottom: 0 }}>
               Project <em>Gallery</em>
             </h2>
@@ -1757,7 +1904,7 @@ const LEADERS = [
 
 function LeadershipSection() {
   return (
-    <section id="leadership" className="section section-mist">
+    <section id="leadership" className="section section-linen">
       <div className="container">
         <div className="section-head">
           <Reveal>
@@ -1797,7 +1944,7 @@ const TESTIMONIALS = [
 
 function TestimonialsSection() {
   return (
-    <section id="testimonials" className="section section-linen">
+    <section id="testimonials" className="section section-mist">
       <div className="container">
         <div className="section-head">
           <Reveal>
@@ -1964,6 +2111,7 @@ function ContactSection() {
 // Footer
 // ---------------------------------------------------------------------------
 function Footer() {
+  const router = useRouter();
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -1991,15 +2139,13 @@ function Footer() {
             <p>Premium residential layouts and complete home construction solutions in Shivamogga.</p>
           </Reveal>
           <Reveal delay={0.1}>
-            <h5>Quick Links</h5>
+            <h5>Explore</h5>
             <ul>
-              {['home', 'about', 'services', 'contact'].map((id) => (
-                <li key={id}>
-                  <button onClick={() => scrollToSection(id)} style={{ textTransform: 'capitalize' }}>
-                    {id}
-                  </button>
-                </li>
-              ))}
+              <li><button onClick={() => scrollToSection('home')} style={{ textTransform: 'capitalize' }}>Home</button></li>
+              <li><button onClick={() => scrollToSection('about')} style={{ textTransform: 'capitalize' }}>About</button></li>
+              <li><button onClick={() => scrollToSection('services')} style={{ textTransform: 'capitalize' }}>Services</button></li>
+              <li><button onClick={() => router.push('/projects')}>Projects</button></li>
+              <li><button onClick={() => scrollToSection('contact')} style={{ textTransform: 'capitalize' }}>Contact</button></li>
             </ul>
           </Reveal>
           <Reveal delay={0.2}>
@@ -2007,7 +2153,6 @@ function Footer() {
             <ul>
               <li><a href="tel:+919980061727">+91 9980061727</a></li>
               <li><a href="mailto:anilkrui223@gmail.com">anilkrui223@gmail.com</a></li>
-              <li style={{ color: 'rgba(245,241,230,0.65)' }}>Shivamogga, Karnataka</li>
             </ul>
           </Reveal>
         </div>
@@ -2083,7 +2228,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6 }}
     >
-      {/* Background grid animation */}
       <div
         style={{
           position: 'absolute',
@@ -2095,7 +2239,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         }}
       />
 
-      {/* Animated logo container */}
       <motion.div
         style={{
           position: 'relative',
@@ -2109,9 +2252,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6 }}
       >
-        {/* Building blocks animation */}
         <div style={{ position: 'relative', width: 120, height: 120 }}>
-          {/* Left building */}
           <motion.div
             style={{
               position: 'absolute',
@@ -2149,7 +2290,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
             </div>
           </motion.div>
 
-          {/* Right building (taller) */}
           <motion.div
             style={{
               position: 'absolute',
@@ -2187,7 +2327,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
             </div>
           </motion.div>
 
-          {/* Base foundation */}
           <motion.div
             style={{
               position: 'absolute',
@@ -2203,7 +2342,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           />
         </div>
 
-        {/* Company name animation */}
         <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
           <motion.h1
             style={{
@@ -2236,7 +2374,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           </motion.p>
         </div>
 
-        {/* Animated tagline */}
         <motion.div
           style={{
             maxWidth: 300,
@@ -2261,7 +2398,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           </p>
         </motion.div>
 
-        {/* Loading indicator */}
         <motion.div
           style={{
             display: 'flex',
@@ -2315,6 +2451,7 @@ export default function Home() {
           <HeroSection />
           <AboutSection />
           <ServicesSection />
+          <ProjectsSection />
           <WhyChooseUsSection />
           <ProcessSection />
           <StatisticsSection />
