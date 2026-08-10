@@ -5,15 +5,12 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
 
 /**
  * Basava Ganguru — Interactive Master Layout
- * Enterprise cartographic workspace (flat CAD/GIS styling, semantic status system).
+ * Premium 3D architectural-model view: extruded plot tiles, layered landscaping,
+ * refined water & roads, luxury glass UI. Day / twilight lighting.
  */
 
-type Plot = {
-    id: string; pts: string; dim: string; facing: string; sqm: number; sqft: number;
-};
-
+type Plot = { id: string; pts: string; dim: string; facing: string; sqm: number; sqft: number };
 type Status = "available" | "reserved" | "sold";
-
 type MediaItem = { id: string; type: "image" | "video"; url: string; caption: string | null };
 
 const STATUS_META: Record<Status, { label: string }> = {
@@ -94,14 +91,12 @@ const SIDES: Record<string, Sides> = {
 };
 
 const BOUNDARY = "118,232 1108,268 1150,700 900,1090 118,1150 118,232";
-
 const CA = "140,262 250,262 250,470 140,470";
 const STP = "434,690 502,690 502,760 434,760";
 const KARAB = "118,690 434,690 502,760 502,948 118,948";
 const KARAB_LAKE = { cx: 290, cy: 830, rx: 140, ry: 70 };
 
-const R9 = 58;
-const R12 = 78;
+const R9 = 58, R12 = 78;
 const ROADS = {
     top: `118,${262 - R12} 1108,${262 - R12} 1108,262 118,262`,
     leftV: { x: 502, y: 262, w: R9, h: 686 },
@@ -112,7 +107,6 @@ const ROADS = {
 
 type ViewBox = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
-
 const BASE_VB: ViewBox = { x: 60, y: 190, w: 1130, h: 1010 };
 
 const centroid = (pts: string): Point => {
@@ -122,93 +116,117 @@ const centroid = (pts: string): Point => {
     return { x: x / c, y: y / c };
 };
 
+// Translate a "x,y x,y" points string — used to build the extruded 3D side wall.
+const shift = (pts: string, dx: number, dy: number) =>
+    pts.trim().split(/\s+/).map((pr) => { const [x, y] = pr.split(",").map(Number); return `${x + dx},${y + dy}`; }).join(" ");
+
+const EXTRUDE = 9; // block height in svg units
+
+/* ---------------- Landscaping primitives (layered, dimensional) ---------------- */
+
+function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
+    const grad = ["treeA", "treeB", "treeC"][v % 3];
+    return (
+        <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
+            <ellipse cx="4" cy="9" rx="14" ry="4.5" fill="#12240c" opacity="0.28" />
+            <rect x="-1.4" y="1" width="2.8" height="7" rx="1.2" fill="#5b452b" />
+            <circle cx="0" cy="-1" r="11" fill={`url(#${grad})`} />
+            <circle cx="-6" cy="2" r="7.5" fill={`url(#${grad})`} />
+            <circle cx="6" cy="2" r="7.5" fill={`url(#${grad})`} />
+            <circle cx="0" cy="6" r="7" fill={`url(#${grad})`} />
+            <circle cx="-3.5" cy="-5" r="4.6" fill="#a6d46a" opacity="0.5" />
+            <circle cx="2.5" cy="-3" r="3" fill="#c2e28a" opacity="0.4" />
+        </g>
+    );
+}
+
+function Shrub({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+    return (
+        <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
+            <ellipse cx="2" cy="4" rx="8" ry="2.6" fill="#13260d" opacity="0.22" />
+            <circle cx="-3" cy="0" r="4.4" fill="url(#treeB)" />
+            <circle cx="3" cy="0" r="4.4" fill="url(#treeA)" />
+            <circle cx="0" cy="-2" r="4.8" fill="url(#treeC)" />
+            <circle cx="-1" cy="-3" r="2.2" fill="#b4dd77" opacity="0.5" />
+        </g>
+    );
+}
+
+function StreetLight({ x, y, on = false }: { x: number; y: number; on?: boolean }) {
+    return (
+        <g transform={`translate(${x},${y})`} pointerEvents="none">
+            {on && <circle r="30" fill="url(#lightPool)" />}
+            <circle r={on ? 4 : 2.6} fill={on ? "#ffe6a6" : "#c9c2a8"} opacity={on ? 0.95 : 0.5} />
+            {on && <circle r="2" fill="#fffbe9" />}
+        </g>
+    );
+}
+
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
     const [tiqOpen, setTiqOpen] = useState(false);
     const [photosOpen, setPhotosOpen] = useState(false);
     const [media, setMedia] = useState<MediaItem[]>([]);
     const [lightbox, setLightbox] = useState<number | null>(null);
-    const [dark, setDark] = useState(false);
+    const [night, setNight] = useState(false);
     const [splash, setSplash] = useState(true);
 
-    // Plot status (from Supabase) + active filter
     const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
     const [filter, setFilter] = useState<Status | "all">("all");
     const [filterOpen, setFilterOpen] = useState(false);
     const projectId = "basava-ganguru";
     const supabase = createClient();
 
-    // Log WhatsApp / Call taps to Supabase (non-blocking)
     const logEnquiry = async (type: "whatsapp" | "call", plotId: string) => {
         try {
             await supabase.from("enquiries").insert({
-                project_id: projectId,
-                plot_id: plotId,
-                type,
+                project_id: projectId, plot_id: plotId, type,
                 message: type === "whatsapp" ? `Interested in Plot ${plotId}` : `Call requested for Plot ${plotId}`,
             });
-        } catch {
-            /* never block the user */
-        }
+        } catch { /* never block the user */ }
     };
 
     useEffect(() => {
-        const t = window.setTimeout(() => setSplash(false), 1400);
+        const t = window.setTimeout(() => setSplash(false), 1900);
         return () => window.clearTimeout(t);
     }, []);
 
-    // Lock page scroll while the map is on screen so nothing shifts underneath it.
     useEffect(() => {
         const prevBody = document.body.style.overflow;
         const prevHtml = document.documentElement.style.overflow;
         document.body.style.overflow = "hidden";
         document.documentElement.style.overflow = "hidden";
-        return () => {
-            document.body.style.overflow = prevBody;
-            document.documentElement.style.overflow = prevHtml;
-        };
+        return () => { document.body.style.overflow = prevBody; document.documentElement.style.overflow = prevHtml; };
     }, []);
 
     useEffect(() => {
         let active = true;
-
         const load = async () => {
-            const { data } = await supabase
-                .from("plot_status")
-                .select("plot_id,status")
-                .eq("project_id", projectId);
+            const { data } = await supabase.from("plot_status").select("plot_id,status").eq("project_id", projectId);
             if (!active || !data) return;
             const m: Record<string, Status> = {};
             data.forEach((r: { plot_id: string; status: Status }) => { m[r.plot_id] = r.status; });
             setStatusMap(m);
         };
         load();
-
         const channel = supabase
             .channel("plot_status_map")
-            .on(
-                "postgres_changes",
+            .on("postgres_changes",
                 { event: "*", schema: "public", table: "plot_status", filter: `project_id=eq.${projectId}` },
                 (payload) => {
                     const row = payload.new as { plot_id: string; status: Status };
                     if (row?.plot_id) setStatusMap((prev) => ({ ...prev, [row.plot_id]: row.status }));
-                }
-            )
+                })
             .subscribe();
-
         return () => { active = false; supabase.removeChannel(channel); };
     }, [projectId]);
 
-    // Load project media (photos/videos) for the Photos popup
     useEffect(() => {
         let alive = true;
         (async () => {
             const { data } = await supabase
-                .from("project_media")
-                .select("id,type,url,caption")
-                .eq("project_id", projectId)
-                .order("sort_order", { ascending: true })
-                .order("created_at", { ascending: false });
+                .from("project_media").select("id,type,url,caption").eq("project_id", projectId)
+                .order("sort_order", { ascending: true }).order("created_at", { ascending: false });
             if (alive && data) setMedia(data as MediaItem[]);
         })();
         return () => { alive = false; };
@@ -231,7 +249,6 @@ export default function LayoutMap() {
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
-    // Live availability tally for the legend / summary strip.
     const counts = useMemo(() => {
         let a = 0, r = 0, s = 0;
         PLOTS.forEach((p) => {
@@ -242,7 +259,6 @@ export default function LayoutMap() {
     }, [statusMap]);
 
     const S_MIN = 0.35, S_MAX = 14;
-
     const baseScaleRef = useRef(1);
     const computeBaseScale = () => {
         const el = wrapRef.current; if (!el) return 1;
@@ -254,13 +270,12 @@ export default function LayoutMap() {
         const el = wrapRef.current; if (!el) return c;
         const r = el.getBoundingClientRect();
         const bs = baseScaleRef.current || 1;
-        const contentW = BASE_VB.w * bs * c.s;
-        const contentH = BASE_VB.h * bs * c.s;
+        const contentW = BASE_VB.w * bs * c.s, contentH = BASE_VB.h * bs * c.s;
         const slackX = r.width * 0.18, slackY = r.height * 0.18;
         const minTx = r.width - contentW - slackX, maxTx = slackX;
         const minTy = r.height - contentH - slackY, maxTy = slackY;
         const soft = (val: number, lo: number, hi: number) => {
-            if (lo > hi) { const mid = (lo + hi) / 2; return mid; }
+            if (lo > hi) return (lo + hi) / 2;
             if (val < lo) return elastic ? lo - (lo - val) * 0.35 : lo;
             if (val > hi) return elastic ? hi + (val - hi) * 0.35 : hi;
             return val;
@@ -271,8 +286,7 @@ export default function LayoutMap() {
     const paint = (c: Cam) => {
         if (cameraRef.current) {
             const bs = baseScaleRef.current || 1;
-            const cx = BASE_VB.x + BASE_VB.w / 2;
-            const cy = BASE_VB.y + BASE_VB.h / 2;
+            const cx = BASE_VB.x + BASE_VB.w / 2, cy = BASE_VB.y + BASE_VB.h / 2;
             cameraRef.current.style.transform =
                 `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) translate(${cx}px,${cy}px) rotate(${c.rot}deg) translate(${-cx}px,${-cy}px)`;
         }
@@ -281,16 +295,11 @@ export default function LayoutMap() {
 
     const tick = useCallback(() => {
         const c = cur.current, t = target.current, k = 0.32;
-        c.s += (t.s - c.s) * k;
-        c.tx += (t.tx - c.tx) * k;
-        c.ty += (t.ty - c.ty) * k;
+        c.s += (t.s - c.s) * k; c.tx += (t.tx - c.tx) * k; c.ty += (t.ty - c.ty) * k;
         let dr = t.rot - c.rot; c.rot += dr * k;
         const done = Math.abs(t.s - c.s) < 0.0005 && Math.abs(t.tx - c.tx) < 0.1 &&
             Math.abs(t.ty - c.ty) < 0.1 && Math.abs(dr) < 0.05;
-        if (done) {
-            cur.current = { ...t }; paint(t); animating.current = false; raf.current = null;
-            forceCompass((n) => n + 1); return;
-        }
+        if (done) { cur.current = { ...t }; paint(t); animating.current = false; raf.current = null; forceCompass((n) => n + 1); return; }
         paint(c); raf.current = requestAnimationFrame(tick);
     }, []);
 
@@ -300,8 +309,7 @@ export default function LayoutMap() {
 
     const setNow = (c: Cam) => {
         if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
-        animating.current = false;
-        cur.current = { ...c }; target.current = { ...c }; paint(c);
+        animating.current = false; cur.current = { ...c }; target.current = { ...c }; paint(c);
     };
 
     const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
@@ -372,44 +380,86 @@ export default function LayoutMap() {
         return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
     }, []);
 
+    // Deterministic landscaping placement (kept outside the built parcel core).
+    const { trees, shrubs, huts } = useMemo(() => {
+        let seed = 11;
+        const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+        const inCore = (x: number, y: number) => x > 108 && x < 1015 && y > 172 && y < 972;
+        const tr: [number, number, number][] = [];
+        const sh: [number, number, number][] = [];
+        for (let g = 0; g < 30; g++) {
+            const gx = -120 + rnd() * 1460, gy = -60 + rnd() * 1440;
+            const count = 4 + Math.floor(rnd() * 6), spread = 55 + rnd() * 85;
+            for (let j = 0; j < count; j++) {
+                const x = gx + (rnd() + rnd() - 1) * spread, y = gy + (rnd() + rnd() - 1) * spread;
+                if (inCore(x, y)) continue;
+                tr.push([x, y, 1.0 + rnd() * 0.8]);
+            }
+        }
+        for (let i = 0; i < 46; i++) {
+            const x = -140 + rnd() * 1500, y = -80 + rnd() * 1480;
+            if (inCore(x, y)) continue;
+            (rnd() > 0.4 ? tr : sh).push([x, y, 0.9 + rnd() * 0.8]);
+        }
+        const ht = [
+            { x: -520, y: 120, s: 1.2 }, { x: 1440, y: 300, s: 1.1 }, { x: -420, y: 720, s: 1 },
+            { x: 1490, y: 820, s: 1.15 }, { x: 560, y: 1380, s: 1.05 }, { x: -560, y: 1080, s: 1 },
+            { x: 300, y: -520, s: 1 }, { x: 900, y: -520, s: 1.05 },
+        ];
+        return { trees: tr, shrubs: sh, huts: ht };
+    }, []);
+
+    const nightLights: [number, number][] = [
+        [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
+        [531, 300], [531, 499], [531, 720], [531, 930],
+        [822, 300], [822, 560], [822, 820], [822, 930],
+        [150, 499], [340, 499],
+    ];
+
     return (
-        <div className={`lm-root ${dark ? "is-dark" : ""}`}>
+        <div className={`lm-root ${night ? "is-night" : ""}`}>
             <style>{css}</style>
 
             {splash && (
                 <div className="lm-splash" onClick={() => setSplash(false)}>
                     <div className="lm-splash-inner">
-                        <div className="lm-splash-mark" aria-hidden="true">BG</div>
+                        <div className="lm-splash-logo" aria-hidden="true">
+                            <svg viewBox="0 0 40 40" width="60" height="60">
+                                <defs><linearGradient id="scg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f7ecc6" /><stop offset="1" stopColor="#c9a24b" /></linearGradient></defs>
+                                <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="url(#scg)" strokeWidth="1.6" />
+                                <rect x="14" y="16" width="5" height="12" fill="url(#scg)" /><rect x="21" y="13" width="5" height="15" fill="url(#scg)" />
+                            </svg>
+                        </div>
                         <div className="lm-splash-name">Basava Ganguru</div>
-                        <div className="lm-splash-sub">Master Layout · Shivamogga</div>
+                        <div className="lm-splash-sub">VIJAYALAXMI C PATIL · SHIVAMOGGA</div>
+                        <div className="lm-splash-tag">Residential Layout · 32 Premium Plots</div>
                         <div className="lm-splash-bar"><span /></div>
-                        <div className="lm-splash-loading">Loading layout</div>
                     </div>
+                    <div className="lm-splash-credit">Built by Train IQ · trainiq.in</div>
                 </div>
             )}
 
             <header className="lm-head">
                 <div className="lm-brand">
-                    <div className="lm-mark" aria-hidden="true">BG</div>
+                    <div className="lm-logo" aria-hidden="true">
+                        <svg viewBox="0 0 40 40" width="30" height="30">
+                            <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f7ecc6" /><stop offset="1" stopColor="#c9a24b" /></linearGradient></defs>
+                            <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="url(#cg)" strokeWidth="1.6" />
+                            <rect x="14" y="16" width="5" height="12" fill="url(#cg)" /><rect x="21" y="13" width="5" height="15" fill="url(#cg)" />
+                        </svg>
+                    </div>
                     <div>
                         <div className="lm-brand-name">Basava Ganguru</div>
-                        <div className="lm-brand-sub">Master Layout · Vijayalaxmi C Patil, Shivamogga</div>
+                        <div className="lm-brand-sub">Master Layout · Shivamogga</div>
                     </div>
                 </div>
 
                 <div className="lm-head-tools">
                     <div className="lm-search">
-                        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-                            <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-                            <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                        </svg>
-                        <input
-                            placeholder="Search plot no."
+                        <input placeholder="Search plot number"
                             value={selected ?? ""}
-                            onChange={(e) => { const v = e.target.value.trim(); setSelected(PLOTS.some((p) => p.id === v) ? v : null); }}
-                        />
+                            onChange={(e) => { const v = e.target.value.trim(); setSelected(PLOTS.some((p) => p.id === v) ? v : null); }} />
                     </div>
-
                     <div className="lm-legend" role="group" aria-label="Status legend">
                         <span className="lm-leg"><i className="lm-dot is-available" />Available<b>{counts.available}</b></span>
                         <span className="lm-leg"><i className="lm-dot is-reserved" />Reserved<b>{counts.reserved}</b></span>
@@ -423,49 +473,153 @@ export default function LayoutMap() {
                 onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
                 <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
-                        <pattern id="lmGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-                            <path d="M40 0H0V40" fill="none" stroke="var(--grid)" strokeWidth="0.8" />
+                        <radialGradient id="terrain" cx="0.34" cy="0.2" r="1.2">
+                            <stop offset="0" stopColor="#e7dfc6" /><stop offset="0.45" stopColor="#d8cca9" />
+                            <stop offset="0.82" stopColor="#c3b58e" /><stop offset="1" stopColor="#a89a74" />
+                        </radialGradient>
+                        <pattern id="terrainTex" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(16)">
+                            <rect width="30" height="30" fill="transparent" />
+                            <circle cx="6" cy="8" r="1" fill="#b3a37a" opacity="0.22" />
+                            <circle cx="19" cy="17" r="0.9" fill="#8f8058" opacity="0.24" />
+                            <circle cx="13" cy="25" r="0.8" fill="#cabb92" opacity="0.2" />
                         </pattern>
-                        <pattern id="lmGridMajor" width="200" height="200" patternUnits="userSpaceOnUse">
-                            <path d="M200 0H0V200" fill="none" stroke="var(--grid-major)" strokeWidth="1.1" />
-                        </pattern>
-                        <filter id="lmSelSh" x="-25%" y="-25%" width="150%" height="150%">
-                            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="var(--sel-sh)" floodOpacity="0.5" />
+                        <radialGradient id="patch" cx="0.5" cy="0.5" r="0.5">
+                            <stop offset="0" stopColor="#9aa863" stopOpacity="0.3" /><stop offset="1" stopColor="#9aa863" stopOpacity="0" />
+                        </radialGradient>
+
+                        {/* plot faces */}
+                        <linearGradient id="pAvailTop" x1="0" y1="0" x2="0.5" y2="1">
+                            <stop offset="0" stopColor="#7fce93" /><stop offset="0.5" stopColor="#4faa6c" /><stop offset="1" stopColor="#3a9760" />
+                        </linearGradient>
+                        <linearGradient id="pResTop" x1="0" y1="0" x2="0.5" y2="1">
+                            <stop offset="0" stopColor="#f4cb78" /><stop offset="0.5" stopColor="#dea63f" /><stop offset="1" stopColor="#c88c2c" />
+                        </linearGradient>
+                        <linearGradient id="pSoldTop" x1="0" y1="0" x2="0.5" y2="1">
+                            <stop offset="0" stopColor="#ef8f80" /><stop offset="0.5" stopColor="#d06254" /><stop offset="1" stopColor="#b0463b" />
+                        </linearGradient>
+                        <linearGradient id="pSelTop" x1="0" y1="0" x2="0.5" y2="1">
+                            <stop offset="0" stopColor="#a9ecb7" /><stop offset="1" stopColor="#63c184" />
+                        </linearGradient>
+
+                        <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stopColor="#f7ecc6" /><stop offset="0.5" stopColor="#d9bd6f" /><stop offset="1" stopColor="#b0894a" />
+                        </linearGradient>
+                        <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#c9c2b1" /><stop offset="0.12" stopColor="#d7d1c2" /><stop offset="0.5" stopColor="#c2bba9" /><stop offset="0.88" stopColor="#d7d1c2" /><stop offset="1" stopColor="#b7b09d" />
+                        </linearGradient>
+                        <linearGradient id="roadV" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0" stopColor="#c9c2b1" /><stop offset="0.12" stopColor="#d7d1c2" /><stop offset="0.5" stopColor="#c2bba9" /><stop offset="0.88" stopColor="#d7d1c2" /><stop offset="1" stopColor="#b7b09d" />
+                        </linearGradient>
+
+                        <radialGradient id="water" cx="0.36" cy="0.28" r="1">
+                            <stop offset="0" stopColor="#bfeee6" /><stop offset="0.5" stopColor="#5db6ac" /><stop offset="1" stopColor="#2f8079" />
+                        </radialGradient>
+                        <radialGradient id="park" cx="0.4" cy="0.3" r="1">
+                            <stop offset="0" stopColor="#a7cf72" /><stop offset="0.6" stopColor="#8bbb55" /><stop offset="1" stopColor="#6f9f43" />
+                        </radialGradient>
+                        <linearGradient id="civic" x1="0" y1="0" x2="0.4" y2="1">
+                            <stop offset="0" stopColor="#aed079" /><stop offset="1" stopColor="#79a548" />
+                        </linearGradient>
+
+                        <radialGradient id="treeA" cx="0.4" cy="0.32" r="0.75"><stop offset="0" stopColor="#77b448" /><stop offset="0.6" stopColor="#4c8a30" /><stop offset="1" stopColor="#2f5f1f" /></radialGradient>
+                        <radialGradient id="treeB" cx="0.4" cy="0.32" r="0.75"><stop offset="0" stopColor="#8bc255" /><stop offset="0.6" stopColor="#5a9a38" /><stop offset="1" stopColor="#356c24" /></radialGradient>
+                        <radialGradient id="treeC" cx="0.4" cy="0.32" r="0.75"><stop offset="0" stopColor="#6ba63f" /><stop offset="0.6" stopColor="#437d2a" /><stop offset="1" stopColor="#28551b" /></radialGradient>
+
+                        <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
+                            <stop offset="0" stopColor="#ffe6a6" stopOpacity="0.55" /><stop offset="0.5" stopColor="#ffcf6e" stopOpacity="0.18" /><stop offset="1" stopColor="#ffcf6e" stopOpacity="0" />
+                        </radialGradient>
+                        <radialGradient id="sun" cx="0.28" cy="0.14" r="0.95">
+                            <stop offset="0" stopColor="#fff0c8" stopOpacity="0.25" /><stop offset="0.5" stopColor="#ffe4a0" stopOpacity="0.06" /><stop offset="1" stopColor="#000" stopOpacity="0" />
+                        </radialGradient>
+                        <radialGradient id="vignette" cx="0.5" cy="0.46" r="0.85">
+                            <stop offset="0" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#1c1608" stopOpacity="0.3" />
+                        </radialGradient>
+
+                        <filter id="plotSh" x="-30%" y="-30%" width="160%" height="170%">
+                            <feDropShadow dx="0" dy="7" stdDeviation="6" floodColor="#20301a" floodOpacity="0.4" />
+                        </filter>
+                        <filter id="selGlow" x="-70%" y="-70%" width="240%" height="240%">
+                            <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#ffe08a" floodOpacity="0.9" />
+                            <feDropShadow dx="0" dy="9" stdDeviation="7" floodColor="#20301a" floodOpacity="0.45" />
+                        </filter>
+                        <filter id="softSh" x="-40%" y="-40%" width="180%" height="180%">
+                            <feDropShadow dx="0" dy="3" stdDeviation="3.5" floodColor="#000" floodOpacity="0.35" />
                         </filter>
                     </defs>
 
                     <g ref={cameraRef} className="lm-camera">
-                        {/* Canvas + CAD grid */}
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="var(--canvas)" />
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#lmGrid)" pointerEvents="none" />
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#lmGridMajor)" pointerEvents="none" />
+                        {/* Terrain */}
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" pointerEvents="none" />
+                        <g pointerEvents="none">
+                            <ellipse cx="220" cy="380" rx="140" ry="86" fill="url(#patch)" />
+                            <ellipse cx="1000" cy="450" rx="160" ry="96" fill="url(#patch)" />
+                            <ellipse cx="320" cy="1080" rx="170" ry="96" fill="url(#patch)" />
+                            <ellipse cx="1050" cy="950" rx="150" ry="86" fill="url(#patch)" />
+                            <ellipse cx="700" cy="1140" rx="190" ry="74" fill="url(#patch)" />
+                        </g>
 
-                        {/* Site parcel */}
-                        <polygon points={BOUNDARY} className="lm-site" />
+                        {/* Surrounding cultivated context */}
+                        <g pointerEvents="none">
+                            {[
+                                { x: -700, y: -400, w: 520, h: 360, c: "#9bab6a" }, { x: -700, y: 20, w: 520, h: 380, c: "#a7b578" },
+                                { x: -700, y: 460, w: 470, h: 420, c: "#8fa061" }, { x: -680, y: 960, w: 560, h: 380, c: "#9fae70" },
+                                { x: 1240, y: -360, w: 520, h: 420, c: "#9bab6a" }, { x: 1270, y: 120, w: 500, h: 400, c: "#a7b578" },
+                                { x: 1250, y: 580, w: 520, h: 440, c: "#8fa061" }, { x: 320, y: 1200, w: 640, h: 360, c: "#9fae70" },
+                                { x: 120, y: -560, w: 560, h: 300, c: "#a7b578" }, { x: 760, y: -560, w: 520, h: 300, c: "#9bab6a" },
+                            ].map((f, i) => (
+                                <g key={`fld${i}`} opacity="0.9">
+                                    <rect x={f.x} y={f.y} width={f.w} height={f.h} rx="10" fill={f.c} />
+                                    {Array.from({ length: Math.floor(f.h / 30) }).map((_, r) => (
+                                        <line key={r} x1={f.x + 10} y1={f.y + 16 + r * 30} x2={f.x + f.w - 10} y2={f.y + 16 + r * 30} stroke="#6f8443" strokeWidth="1.4" opacity="0.3" />
+                                    ))}
+                                </g>
+                            ))}
 
-                        {/* Survey-number annotations (cadastral) */}
+                            {/* Cottages in surrounding context */}
+                            {huts.map((h, i) => (
+                                <g key={`hut${i}`} transform={`translate(${h.x},${h.y}) scale(${h.s})`}>
+                                    <ellipse cx="2" cy="16" rx="26" ry="6" fill="#000" opacity="0.16" />
+                                    <rect x="-18" y="-6" width="36" height="20" rx="2" fill="#efe7d4" />
+                                    <polygon points="-22,-6 22,-6 14,-21 -14,-21" fill="#b06a3c" />
+                                    <polygon points="-22,-6 22,-6 20,-3 -20,-3" fill="#8f5330" opacity="0.5" />
+                                    <rect x="-4" y="2" width="8" height="12" fill="#7a5a3a" />
+                                </g>
+                            ))}
+                        </g>
+
+                        {/* Survey number annotations */}
                         <g className="lm-syno" pointerEvents="none">
-                            <text x="300" y="248" textAnchor="middle">Sy.No. 39</text>
-                            <text x="581" y="248" textAnchor="middle">Sy.No. 42</text>
-                            <text x="150" y="430" textAnchor="middle" transform="rotate(-90 150 430)">Sy.No. 44</text>
-                            <text x="150" y="720" textAnchor="middle" transform="rotate(-90 150 720)">Sy.No. 43/1</text>
-                            <text x="1120" y="500" textAnchor="middle" transform="rotate(90 1120 500)">Sy.No. 43/3</text>
-                            <text x="1120" y="820" textAnchor="middle" transform="rotate(90 1120 820)">Sy.No. 43/3</text>
-                            <text x="600" y="1075" textAnchor="middle">Sy.No. 46</text>
-                        </g>
-                        <g className="lm-exist" pointerEvents="none">
-                            <text x="321" y="230" textAnchor="middle">EXISTING 9m ROAD</text>
-                            <text x="1124" y="640" textAnchor="middle" transform="rotate(90 1124 640)">EXISTING 12m ROAD</text>
+                            <text x="300" y="-140" textAnchor="middle">Sy.No.39</text>
+                            <text x="581" y="-140" textAnchor="middle">Sy.No.42</text>
+                            <text x="70" y="430" textAnchor="middle" transform="rotate(-90 70 430)">Sy.No.44</text>
+                            <text x="70" y="720" textAnchor="middle" transform="rotate(-90 70 720)">Sy.No.43/1</text>
+                            <text x="1195" y="500" textAnchor="middle" transform="rotate(90 1195 500)">Sy.No.43/3</text>
+                            <text x="1195" y="820" textAnchor="middle" transform="rotate(90 1195 820)">Sy.No.43/3</text>
+                            <text x="600" y="1090" textAnchor="middle">Sy.No.46</text>
                         </g>
 
-                        {/* Circulation network (flat) */}
-                        <g className="lm-roads">
+                        <polygon points={BOUNDARY} className="lm-siteline" pointerEvents="none" />
+
+                        {/* ---------- Circulation ---------- */}
+                        <g filter="url(#softSh)">
+                            <polygon points={ROADS.top} fill="url(#road)" />
+                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#roadV)" />
+                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#roadV)" />
+                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#road)" />
+                        </g>
+                        <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#b9ac86" opacity="0.9" />
+                        <g className="lm-paver" pointerEvents="none">
+                            {Array.from({ length: Math.floor((ROADS.path.w - 14) / 30) }).map((_, i) => (
+                                <line key={i} x1={ROADS.path.x + 14 + i * 30} y1={ROADS.path.y} x2={ROADS.path.x + 14 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
+                            ))}
+                        </g>
+                        <g className="lm-kerb" pointerEvents="none">
                             <polygon points={ROADS.top} />
                             <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
                             <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
                             <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
                         </g>
-                        <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} className="lm-path" />
                         <g className="lm-lane" pointerEvents="none">
                             <line x1="531" y1="270" x2="531" y2="944" />
                             <line x1="822" y1="270" x2="822" y2="944" />
@@ -473,103 +627,129 @@ export default function LayoutMap() {
                             <line x1="118" y1="223" x2="1108" y2="223" />
                         </g>
                         <g className="lm-roadlbl" pointerEvents="none">
-                            <text x="600" y="220" className="lm-roadlbl-lg">APPROVED LAYOUT 12m ROAD</text>
+                            <text x="600" y="217" className="lm-roadlbl-lg">APPROVED LAYOUT · 12m ROAD</text>
                             <text x="531" y="620" transform="rotate(-90 531 620)">9m ROAD</text>
                             <text x="822" y="620" transform="rotate(-90 822 620)">9m ROAD</text>
-                            <text x="300" y="503" >9m ROAD</text>
-                            <text x="300" y="672" className="lm-roadlbl-sm">3m PATHWAY</text>
+                            <text x="300" y="503">9m ROAD</text>
+                            <text x="300" y="670" className="lm-roadlbl-sm">3m PATHWAY</text>
                         </g>
 
-                        {/* Reserved parcels */}
-                        <polygon points={KARAB} className="lm-park" />
-                        <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} className="lm-water" />
-                        <text x="300" y={KARAB_LAKE.cy - KARAB_LAKE.ry - 14} className="lm-parcel-lbl">KARAB</text>
-                        <text x={KARAB_LAKE.cx} y={KARAB_LAKE.cy + 5} className="lm-water-lbl">WATER BODY</text>
+                        {/* ---------- Amenity parcels ---------- */}
+                        <polygon points={KARAB} fill="url(#park)" filter="url(#softSh)" />
+                        <polygon points={KARAB} className="lm-parcel-edge" pointerEvents="none" />
+                        <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx + 5} ry={KARAB_LAKE.ry + 4} fill="#6f8a54" opacity="0.55" pointerEvents="none" />
+                        <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#water)" filter="url(#softSh)" />
+                        <ellipse cx={KARAB_LAKE.cx - 38} cy={KARAB_LAKE.cy - 22} rx="52" ry="17" fill="#fff" opacity="0.26" pointerEvents="none" />
+                        {[0.78, 0.55, 0.34].map((k, i) => (
+                            <ellipse key={`rip${i}`} cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx * k} ry={KARAB_LAKE.ry * k} fill="none" stroke="#d3f0ef" strokeWidth="1" opacity={0.2 - i * 0.04} pointerEvents="none" />
+                        ))}
+                        <text x="300" y={KARAB_LAKE.cy - KARAB_LAKE.ry - 16} className="lm-parcel-lbl">KARAB · OPEN SPACE</text>
 
-                        <polygon points={CA} className="lm-amenity" />
-                        <text x={centroid(CA).x} y={centroid(CA).y - 4} className="lm-amenity-lbl-lg">CA</text>
-                        <text x={centroid(CA).x} y={centroid(CA).y + 16} className="lm-amenity-lbl-sm">CIVIC AMENITY</text>
+                        <polygon points={CA} fill="url(#civic)" filter="url(#softSh)" />
+                        <polygon points={CA} className="lm-parcel-edge" pointerEvents="none" />
+                        <g transform="translate(195,332)" pointerEvents="none">
+                            <ellipse cx="0" cy="22" rx="30" ry="8" fill="#000" opacity="0.16" />
+                            <rect x="-26" y="-6" width="52" height="26" rx="3" fill="#f2f6ec" />
+                            <polygon points="-30,-6 30,-6 22,-22 -22,-22" fill="#8fb87a" />
+                            <polygon points="-30,-6 30,-6 27,-2 -27,-2" fill="#6f9a5c" opacity="0.5" />
+                            <rect x="-18" y="4" width="8" height="14" fill="#cfe3bf" /><rect x="-4" y="4" width="8" height="14" fill="#cfe3bf" /><rect x="10" y="4" width="8" height="14" fill="#cfe3bf" />
+                        </g>
+                        <text x={centroid(CA).x} y={centroid(CA).y - 4} className="lm-ca-label">CA</text>
+                        <text x={centroid(CA).x} y={centroid(CA).y + 38} className="lm-ca-sub">CIVIC AMENITY</text>
 
-                        <polygon points={STP} className="lm-amenity" />
-                        <text x={centroid(STP).x} y={centroid(STP).y + 5} className="lm-amenity-lbl">STP</text>
+                        <polygon points={STP} fill="#e6dbf4" stroke="#9670c2" strokeWidth="1.4" filter="url(#softSh)" />
+                        <rect x="446" y="704" width="40" height="38" rx="3" fill="#c3b7d6" />
+                        <polygon points="444,704 488,704 482,692 450,692" fill="#a487ca" />
+                        <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
+                        <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
-                        {/* Plots */}
+                        {/* ---------- 3D extruded plots ---------- */}
                         {PLOTS.map((p) => {
                             const c = centroid(p.pts);
                             const isSel = p.id === selected;
                             const effective: Status = statusMap[p.id] || "available";
                             const dimmed = filter !== "all" && effective !== filter;
+                            const topFill = isSel ? "url(#pSelTop)"
+                                : effective === "available" ? "url(#pAvailTop)"
+                                    : effective === "reserved" ? "url(#pResTop)" : "url(#pSoldTop)";
+                            const sideFill = isSel ? "#3f9a5f"
+                                : effective === "available" ? "#2c7b48"
+                                    : effective === "reserved" ? "#9a6d1f" : "#8f3a30";
+                            const lift = isSel ? 4 : 0;
                             return (
                                 <g key={p.id} className={`lm-plot ${dimmed ? "is-dim" : ""}`}
                                     onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                     role="button" tabIndex={0}
                                     onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                    <polygon points={p.pts}
-                                        className={`lm-plot-shape is-${effective} ${isSel ? "is-sel" : ""}`}
-                                        filter={isSel ? "url(#lmSelSh)" : undefined} />
-                                    <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
+                                    {/* extruded side wall */}
+                                    <polygon points={shift(p.pts, 0, EXTRUDE - lift)} fill={sideFill} className="lm-plot-side" />
+                                    {/* top face */}
+                                    <g transform={lift ? `translate(0,${-lift})` : undefined}>
+                                        <polygon points={p.pts} className="lm-plot-top"
+                                            fill={topFill} stroke="url(#gold)" strokeWidth={isSel ? 2.4 : 1.2}
+                                            filter={isSel ? "url(#selGlow)" : "url(#plotSh)"} />
+                                        <polygon points={p.pts} className="lm-plot-bevel" pointerEvents="none" />
+                                        <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
+                                    </g>
                                 </g>
                             );
                         })}
+
+                        {/* ---------- Landscaping (over ground, around plots) ---------- */}
+                        <g pointerEvents="none">
+                            {shrubs.map(([x, y, s], i) => <Shrub key={`sh${i}`} x={x} y={y} s={s} />)}
+                            {trees.map(([x, y, s], i) => <Tree key={`t${i}`} x={x} y={y} s={s} v={i % 3} />)}
+                            {/* curated greenery inside amenity park */}
+                            <Tree x={200} y={770} s={1.2} v={1} /><Tree x={410} y={782} s={1.1} v={0} />
+                            <Tree x={175} y={905} s={1.15} v={2} /><Tree x={430} y={905} s={1.05} v={1} />
+                            <Shrub x={300} y={745} s={1.2} /><Shrub x={360} y={905} s={1.1} />
+                        </g>
+
+                        {/* ---------- Lighting overlays ---------- */}
+                        {night
+                            ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0b1526" opacity="0.62" pointerEvents="none" />
+                            : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
+                        <rect x={BASE_VB.x - 200} y={BASE_VB.y - 200} width={BASE_VB.w + 400} height={BASE_VB.h + 400} fill="url(#vignette)" pointerEvents="none" />
+                        <g>{nightLights.map(([x, y], i) => <StreetLight key={i} x={x} y={y} on={night} />)}</g>
                     </g>
 
-                    {/* Compass — inner group counter-rotates to keep North true */}
-                    <g className="lm-compass" transform="translate(1128,244)">
-                        <circle r="20" className="lm-compass-bg" />
+                    {/* Compass */}
+                    <g className="lm-compass" transform="translate(1128,246)">
+                        <circle r="21" className="lm-compass-bg" />
                         <g ref={compassRef}>
-                            <path d="M0,-13 L4,3 L0,-0.5 L-4,3 Z" className="lm-compass-n" />
-                            <path d="M0,13 L4,-3 L0,0.5 L-4,-3 Z" className="lm-compass-s" />
-                            <text y="-24" textAnchor="middle" className="lm-compass-lbl">N</text>
+                            <path d="M0,-14 L4.5,3 L0,-1 L-4.5,3 Z" fill="#e0504a" />
+                            <path d="M0,14 L4.5,-3 L0,1 L-4.5,-3 Z" fill="#8a7f63" />
+                            <text y="-25" textAnchor="middle" className="lm-compass-lbl">N</text>
                         </g>
                     </g>
                 </svg>
 
-                {/* Bottom toolbar — Filter · Maps · Photos */}
+                {/* Bottom toolbar */}
                 <div className="lm-toolbar">
                     <div className="lm-filterwrap">
-                        <button
-                            className={`lm-tbtn lm-filterbtn ${filter !== "all" ? `is-${filter}` : ""}`}
-                            onClick={() => setFilterOpen((v) => !v)}
-                            aria-label="Filter plots"
-                        >
-                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M4 5h16M7 12h10M10 19h4" strokeLinecap="round" />
-                            </svg>
+                        <button className={`lm-tbtn lm-filterbtn ${filter !== "all" ? `is-${filter}` : ""}`} onClick={() => setFilterOpen((v) => !v)} aria-label="Filter plots">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 5h16M7 12h10M10 19h4" strokeLinecap="round" /></svg>
                             <span>{filter === "all" ? "All plots" : STATUS_META[filter].label}</span>
                         </button>
                     </div>
-
                     <a className="lm-tbtn" href="https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw" target="_blank" rel="noopener noreferrer" aria-label="Open in Google Maps">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" strokeLinejoin="round" />
-                            <circle cx="12" cy="10" r="2.4" />
-                        </svg>
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" strokeLinejoin="round" /><circle cx="12" cy="10" r="2.4" /></svg>
                         <span>Location</span>
                     </a>
-
                     <button className="lm-tbtn" onClick={() => setPhotosOpen(true)} aria-label="Gallery">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.4" /><path d="M4 17l5-5 4 4 3-3 4 4" />
-                        </svg>
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.4" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
                         <span>Gallery</span>
                     </button>
                 </div>
 
-                {/* Filter menu */}
                 {filterOpen && (
                     <div className="lm-filtermenu">
                         <div className="lm-filtermenu-head">
                             <span>Filter by status</span>
-                            <button className="lm-iconbtn" onClick={() => setFilterOpen(false)} aria-label="Close">
-                                <svg viewBox="0 0 24 24" width="15" height="15"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
-                            </button>
+                            <button className="lm-iconbtn" onClick={() => setFilterOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg></button>
                         </div>
                         {(["all", "available", "reserved", "sold"] as const).map((f) => (
-                            <button
-                                key={f}
-                                className={`lm-filteritem ${filter === f ? "active" : ""}`}
-                                onClick={() => { setFilter(f); setFilterOpen(false); }}
-                            >
+                            <button key={f} className={`lm-filteritem ${filter === f ? "active" : ""}`} onClick={() => { setFilter(f); setFilterOpen(false); }}>
                                 <span className={`lm-dot is-${f}`} />
                                 {f === "all" ? "All plots" : STATUS_META[f].label}
                                 <b>{f === "all" ? counts.total : counts[f]}</b>
@@ -583,27 +763,20 @@ export default function LayoutMap() {
                     <div className="lm-photos-overlay" onClick={() => setPhotosOpen(false)}>
                         <div className="lm-photos-modal" onClick={(e) => e.stopPropagation()}>
                             <div className="lm-photos-head">
-                                <span>Project gallery</span>
-                                <button className="lm-iconbtn" onClick={() => setPhotosOpen(false)} aria-label="Close">
-                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
-                                </button>
+                                <span>Project Gallery</span>
+                                <button className="lm-iconbtn" onClick={() => setPhotosOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg></button>
                             </div>
                             {media.length === 0 ? (
                                 <div className="lm-photos-empty">
-                                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
-                                    <div>No media uploaded yet</div>
+                                    <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.5" /><path d="M4 17l5-5 4 4 3-3 4 4" /></svg>
+                                    <div>Photos coming soon</div>
                                 </div>
                             ) : (
                                 <div className="lm-photos-grid">
                                     {media.map((m, i) => (
                                         <button key={m.id} className="lm-photo-cell" onClick={() => setLightbox(i)}>
                                             {m.type === "video" ? (
-                                                <>
-                                                    <video src={m.url} muted playsInline preload="metadata" />
-                                                    <span className="lm-photo-play">
-                                                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
-                                                    </span>
-                                                </>
+                                                <><video src={m.url} muted playsInline preload="metadata" /><span className="lm-photo-play"><svg viewBox="0 0 24 24" width="24" height="24" fill="#fff"><path d="M8 5v14l11-7z" /></svg></span></>
                                             ) : (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img src={m.url} alt={m.caption || "photo"} loading="lazy" />
@@ -616,12 +789,9 @@ export default function LayoutMap() {
                     </div>
                 )}
 
-                {/* Lightbox */}
                 {lightbox !== null && media[lightbox] && (
                     <div className="lm-lightbox" onClick={() => setLightbox(null)}>
-                        <button className="lm-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close">
-                            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
-                        </button>
+                        <button className="lm-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                         <div className="lm-lightbox-inner" onClick={(e) => e.stopPropagation()}>
                             {media[lightbox].type === "video" ? (
                                 <video src={media[lightbox].url} controls autoPlay playsInline className="lm-lightbox-media" />
@@ -633,25 +803,21 @@ export default function LayoutMap() {
                         </div>
                         {media.length > 1 && (
                             <>
-                                <button className="lm-lightbox-nav lm-prev" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox - 1 + media.length) % media.length); }} aria-label="Previous">
-                                    <svg viewBox="0 0 24 24" width="26" height="26"><path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                </button>
-                                <button className="lm-lightbox-nav lm-next" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox + 1) % media.length); }} aria-label="Next">
-                                    <svg viewBox="0 0 24 24" width="26" height="26"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                </button>
+                                <button className="lm-lightbox-nav lm-prev" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox - 1 + media.length) % media.length); }} aria-label="Previous"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+                                <button className="lm-lightbox-nav lm-next" onClick={(e) => { e.stopPropagation(); setLightbox((lightbox + 1) % media.length); }} aria-label="Next"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                             </>
                         )}
                     </div>
                 )}
 
-                {/* Map controls */}
+                {/* Controls */}
                 <div className="lm-ctrl">
                     <button onClick={() => btnZoom(1.8)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg></button>
                     <button onClick={() => btnZoom(1 / 1.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                     <button onClick={reset} aria-label="Reset view"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" fill="none" /></svg></button>
-                    <button className={dark ? "is-on" : ""} onClick={() => setDark((v) => !v)} aria-label="Toggle theme">
-                        {dark ? (
+                    <button className={night ? "is-on" : ""} onClick={() => setNight((v) => !v)} aria-label="Toggle day / twilight">
+                        {night ? (
                             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 2v2M12 20v2M4.5 4.5l1.4 1.4M18.1 18.1l1.4 1.4M2 12h2M20 12h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" strokeLinecap="round" /></svg>
                         ) : (
                             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" strokeLinejoin="round" /></svg>
@@ -667,7 +833,13 @@ export default function LayoutMap() {
                             <div className="lm-tiq-pop-sub">trainiq.in →</div>
                         </a>
                     )}
-                    <button className="lm-tiq-logo" onClick={() => setTiqOpen((v) => !v)} aria-label="Train IQ">Train IQ</button>
+                    <button className="lm-tiq-logo" onClick={() => setTiqOpen((v) => !v)} aria-label="Train IQ">
+                        <svg viewBox="0 0 62 34" width="42" height="23" aria-hidden="true">
+                            <rect x="4" y="6" width="5.4" height="22" rx="1" fill="currentColor" />
+                            <path d="M32 6.4 a11 11 0 1 0 6.4 19.9 l4.2 4.2 3.8-3.8 -4.1-4.1 A11 11 0 0 0 32 6.4 Z M32 11.4 a6 6 0 1 1 0 12 a6 6 0 0 1 0-12 Z" fill="currentColor" />
+                            <rect x="50" y="22.5" width="5.6" height="5.6" rx="1" fill="currentColor" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 
@@ -681,12 +853,9 @@ export default function LayoutMap() {
                                 <div className="lm-panel-title">No. {sel.id}</div>
                             </div>
                             <span className={`lm-status-badge lm-status-${selStatus || "available"}`}>
-                                <i className={`lm-dot is-${selStatus || "available"}`} />
-                                {selStatus ? STATUS_META[selStatus].label : "Available"}
+                                <i className={`lm-dot is-${selStatus || "available"}`} />{selStatus ? STATUS_META[selStatus].label : "Available"}
                             </span>
-                            <button className="lm-iconbtn lm-panel-close" onClick={() => setSelected(null)} aria-label="Close">
-                                <svg viewBox="0 0 24 24" width="17" height="17"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
-                            </button>
+                            <button className="lm-iconbtn lm-panel-close" onClick={() => setSelected(null)} aria-label="Close"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg></button>
                         </div>
 
                         <div className="lm-diagram">
@@ -696,7 +865,7 @@ export default function LayoutMap() {
                                 <span className="lm-dim lm-dim-bottom">{SIDES[sel.id]?.s} m</span>
                                 <span className="lm-dim lm-dim-left">{SIDES[sel.id]?.w} m</span>
                                 <div className="lm-dimbox-inner">
-                                    <svg viewBox="0 0 24 24" width="15" height="15" className="lm-dim-compass"><path d="M12 3 L15 12 L12 10 L9 12 Z" fill="var(--accent)" /><path d="M12 21 L15 12 L12 14 L9 12 Z" fill="var(--text-muted)" /></svg>
+                                    <svg viewBox="0 0 24 24" width="15" height="15"><path d="M12 3 L15 12 L12 10 L9 12 Z" fill="#d9bd6f" /><path d="M12 21 L15 12 L12 14 L9 12 Z" fill="#8a7f63" /></svg>
                                     <span className="lm-dim-facing">{SIDES[sel.id]?.facing}</span>
                                     <span className="lm-dim-facelbl">Facing</span>
                                 </div>
@@ -741,316 +910,232 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const css = `
 .lm-root{
-  /* Light (default) — cartographic workspace */
-  --bg:#eef1f5; --canvas:#f6f8fb; --grid:#e4e9ef; --grid-major:#d7dee6;
-  --surface:#ffffff; --surface-2:#f4f6f9; --border:#e2e7ee; --border-2:#cfd7e0;
-  --text:#1d2632; --text-muted:#63707f; --text-faint:#8a95a3;
-  --accent:#2f6bed; --accent-weak:rgba(47,107,237,.10); --accent-border:rgba(47,107,237,.4);
-
-  --site:#eef2f6; --site-line:#c3ccd6;
-  --road:#d6dce4; --road-line:#a7b2bf;
-  --park:#cadfc9; --park-line:#a7c7a6; --water:#b8d4e4; --water-line:#8fb6cc;
-  --amenity:#dbe2ea; --amenity-line:#bcc7d3; --on-parcel:#3b4a3a; --on-water:#2c4a5c; --on-amenity:#3a4552;
-
-  --st-available:#4f9d78; --st-reserved:#d6a13c; --st-sold:#c85f57;
-  --st-available-weak:#e4f1ea; --st-reserved-weak:#f8efdc; --st-sold-weak:#f6e2e0;
-  --plot-stroke:rgba(20,32,48,.30); --plot-num:#ffffff; --plot-num-sh:rgba(0,0,0,.45);
-  --sel-sh:#0f172a;
-
-  --shadow-sm:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.10);
-  --shadow-md:0 4px 12px rgba(16,24,40,.10),0 2px 4px rgba(16,24,40,.06);
-  --shadow-lg:0 12px 32px rgba(16,24,40,.16);
-
+  --gold:#d9bd6f; --gold-lt:#f4e3a6; --line:rgba(217,189,111,.28);
+  --txt:#f4f1e6; --muted:#b9b4a2; --glass:rgba(22,26,20,.66); --glass-2:rgba(16,19,14,.82);
   position:fixed; inset:0; width:100%; height:100%;
-  background:var(--bg); color:var(--text);
-  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
-  overflow:hidden; overscroll-behavior:none; touch-action:none;
-  -webkit-font-smoothing:antialiased;
+  background:radial-gradient(130% 100% at 30% 8%,#252b1d,#0c0f09);
+  color:var(--txt); font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  overflow:hidden; overscroll-behavior:none; touch-action:none; -webkit-font-smoothing:antialiased;
 }
-.lm-root.is-dark{
-  --bg:#0c1017; --canvas:#0f141c; --grid:#1a2230; --grid-major:#232d3d;
-  --surface:#151b25; --surface-2:#1a212d; --border:#232c39; --border-2:#2e3a49;
-  --text:#e6ebf2; --text-muted:#94a3b8; --text-faint:#6b7787;
-  --accent:#5b8cff; --accent-weak:rgba(91,140,255,.14); --accent-border:rgba(91,140,255,.5);
+.lm-root.is-night{ background:radial-gradient(130% 100% at 30% 8%,#101a2c,#05070c); }
 
-  --site:#131a24; --site-line:#2a3646;
-  --road:#2a323f; --road-line:#414d5d;
-  --park:#243a2e; --park-line:#345343; --water:#22485c; --water-line:#356b84;
-  --amenity:#232c39; --amenity-line:#323e4d; --on-parcel:#a9c3ad; --on-water:#9dc4d6; --on-amenity:#9aa7b6;
-
-  --st-available:#3f9068; --st-reserved:#c39236; --st-sold:#c15c54;
-  --plot-stroke:rgba(255,255,255,.20); --plot-num:#f4f7fb; --plot-num-sh:rgba(0,0,0,.6);
-  --sel-sh:#000000;
-
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
-  --shadow-md:0 6px 18px rgba(0,0,0,.45);
-  --shadow-lg:0 16px 40px rgba(0,0,0,.55);
-}
-
-/* ---------- Header ---------- */
+/* Header */
 .lm-head{ position:absolute; top:0; left:0; right:0; z-index:6;
   display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
-  padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;
-  background:color-mix(in srgb, var(--surface) 88%, transparent);
-  border-bottom:1px solid var(--border);
-  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
-.lm-brand{ display:flex; align-items:center; gap:11px; min-width:0; }
-.lm-mark{ width:34px; height:34px; flex:none; border-radius:9px; display:grid; place-items:center;
-  background:var(--accent); color:#fff; font-weight:800; font-size:13px; letter-spacing:.02em;
-  box-shadow:var(--shadow-sm); }
-.lm-brand-name{ font-weight:700; font-size:16px; line-height:1.15; letter-spacing:-.01em; color:var(--text); }
-.lm-brand-sub{ font-size:11px; color:var(--text-muted); margin-top:2px; letter-spacing:.01em;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  padding:calc(env(safe-area-inset-top,0px) + 11px) 18px 11px;
+  background:linear-gradient(180deg,rgba(8,10,6,.92),rgba(8,10,6,.55) 72%,transparent);
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
+.lm-brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+.lm-logo{ display:flex; filter:drop-shadow(0 2px 10px rgba(217,189,111,.4)); }
+.lm-brand-name{ font-family:'Playfair Display',Georgia,serif; font-weight:800; font-size:22px; line-height:1;
+  background:linear-gradient(180deg,#fdf6e2,#e7cd85 55%,#c9a24b); -webkit-background-clip:text; background-clip:text;
+  color:transparent; letter-spacing:-.01em; }
+.lm-brand-sub{ font-size:10px; color:var(--muted); letter-spacing:.16em; text-transform:uppercase; margin-top:3px; }
 
-.lm-head-tools{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-.lm-search{ position:relative; display:flex; align-items:center; }
-.lm-search svg{ position:absolute; left:11px; color:var(--text-faint); pointer-events:none; }
-.lm-search input{ width:180px; box-sizing:border-box; background:var(--surface-2);
-  border:1px solid var(--border); border-radius:8px; padding:9px 12px 9px 34px;
-  color:var(--text); font-size:13px; outline:none; transition:border-color .15s, box-shadow .15s, background .15s; }
-.lm-search input:focus{ border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent-weak); }
-.lm-search input::placeholder{ color:var(--text-faint); }
+.lm-head-tools{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.lm-search input{ width:180px; box-sizing:border-box; background:var(--glass);
+  border:1px solid var(--line); border-radius:999px; padding:10px 16px; color:var(--txt); font-size:13px; outline:none;
+  backdrop-filter:blur(12px); transition:border-color .2s, box-shadow .2s; }
+.lm-search input:focus{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(217,189,111,.16); }
+.lm-search input::placeholder{ color:#8f8b78; }
+.lm-legend{ display:flex; align-items:center; gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px;
+  background:var(--glass); backdrop-filter:blur(12px); }
+.lm-leg{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500; color:var(--muted);
+  padding:4px 9px; border-radius:8px; white-space:nowrap; }
+.lm-leg b{ color:var(--txt); font-weight:700; font-variant-numeric:tabular-nums; }
+.lm-dot{ width:9px; height:9px; border-radius:3px; flex:none; box-shadow:0 1px 2px rgba(0,0,0,.4); }
+.lm-dot.is-all{ background:#9aa08c; } .lm-dot.is-available{ background:#4faa6c; }
+.lm-dot.is-reserved{ background:#dea63f; } .lm-dot.is-sold{ background:#d06254; }
 
-.lm-legend{ display:flex; align-items:center; gap:6px; padding:4px; border:1px solid var(--border);
-  border-radius:10px; background:var(--surface-2); }
-.lm-leg{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500;
-  color:var(--text-muted); padding:4px 8px; border-radius:7px; white-space:nowrap; }
-.lm-leg b{ color:var(--text); font-weight:700; font-variant-numeric:tabular-nums; }
-.lm-dot{ width:9px; height:9px; border-radius:2.5px; flex:none; }
-.lm-dot.is-all{ background:var(--text-faint); }
-.lm-dot.is-available{ background:var(--st-available); }
-.lm-dot.is-reserved{ background:var(--st-reserved); }
-.lm-dot.is-sold{ background:var(--st-sold); }
-
-/* ---------- Stage / SVG ---------- */
+/* Stage / SVG */
 .lm-stage{ position:absolute; inset:0; touch-action:none; user-select:none; cursor:grab;
-  overflow:hidden; background:var(--canvas); contain:layout size; }
+  overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#cabf9c,#8a7d58); contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
 
-/* Scene */
-.lm-site{ fill:var(--site); stroke:var(--site-line); stroke-width:1.6; stroke-dasharray:2 5; }
-.lm-syno text{ fill:var(--text-faint); font-size:12px; font-weight:600; letter-spacing:.02em; }
-.lm-exist text{ fill:var(--text-faint); font-size:10px; font-weight:600; letter-spacing:.14em; opacity:.85; }
-
-.lm-roads polygon, .lm-roads rect{ fill:var(--road); }
-.lm-path{ fill:var(--road); opacity:.55; }
-.lm-lane line{ stroke:var(--road-line); stroke-width:1.4; stroke-dasharray:12 12; opacity:.75; stroke-linecap:round; }
-.lm-roadlbl text{ fill:var(--text-muted); font-size:11px; font-weight:600; letter-spacing:.14em; text-anchor:middle; }
-.lm-roadlbl-lg{ font-size:12.5px !important; letter-spacing:.2em !important; fill:var(--text) !important; opacity:.75; }
+.lm-siteline{ fill:none; stroke:#6b5c3f; stroke-width:2.4; stroke-dasharray:3 7; opacity:.5; }
+.lm-syno text{ fill:#5a4f38; font-size:14px; font-weight:700; letter-spacing:.03em; }
+.lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#efe9d8; stroke-width:2.4; opacity:.5; }
+.lm-paver line{ stroke:#8a7f5e; stroke-width:1; opacity:.5; }
+.lm-lane line{ stroke:#f6ecc0; stroke-width:2.4; stroke-dasharray:12 16; opacity:.7; stroke-linecap:round; }
+.lm-roadlbl text{ fill:#6a5f42; font-size:11.5px; font-weight:700; letter-spacing:.16em; text-anchor:middle; }
+.lm-roadlbl-lg{ font-size:13px !important; letter-spacing:.2em !important; }
 .lm-roadlbl-sm{ font-size:9px !important; letter-spacing:.1em !important; }
+.lm-parcel-edge{ fill:none; stroke:#274415; stroke-width:2.6; stroke-dasharray:8 5; opacity:.7; stroke-linejoin:round; }
+.lm-parcel-lbl{ fill:#264018; font-size:14px; font-weight:800; letter-spacing:.12em; text-anchor:middle; }
+.lm-ca-label{ fill:#234017; font-size:26px; font-weight:900; text-anchor:middle; font-family:'Playfair Display',serif; }
+.lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; letter-spacing:.14em; text-anchor:middle; opacity:.85; }
+.lm-stp-label{ fill:#40296b; font-size:12px; font-weight:800; text-anchor:middle; }
 
-.lm-park{ fill:var(--park); stroke:var(--park-line); stroke-width:1.4; }
-.lm-water{ fill:var(--water); stroke:var(--water-line); stroke-width:1.4; }
-.lm-amenity{ fill:var(--amenity); stroke:var(--amenity-line); stroke-width:1.4; }
-.lm-parcel-lbl{ fill:var(--on-parcel); font-size:15px; font-weight:800; letter-spacing:.16em; text-anchor:middle; }
-.lm-water-lbl{ fill:var(--on-water); font-size:9px; font-weight:700; letter-spacing:.12em; text-anchor:middle; opacity:.9; }
-.lm-amenity-lbl{ fill:var(--on-amenity); font-size:12px; font-weight:800; letter-spacing:.08em; text-anchor:middle; }
-.lm-amenity-lbl-lg{ fill:var(--on-amenity); font-size:22px; font-weight:800; text-anchor:middle; }
-.lm-amenity-lbl-sm{ fill:var(--on-amenity); font-size:8px; font-weight:700; letter-spacing:.14em; text-anchor:middle; opacity:.8; }
-
-.lm-plot{ cursor:pointer; transition:opacity .2s ease; }
-.lm-plot.is-dim{ opacity:.22; }
-.lm-plot-shape{ stroke:var(--plot-stroke); stroke-width:1; transition:fill .2s, stroke .15s; }
-.lm-plot-shape.is-available{ fill:var(--st-available); }
-.lm-plot-shape.is-reserved{ fill:var(--st-reserved); }
-.lm-plot-shape.is-sold{ fill:var(--st-sold); }
-.lm-plot:hover .lm-plot-shape{ stroke:var(--accent); stroke-width:1.8; }
-.lm-plot-shape.is-sel{ stroke:var(--accent); stroke-width:2.6; }
+.lm-plot{ cursor:pointer; transition:opacity .22s ease; }
+.lm-plot.is-dim{ opacity:.28; }
+.lm-plot-top{ transition:filter .22s ease, transform .22s ease; }
+.lm-plot-side{ opacity:.95; }
+.lm-plot-bevel{ fill:none; stroke:#ffffff; stroke-width:1; opacity:.3; }
+.lm-plot:hover .lm-plot-top{ filter:url(#selGlow) brightness(1.05) !important; }
 .lm-plot:focus{ outline:none; }
-.lm-plot:focus-visible .lm-plot-shape{ stroke:var(--accent); stroke-width:2.6; }
-.lm-plot-num{ fill:var(--plot-num); font-size:14px; font-weight:700; text-anchor:middle; pointer-events:none;
-  paint-order:stroke; stroke:var(--plot-num-sh); stroke-width:2.4px; stroke-linejoin:round; }
+.lm-plot:focus-visible .lm-plot-top{ stroke:#fff !important; stroke-width:2.6 !important; }
+.lm-plot-num{ fill:#ffffff; font-size:14px; font-weight:800; text-anchor:middle; pointer-events:none;
+  paint-order:stroke; stroke:rgba(0,0,0,.42); stroke-width:2.4px; stroke-linejoin:round; }
 
-.lm-compass-bg{ fill:var(--surface); stroke:var(--border-2); stroke-width:1.4; filter:drop-shadow(0 2px 4px rgba(0,0,0,.15)); }
-.lm-compass-n{ fill:var(--st-sold); }
-.lm-compass-s{ fill:var(--text-muted); }
-.lm-compass-lbl{ fill:var(--text); font-size:11px; font-weight:800; }
+.lm-compass-bg{ fill:rgba(18,22,14,.72); stroke:url(#gold); stroke-width:1.6; }
+.lm-compass-lbl{ fill:#e7cd85; font-size:12px; font-weight:800; }
 
-/* ---------- Bottom toolbar ---------- */
+/* Toolbar */
 .lm-toolbar{ position:absolute; left:50%; transform:translateX(-50%);
   bottom:calc(env(safe-area-inset-bottom,0px) + 18px); z-index:16;
-  display:flex; gap:6px; padding:6px; border-radius:14px;
-  background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow-md); }
+  display:flex; gap:6px; padding:6px; border-radius:16px;
+  background:var(--glass-2); border:1px solid var(--line); box-shadow:0 12px 34px rgba(0,0,0,.5);
+  backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
 .lm-filterwrap{ position:relative; }
 .lm-tbtn{ display:inline-flex; align-items:center; gap:8px; text-decoration:none;
-  height:40px; padding:0 15px; border-radius:9px; cursor:pointer;
-  border:1px solid transparent; background:transparent; color:var(--text);
-  font-size:13px; font-weight:600; transition:background .15s, border-color .15s; white-space:nowrap; }
-.lm-tbtn svg{ color:var(--text-muted); }
-.lm-tbtn:hover{ background:var(--surface-2); }
+  height:42px; padding:0 16px; border-radius:11px; cursor:pointer; border:1px solid transparent;
+  background:transparent; color:var(--txt); font-size:13px; font-weight:600; white-space:nowrap;
+  transition:background .15s, border-color .15s; }
+.lm-tbtn svg{ color:var(--gold); }
+.lm-tbtn:hover{ background:rgba(217,189,111,.1); }
 .lm-tbtn:active{ transform:translateY(.5px); }
-.lm-filterbtn.is-available{ border-color:var(--st-available); background:var(--st-available-weak); }
-.lm-filterbtn.is-reserved{ border-color:var(--st-reserved); background:var(--st-reserved-weak); }
-.lm-filterbtn.is-sold{ border-color:var(--st-sold); background:var(--st-sold-weak); }
+.lm-filterbtn.is-available{ border-color:#4faa6c; } .lm-filterbtn.is-reserved{ border-color:#dea63f; } .lm-filterbtn.is-sold{ border-color:#d06254; }
 
 .lm-backdrop{ position:fixed; inset:0; z-index:15; }
-.lm-filtermenu{ position:absolute; left:50%;
-  bottom:calc(env(safe-area-inset-bottom,0px) + 76px); z-index:17;
-  background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:6px;
-  box-shadow:var(--shadow-lg); display:flex; flex-direction:column; gap:2px; min-width:220px;
-  transform:translateX(-50%); animation:fmenu .16s ease; }
-@keyframes fmenu{ from{ opacity:0; transform:translate(-50%,8px);} to{ opacity:1; transform:translate(-50%,0);} }
-.lm-filtermenu-head{ display:flex; align-items:center; justify-content:space-between;
-  padding:6px 6px 8px 10px; font-size:11px; font-weight:700; text-transform:uppercase;
-  letter-spacing:.08em; color:var(--text-muted); border-bottom:1px solid var(--border); margin-bottom:4px; }
-.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none;
-  color:var(--text); font-size:13px; font-weight:500; padding:10px 12px; border-radius:8px;
-  cursor:pointer; text-align:left; transition:background .12s; white-space:nowrap; }
-.lm-filteritem b{ margin-left:auto; color:var(--text-muted); font-weight:700; font-variant-numeric:tabular-nums; }
-.lm-filteritem:hover{ background:var(--surface-2); }
-.lm-filteritem.active{ background:var(--accent-weak); color:var(--accent); }
-.lm-filteritem.active b{ color:var(--accent); }
+.lm-filtermenu{ position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 78px); z-index:17;
+  background:var(--glass-2); border:1px solid var(--line); border-radius:14px; padding:6px;
+  backdrop-filter:blur(18px); box-shadow:0 14px 36px rgba(0,0,0,.55); display:flex; flex-direction:column; gap:2px;
+  min-width:220px; transform:translateX(-50%); animation:fmenu .18s ease; }
+@keyframes fmenu{ from{opacity:0; transform:translate(-50%,8px);} to{opacity:1; transform:translate(-50%,0);} }
+.lm-filtermenu-head{ display:flex; align-items:center; justify-content:space-between; padding:6px 6px 8px 12px;
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--gold-lt);
+  border-bottom:1px solid var(--line); margin-bottom:4px; }
+.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt);
+  font-size:13px; font-weight:500; padding:11px 13px; border-radius:9px; cursor:pointer; text-align:left; transition:background .12s; white-space:nowrap; }
+.lm-filteritem b{ margin-left:auto; color:var(--muted); font-weight:700; font-variant-numeric:tabular-nums; }
+.lm-filteritem:hover{ background:rgba(217,189,111,.1); }
+.lm-filteritem.active{ background:rgba(217,189,111,.18); }
 
-.lm-iconbtn{ width:30px; height:30px; border-radius:7px; border:1px solid var(--border);
-  background:transparent; color:var(--text-muted); display:flex; align-items:center; justify-content:center;
-  cursor:pointer; transition:background .12s, color .12s; }
-.lm-iconbtn:hover{ background:var(--surface-2); color:var(--text); }
+.lm-iconbtn{ width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:transparent;
+  color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .12s,color .12s; }
+.lm-iconbtn:hover{ background:rgba(255,255,255,.06); color:var(--txt); }
 
-/* ---------- Map controls ---------- */
-.lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 82px); z-index:8;
-  display:flex; flex-direction:column; border-radius:11px; overflow:hidden;
-  border:1px solid var(--border); background:var(--surface); box-shadow:var(--shadow-md); }
-.lm-ctrl button{ width:42px; height:42px; border:none; background:transparent; color:var(--text-muted);
-  display:flex; align-items:center; justify-content:center; cursor:pointer;
-  border-bottom:1px solid var(--border); transition:background .12s, color .12s; }
+/* Controls */
+.lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px); bottom:calc(env(safe-area-inset-bottom,0px) + 82px);
+  z-index:8; display:flex; flex-direction:column; border-radius:14px; overflow:hidden; border:1px solid var(--line);
+  background:var(--glass-2); backdrop-filter:blur(18px); box-shadow:0 12px 30px rgba(0,0,0,.5); }
+.lm-ctrl button{ width:44px; height:44px; border:none; background:transparent; color:var(--gold);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; border-bottom:1px solid rgba(217,189,111,.14); transition:background .12s; }
 .lm-ctrl button:last-child{ border-bottom:none; }
-.lm-ctrl button:hover{ background:var(--surface-2); color:var(--text); }
-.lm-ctrl button.is-on{ background:var(--accent); color:#fff; }
+.lm-ctrl button:hover{ background:rgba(217,189,111,.1); }
+.lm-ctrl button.is-on{ background:linear-gradient(180deg,#2a3550,#1a2338); color:#ffd76a; }
 
-/* ---------- Build credit ---------- */
-.lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 18px); z-index:12;
-  display:flex; flex-direction:column-reverse; align-items:flex-end; gap:8px; }
-.lm-tiq-logo{ cursor:pointer; background:var(--surface); border:1px solid var(--border); border-radius:8px;
-  padding:6px 11px; font-size:11px; font-weight:700; color:var(--text-muted); letter-spacing:.02em;
-  box-shadow:var(--shadow-sm); transition:color .12s; }
-.lm-tiq-logo:hover{ color:var(--text); }
-.lm-tiq-pop{ text-decoration:none; background:var(--text); color:var(--surface); border-radius:9px;
-  padding:9px 13px; box-shadow:var(--shadow-md); white-space:nowrap; animation:tiqpop .18s ease; }
-.lm-tiq-pop-title{ font-size:12px; font-weight:700; }
-.lm-tiq-pop-sub{ font-size:11px; opacity:.7; margin-top:1px; }
-@keyframes tiqpop{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:translateY(0);} }
+/* Build credit */
+.lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px); bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  z-index:12; display:flex; flex-direction:column-reverse; align-items:flex-end; gap:8px; }
+.lm-tiq-logo{ display:flex; align-items:center; justify-content:center; cursor:pointer; color:#14243c;
+  background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:10px; padding:6px 10px;
+  box-shadow:0 6px 16px rgba(0,0,0,.32); transition:transform .15s; }
+.lm-tiq-logo:active{ transform:scale(.94); }
+.lm-tiq-pop{ text-decoration:none; background:rgba(20,36,60,.96); color:#fff; border-radius:11px; padding:9px 13px;
+  box-shadow:0 8px 22px rgba(0,0,0,.45); white-space:nowrap; animation:tiqpop .18s ease; }
+.lm-tiq-pop-title{ font-size:12px; font-weight:700; } .lm-tiq-pop-sub{ font-size:11px; color:#a9c4e6; margin-top:1px; }
+@keyframes tiqpop{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
 
-/* ---------- Hint ---------- */
+/* Hint */
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
-  z-index:7; background:var(--surface); border:1px solid var(--border); color:var(--text-muted); font-size:12px;
-  padding:8px 16px; border-radius:999px; box-shadow:var(--shadow-sm); white-space:nowrap; pointer-events:none;
-  animation:fade 7s ease forwards; }
+  z-index:7; background:var(--glass-2); border:1px solid var(--line); color:var(--muted); font-size:12px;
+  padding:9px 18px; border-radius:999px; backdrop-filter:blur(14px); white-space:nowrap; pointer-events:none;
+  box-shadow:0 8px 22px rgba(0,0,0,.4); animation:fade 7s ease forwards; }
 @keyframes fade{ 0%,72%{opacity:1;} 100%{opacity:0;} }
 
-/* ---------- Splash ---------- */
-.lm-splash{ position:absolute; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
-  cursor:pointer; background:var(--bg); animation:splashOut .35s ease forwards; animation-delay:1.1s; }
-.lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center;
-  animation:splashIn .5s cubic-bezier(.22,1,.36,1); }
-.lm-splash-mark{ width:52px; height:52px; border-radius:13px; display:grid; place-items:center;
-  background:var(--accent); color:#fff; font-weight:800; font-size:19px; box-shadow:var(--shadow-md); margin-bottom:16px; }
-.lm-splash-name{ font-weight:700; font-size:22px; letter-spacing:-.01em; color:var(--text); }
-.lm-splash-sub{ margin-top:6px; font-size:12px; color:var(--text-muted); letter-spacing:.02em; }
-.lm-splash-bar{ margin-top:22px; width:160px; height:3px; border-radius:99px; background:var(--border); overflow:hidden; }
-.lm-splash-bar span{ display:block; height:100%; width:0; border-radius:99px; background:var(--accent);
-  animation:barFill 1.1s ease forwards; }
+/* Splash */
+.lm-splash{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  cursor:pointer; background:radial-gradient(120% 100% at 50% 30%,#1f2717,#0a0d07 82%);
+  animation:splashOut .4s ease forwards; animation-delay:1.5s; }
+.lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center; animation:splashIn .7s cubic-bezier(.22,1,.36,1); }
+.lm-splash-logo{ filter:drop-shadow(0 4px 20px rgba(217,189,111,.5)); margin-bottom:16px; animation:logoFloat 3s ease-in-out infinite; }
+@keyframes logoFloat{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+.lm-splash-name{ font-family:'Playfair Display',serif; font-weight:800; font-size:34px; line-height:1;
+  background:linear-gradient(180deg,#fdf6e2,#e7cd85 55%,#c9a24b); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.lm-splash-sub{ margin-top:10px; font-size:11px; letter-spacing:.24em; color:#b9c2a8; }
+.lm-splash-tag{ margin-top:6px; font-size:12px; color:#8f9578; letter-spacing:.06em; }
+.lm-splash-bar{ margin-top:24px; width:180px; height:3px; border-radius:99px; background:rgba(217,189,111,.18); overflow:hidden; }
+.lm-splash-bar span{ display:block; height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#f4e3a6,#d9bd6f); animation:barFill 1.5s ease forwards; }
 @keyframes barFill{ from{width:0} to{width:100%} }
-.lm-splash-loading{ margin-top:12px; font-size:11px; letter-spacing:.1em; color:var(--text-faint); text-transform:uppercase; }
-@keyframes splashIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+.lm-splash-credit{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 22px); font-size:10px; letter-spacing:.1em; color:#6f7758; }
+@keyframes splashIn{ from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:none} }
 @keyframes splashOut{ to{opacity:0; visibility:hidden} }
 
-/* ---------- Photos ---------- */
+/* Photos */
 .lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
-  background:rgba(12,16,23,.5); backdrop-filter:blur(4px); animation:fadein .18s ease; }
-.lm-photos-modal{ width:min(88vw,460px); background:var(--surface);
-  border:1px solid var(--border); border-radius:16px; padding:16px 18px 20px; box-shadow:var(--shadow-lg); }
-.lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;
-  font-size:15px; font-weight:700; color:var(--text); }
-.lm-photos-empty{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:34px 0;
-  color:var(--text-muted); font-size:13px; }
-.lm-photos-empty svg{ color:var(--text-faint); }
+  background:rgba(6,9,6,.6); backdrop-filter:blur(6px); animation:fadein .2s ease; }
+.lm-photos-modal{ width:min(88vw,460px); background:linear-gradient(180deg,#1c2417,#0d120a);
+  border:1px solid var(--line); border-radius:20px; padding:16px 18px 22px; box-shadow:0 24px 60px rgba(0,0,0,.6); }
+.lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; font-size:16px; font-weight:700;
+  font-family:'Playfair Display',serif; color:var(--gold-lt); }
+.lm-photos-empty{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:34px 0; color:var(--muted); font-size:13px; }
 @keyframes fadein{ from{opacity:0} to{opacity:1} }
 .lm-photos-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:60vh; overflow-y:auto; padding:2px; }
-.lm-photo-cell{ position:relative; aspect-ratio:1; border:1px solid var(--border); border-radius:10px; overflow:hidden;
-  cursor:pointer; background:var(--surface-2); padding:0; }
+.lm-photo-cell{ position:relative; aspect-ratio:1; border:none; border-radius:12px; overflow:hidden; cursor:pointer; background:#000; padding:0; }
 .lm-photo-cell img, .lm-photo-cell video{ width:100%; height:100%; object-fit:cover; display:block; }
-.lm-photo-cell:active{ transform:scale(.98); }
+.lm-photo-cell:active{ transform:scale(.97); }
 .lm-photo-play{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.28); }
-
-.lm-lightbox{ position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center;
-  background:rgba(6,9,14,.94); backdrop-filter:blur(4px); animation:fadein .18s ease; }
+.lm-lightbox{ position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.93); backdrop-filter:blur(4px); animation:fadein .2s ease; }
 .lm-lightbox-inner{ max-width:92vw; max-height:82vh; display:flex; flex-direction:column; align-items:center; gap:12px; }
-.lm-lightbox-media{ max-width:92vw; max-height:76vh; border-radius:10px; object-fit:contain; box-shadow:var(--shadow-lg); }
+.lm-lightbox-media{ max-width:92vw; max-height:76vh; border-radius:12px; object-fit:contain; box-shadow:0 20px 60px rgba(0,0,0,.6); }
 .lm-lightbox-cap{ color:#f3f6ee; font-size:14px; text-align:center; max-width:80vw; }
-.lm-lightbox-close{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); right:16px; z-index:2;
-  width:40px; height:40px; border-radius:10px; border:1px solid rgba(255,255,255,.18); background:rgba(20,24,30,.7);
-  color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.lm-lightbox-nav{ position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px; border-radius:50%;
-  border:1px solid rgba(255,255,255,.18); background:rgba(20,24,30,.7); color:#fff;
-  display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.lm-lightbox-close{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); right:16px; z-index:2; width:42px; height:42px; border-radius:12px;
+  border:1px solid var(--line); background:rgba(20,24,16,.7); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.lm-lightbox-nav{ position:absolute; top:50%; transform:translateY(-50%); width:46px; height:46px; border-radius:50%; border:1px solid var(--line);
+  background:rgba(20,24,16,.7); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .lm-lightbox-nav.lm-prev{ left:12px; } .lm-lightbox-nav.lm-next{ right:12px; }
 
-/* ---------- Detail panel ---------- */
+/* Detail panel */
 .lm-panel{ position:absolute; left:0; right:0; bottom:0; z-index:20;
-  background:var(--surface); border-top:1px solid var(--border); border-radius:18px 18px 0 0;
-  padding:8px 20px calc(env(safe-area-inset-bottom,0px) + 20px);
-  transform:translateY(120%); transition:transform .34s cubic-bezier(.22,1,.36,1);
-  box-shadow:var(--shadow-lg); }
+  background:linear-gradient(180deg,rgba(26,32,21,.97),rgba(11,15,10,.98)); border-top:1px solid var(--line);
+  border-radius:22px 22px 0 0; padding:8px 20px calc(env(safe-area-inset-bottom,0px) + 20px);
+  transform:translateY(120%); transition:transform .38s cubic-bezier(.22,1,.36,1);
+  box-shadow:0 -22px 56px rgba(0,0,0,.6); backdrop-filter:blur(20px); }
 .lm-panel.open{ transform:translateY(0); }
-.lm-panel::before{ content:""; display:block; width:40px; height:4px; border-radius:99px;
-  background:var(--border-2); margin:2px auto 14px; }
+.lm-panel::before{ content:""; display:block; width:42px; height:4px; border-radius:99px; background:rgba(217,189,111,.4); margin:2px auto 14px; }
 .lm-panel-head{ display:flex; align-items:center; gap:12px; margin-bottom:16px; }
 .lm-panel-heading{ min-width:0; }
-.lm-panel-kicker{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); font-weight:700; }
-.lm-panel-title{ font-size:24px; font-weight:700; line-height:1.1; margin-top:2px; letter-spacing:-.01em; color:var(--text); }
+.lm-panel-kicker{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); font-weight:700; }
+.lm-panel-title{ font-size:26px; font-weight:800; font-family:'Playfair Display',serif; line-height:1; margin-top:2px;
+  background:linear-gradient(180deg,#fdf6e2,#d9bd6f); -webkit-background-clip:text; background-clip:text; color:transparent; }
 .lm-panel-close{ margin-left:auto; width:36px; height:36px; }
-
-.lm-status-badge{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:700;
-  padding:6px 12px; border-radius:8px; border:1px solid transparent; }
+.lm-status-badge{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:800; padding:6px 13px; border-radius:999px; border:1px solid transparent; }
 .lm-status-badge .lm-dot{ width:8px; height:8px; }
-.lm-status-available{ background:var(--st-available-weak); color:var(--st-available); border-color:color-mix(in srgb,var(--st-available) 40%, transparent); }
-.lm-status-reserved{ background:var(--st-reserved-weak); color:var(--st-reserved); border-color:color-mix(in srgb,var(--st-reserved) 45%, transparent); }
-.lm-status-sold{ background:var(--st-sold-weak); color:var(--st-sold); border-color:color-mix(in srgb,var(--st-sold) 42%, transparent); }
+.lm-status-available{ background:rgba(79,170,108,.18); color:#8fd6a0; border-color:rgba(79,170,108,.5); }
+.lm-status-reserved{ background:rgba(222,166,63,.16); color:#f2ca7d; border-color:rgba(222,166,63,.5); }
+.lm-status-sold{ background:rgba(208,98,84,.16); color:#f0968c; border-color:rgba(208,98,84,.5); }
 
 .lm-diagram{ display:flex; justify-content:center; margin:4px 0 18px; }
 .lm-dimbox{ position:relative; width:196px; height:112px; margin:20px 30px; }
-.lm-dimbox-inner{ position:absolute; inset:0; border:1.5px solid var(--border-2); border-radius:8px;
-  background:var(--surface-2); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
-.lm-dim-facing{ color:var(--accent); font-weight:800; font-size:15px; }
-.lm-dim-facelbl{ color:var(--text-muted); font-size:8px; letter-spacing:.16em; text-transform:uppercase; }
-.lm-dim{ position:absolute; color:var(--text); font-size:11px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
-.lm-dim-top{ top:-17px; left:50%; transform:translateX(-50%); }
-.lm-dim-bottom{ bottom:-17px; left:50%; transform:translateX(-50%); }
-.lm-dim-left{ left:-8px; top:50%; transform:translate(-100%,-50%); }
-.lm-dim-right{ right:-8px; top:50%; transform:translate(100%,-50%); }
+.lm-dimbox-inner{ position:absolute; inset:0; border:2px solid var(--gold); border-radius:8px; background:rgba(217,189,111,.07);
+  box-shadow:inset 0 0 22px rgba(217,189,111,.12); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+.lm-dim-facing{ color:var(--gold-lt); font-weight:800; font-size:15px; }
+.lm-dim-facelbl{ color:var(--muted); font-size:8px; letter-spacing:.16em; text-transform:uppercase; }
+.lm-dim{ position:absolute; color:var(--gold-lt); font-size:11px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.lm-dim-top{ top:-17px; left:50%; transform:translateX(-50%); } .lm-dim-bottom{ bottom:-17px; left:50%; transform:translateX(-50%); }
+.lm-dim-left{ left:-8px; top:50%; transform:translate(-100%,-50%); } .lm-dim-right{ right:-8px; top:50%; transform:translate(100%,-50%); }
 
-.lm-rows{ display:flex; flex-direction:column; margin-bottom:18px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-.lm-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px;
-  border-bottom:1px solid var(--border); background:var(--surface); }
-.lm-row:nth-child(even){ background:var(--surface-2); }
-.lm-row:last-child{ border-bottom:none; }
-.lm-row-l{ font-size:12.5px; color:var(--text-muted); }
-.lm-row-v{ font-size:13.5px; font-weight:600; text-align:right; color:var(--text); font-variant-numeric:tabular-nums; }
+.lm-rows{ display:flex; flex-direction:column; margin-bottom:18px; border:1px solid rgba(255,255,255,.08); border-radius:12px; overflow:hidden; }
+.lm-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
+.lm-row:nth-child(even){ background:rgba(255,255,255,.02); } .lm-row:last-child{ border-bottom:none; }
+.lm-row-l{ font-size:12px; color:var(--muted); letter-spacing:.02em; }
+.lm-row-v{ font-size:13.5px; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
 
 .lm-cta-row{ display:flex; gap:10px; }
-.lm-cta{ display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
-  padding:13px; border:none; border-radius:10px; cursor:pointer; color:#fff; font-weight:700; font-size:14px;
-  transition:filter .15s, transform .1s; box-shadow:var(--shadow-sm); }
-.lm-cta-wa{ flex:1; background:#1faa4f; }
-.lm-cta-call{ width:52px; background:var(--accent); }
-.lm-cta:hover{ filter:brightness(1.05); }
-.lm-cta:active{ transform:translateY(1px); }
+.lm-cta{ display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; padding:14px; border:none;
+  border-radius:13px; cursor:pointer; color:#fff; font-weight:800; font-size:14.5px; transition:transform .12s, filter .15s; }
+.lm-cta-wa{ flex:1; background:linear-gradient(180deg,#2fc463,#1faa4f); box-shadow:0 10px 24px rgba(37,180,80,.34); }
+.lm-cta-call{ width:56px; background:linear-gradient(180deg,#4a91e2,#2f6fc4); box-shadow:0 10px 24px rgba(47,111,196,.34); }
+.lm-cta:hover{ transform:translateY(-1px); filter:brightness(1.05); } .lm-cta:active{ transform:translateY(1px); }
 
-@media (min-width:720px){
-  .lm-panel{ max-width:400px; left:auto; right:18px; bottom:18px; border-radius:14px; }
-}
+@media (min-width:720px){ .lm-panel{ max-width:410px; left:auto; right:20px; bottom:20px; border-radius:18px; } }
 @media (max-width:520px){
+  .lm-brand-name{ font-size:20px; }
+  .lm-head-tools{ flex:1; } .lm-search{ flex:1; } .lm-search input{ width:100%; }
   .lm-legend{ order:3; width:100%; justify-content:space-between; }
-  .lm-search input{ width:100%; }
-  .lm-search{ flex:1; }
-  .lm-head-tools{ flex:1; }
 }
-@media (prefers-reduced-motion:reduce){
-  .lm-panel, .lm-plot, .lm-plot-shape{ transition:none; }
-  .lm-hint, .lm-splash{ animation:none; }
-}
+@media (prefers-reduced-motion:reduce){ .lm-panel,.lm-plot,.lm-plot-top{ transition:none; } .lm-hint,.lm-splash,.lm-splash-logo{ animation:none; } }
 `;
