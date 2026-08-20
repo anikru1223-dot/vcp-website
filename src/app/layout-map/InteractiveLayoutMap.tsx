@@ -159,13 +159,6 @@ const BASE_VB: Box = { x: 60, y: 190, w: 1130, h: 1010 };
 const CONTENT_BOUNDS: Box = { x: 108, y: 174, w: 902, h: 796 };
 const CONTENT_CENTER: Point = { x: CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2, y: CONTENT_BOUNDS.y + CONTENT_BOUNDS.h / 2 };
 
-const centroid = (pts: string): Point => {
-    const n = pts.split(/[ ,]+/).map(Number);
-    let x = 0, y = 0, c = 0;
-    for (let i = 0; i < n.length; i += 2) { x += n[i]; y += n[i + 1]; c++; }
-    return { x: x / c, y: y / c };
-};
-
 // ---------------------------------------------------------------------------
 // Master-plan image overlay.
 //
@@ -242,19 +235,6 @@ export default function LayoutMap() {
     const [media, setMedia] = useState<MediaItem[]>([]);
     const [lightbox, setLightbox] = useState<number | null>(null);
     const [night, setNight] = useState(false);
-
-    // --- Master-plan image alignment debug (temporary, dev-only) ---
-    // When on: the image drops to 50% opacity and the real road/CA/KARAB/STP
-    // geometry (normally hidden, since the image already shows them) is drawn
-    // on top so every plot/road/amenity can be checked against the image.
-    // Nudge values are additive/multiplicative adjustments on top of
-    // IMAGE_BOUNDS for quick on-screen fine-tuning; once aligned, fold the
-    // final numbers into IMAGE_BOUNDS above and this whole block can be
-    // deleted along with the debug button.
-    const [masterPlanDebug, setMasterPlanDebug] = useState(false);
-    const [imgNudge, setImgNudge] = useState({ x: 0, y: 0, scale: 1 });
-    const nudgeImg = (dx: number, dy: number, ds: number) =>
-        setImgNudge((n) => ({ x: n.x + dx, y: n.y + dy, scale: Math.max(0.5, Math.min(2, n.scale + ds)) }));
 
     // ---- Real loading gate (data + fonts + a small minimum, capped by a timeout) ----
     const [ready, setReady] = useState(false);
@@ -829,86 +809,30 @@ export default function LayoutMap() {
                 CSS/HTML-positioned overlay. */}
                         <image
                             href={MASTER_PLAN_IMAGE_SRC}
-                            x={IMAGE_BOUNDS.x + imgNudge.x}
-                            y={IMAGE_BOUNDS.y + imgNudge.y}
-                            width={IMAGE_BOUNDS.w * imgNudge.scale}
-                            height={IMAGE_BOUNDS.h * imgNudge.scale}
+                            x={IMAGE_BOUNDS.x}
+                            y={IMAGE_BOUNDS.y}
+                            width={IMAGE_BOUNDS.w}
+                            height={IMAGE_BOUNDS.h}
                             preserveAspectRatio="none"
-                            opacity={masterPlanDebug ? 0.5 : 1}
                             pointerEvents="none"
                         />
 
-                        {/* Debug-only: the original SVG-drawn roads/CA/KARAB/STP plus the
-                decorative "outside the site" filler rects. These are exactly
-                what the image already shows, so they stay hidden normally
-                and only appear (on top of the 50%-opacity image) to verify
-                alignment. */}
-                        {masterPlanDebug && (
-                            <>
-                                <g pointerEvents="none">
-                                    <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
-                                    <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
-                                    <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
-                                    <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
-                                    <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
-                                    <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
-                                    <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
-                                    <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.4" />
-                                </g>
-
-                                <g pointerEvents="none" opacity={0.85}>
-                                    <polygon points={ROADS.top} fill="#40392d" />
-                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#40392d" />
-                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#40392d" />
-                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#40392d" />
-                                    <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
-
-                                    <g className="lm-lane">
-                                        <line x1="531" y1="270" x2="531" y2="944" />
-                                        <line x1="822" y1="270" x2="822" y2="944" />
-                                        <line x1="122" y1="499" x2="500" y2="499" />
-                                        <line x1="118" y1="223" x2="1108" y2="223" />
-                                    </g>
-
-                                    <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
-                                    <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
-                                    <text x="822" y="620" className="lm-road-lbl" transform="rotate(-90 822 620)">9m ROAD</text>
-                                    <text x="300" y="504" className="lm-road-lbl">9m ROAD</text>
-                                    <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
-
-                                    <polygon points={KARAB} fill="#77a648" />
-                                    <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="#5fada6" />
-                                    <text x="300" y="835" className="lm-amen-label">KARAB</text>
-
-                                    <polygon points={CA} fill="#8fbe5a" />
-                                    <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
-                                    <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
-
-                                    <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" />
-                                    <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
-                                </g>
-                            </>
-                        )}
-
-                        {/* Interactive plot layer — always rendered (this is the actual
-                click/hover/selection surface), but transparent by default so
-                the image shows through. A faint status tint stays on so
-                available/reserved/sold is still readable at a glance without
-                painting a solid block over the realistic image; debug mode
-                switches to solid fills + visible strokes for alignment
-                checks against the image underneath. */}
+                        {/* Interactive plot layer — the actual click/hover/selection
+                surface, transparent by default so the image shows through.
+                A faint status tint stays on so available/reserved/sold is
+                still readable at a glance without painting a solid block
+                over the realistic image. */}
                         <g>
                             {PLOTS.map((p) => {
-                                const c = centroid(p.pts);
                                 const isSel = p.id === selected;
                                 const st = statusMap[p.id];
                                 const effective: Status = st || "available";
                                 const shown: Status = filter === "all" ? "available" : effective;
                                 const meta = STATUS_META[shown];
                                 const dimmed = filter !== "all" && effective !== filter;
-                                const fillOpacity = masterPlanDebug ? 0.85 : isSel ? 0.4 : 0.2;
-                                const strokeColor = masterPlanDebug ? (isSel ? "#fff" : "url(#gold)") : isSel ? "#fff" : "transparent";
-                                const strokeWidth = masterPlanDebug ? (isSel ? 2.4 : 1.2) : isSel ? 2.2 : 0;
+                                const fillOpacity = isSel ? 0.4 : 0.2;
+                                const strokeColor = isSel ? "#fff" : "transparent";
+                                const strokeWidth = isSel ? 2.2 : 0;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
@@ -918,7 +842,6 @@ export default function LayoutMap() {
                                             fill={isSel ? meta.sel : meta.fill}
                                             fillOpacity={fillOpacity}
                                             stroke={strokeColor} strokeWidth={strokeWidth} />
-                                        <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                     </g>
                                 );
                             })}
@@ -1066,37 +989,7 @@ export default function LayoutMap() {
                             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" strokeLinejoin="round" /></svg>
                         )}
                     </button>
-                    {/* TEMPORARY — image-alignment debug toggle. Safe to delete this
-              button (and the masterPlanDebug/imgNudge state + the debug-only
-              JSX blocks above) once IMAGE_BOUNDS is confirmed correct. */}
-                    <button className={masterPlanDebug ? "lm-ctrl-on" : ""} onClick={() => setMasterPlanDebug((v) => !v)} aria-label="Toggle master-plan alignment debug">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><rect x="7" y="8" width="10" height="10" rx="4" /><path d="M9 8V6a3 3 0 0 1 6 0v2M4 12h3M17 12h3M6 8l-2-2M18 8l2-2M6 16l-2 2M18 16l2 2" strokeLinecap="round" /></svg>
-                    </button>
                 </div>
-
-                {masterPlanDebug && (
-                    <div className="lm-imgdebug">
-                        <div className="lm-imgdebug-row">
-                            <span>X {(IMAGE_BOUNDS.x + imgNudge.x).toFixed(0)}</span>
-                            <button onClick={() => nudgeImg(-10, 0, 0)}>−</button>
-                            <button onClick={() => nudgeImg(10, 0, 0)}>+</button>
-                        </div>
-                        <div className="lm-imgdebug-row">
-                            <span>Y {(IMAGE_BOUNDS.y + imgNudge.y).toFixed(0)}</span>
-                            <button onClick={() => nudgeImg(0, -10, 0)}>−</button>
-                            <button onClick={() => nudgeImg(0, 10, 0)}>+</button>
-                        </div>
-                        <div className="lm-imgdebug-row">
-                            <span>Scale {imgNudge.scale.toFixed(3)}</span>
-                            <button onClick={() => nudgeImg(0, 0, -0.01)}>−</button>
-                            <button onClick={() => nudgeImg(0, 0, 0.01)}>+</button>
-                        </div>
-                        <div className="lm-imgdebug-row lm-imgdebug-readout">
-                            w {(IMAGE_BOUNDS.w * imgNudge.scale).toFixed(0)} · h {(IMAGE_BOUNDS.h * imgNudge.scale).toFixed(0)}
-                        </div>
-                        <button className="lm-imgdebug-reset" onClick={() => setImgNudge({ x: 0, y: 0, scale: 1 })}>Reset nudge</button>
-                    </div>
-                )}
 
                 <div className="lm-tiq-wrap">
                     {tiqOpen && (
@@ -1266,8 +1159,6 @@ const css = `
 .lm-plot:hover .lm-plot-shape{ filter:brightness(1.08); }
 .lm-plot:focus{ outline:none; }
 .lm-plot:focus-visible .lm-plot-shape{ stroke:#fff; stroke-width:2.6; }
-.lm-plot-num{ fill:#ffffff; font-size:15px; font-weight:800; text-anchor:middle; pointer-events:none;
-  paint-order:stroke; stroke:rgba(0,0,0,.4); stroke-width:2.2px; stroke-linejoin:round; }
 .lm-amen-label{ fill:#2c4a1a; font-size:20px; font-weight:800; text-anchor:middle; letter-spacing:.16em; font-family:'Playfair Display',serif; }
 .lm-ca-label{ fill:#234017; font-size:26px; font-weight:900; text-anchor:middle; font-family:'Playfair Display',serif; }
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
@@ -1314,21 +1205,6 @@ const css = `
 .lm-ctrl button.lm-ctrl-on{ background:#1a2338; color:#ffd76a; }
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
-
-/* TEMPORARY — image-alignment debug panel, safe to delete with the debug
-   toggle button once IMAGE_BOUNDS is confirmed correct. */
-.lm-imgdebug{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
-  bottom:calc(env(safe-area-inset-bottom,0px) + 300px); z-index:9;
-  background:rgba(18,22,16,.94); border:1px solid var(--line); border-radius:12px;
-  padding:8px; display:flex; flex-direction:column; gap:5px; min-width:150px; }
-.lm-imgdebug-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:11px; color:var(--txt); }
-.lm-imgdebug-row button{ width:24px; height:24px; border-radius:6px; border:1px solid var(--line);
-  background:transparent; color:var(--gold-lt); cursor:pointer; font-size:14px; line-height:1; }
-.lm-imgdebug-row button:hover{ background:rgba(212,171,84,.15); }
-.lm-imgdebug-readout{ color:var(--muted); justify-content:flex-start; }
-.lm-imgdebug-reset{ margin-top:2px; font-size:11px; padding:5px; border-radius:7px; border:1px solid var(--line);
-  background:transparent; color:var(--muted); cursor:pointer; }
-.lm-imgdebug-reset:hover{ background:rgba(212,171,84,.1); color:var(--txt); }
 
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
   z-index:7; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px;
