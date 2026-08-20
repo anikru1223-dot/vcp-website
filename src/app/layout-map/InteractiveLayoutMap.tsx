@@ -20,30 +20,45 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
  * screen position of CONTENT_CENTER. Both functions correctly account for
  * `s * CONTENT_CENTER` when computing/clamping.
  *
- * FIX (this revision — "Image 2" bug): the very first `useLayoutEffect`
- * measurement pass could occasionally read a 0×0 (or otherwise invalid)
- * `.lm-stage` rect — before layout has settled, before the mobile browser
- * chrome (address bar) has resolved its final height, etc. Previously
- * `hasFitRef.current` was set to `true` unconditionally on that first pass,
- * so `computeFitCam()`'s own zero-guard would return the degenerate
- * `{ s: 1, tx: 0, ty: 0, rot: 0 }` camera and the code would consider the
- * map "fitted" even though it wasn't. The loading splash was also gated
- * purely on data/timers (`ready`), with no dependency on whether a real
- * camera fit had actually happened — so the splash could disappear before,
- * or right as, a corrective re-fit landed, producing a visible flash of the
- * wrong framing ("Image 2"). This revision:
- *   1. Never marks the fit as "done" against a 0×0 rect — it retries via
- *      requestAnimationFrame until a real, non-zero rect is measured.
- *   2. Introduces `mapCameraReady`, flipped true only once a real fit has
- *      been computed and painted, and gates the splash overlay on
- *      `ready && mapCameraReady` so the map is never revealed mid-fit.
- *   3. Paints the camera group using the SVG-native `transform` attribute
- *      instead of a CSS `transform` + `transform-box:fill-box`, removing a
- *      known source of cross-engine inconsistency (fill-box resolves the
- *      transform origin against the group's full bounding box, which here
- *      includes the huge background rect, making the effective reference
- *      frame less predictable across mobile browser engines).
- * No plot geometry, roads, colors, UI controls, or existing interaction
+ * FIX ("Image 2" bug): the very first `useLayoutEffect` measurement pass
+ * could occasionally read a 0×0 (or otherwise invalid) `.lm-stage` rect —
+ * before layout has settled, before the mobile browser chrome (address
+ * bar) has resolved its final height, etc. This is guarded via
+ * `hasFitRef` / `mapCameraReady` — see the effect below.
+ *
+ * FIX (this revision — desktop clicks not registering): plots previously
+ * relied entirely on the browser's synthetic "click" event firing on the
+ * polygon after pointerdown/pointerup. With `setPointerCapture()` in play
+ * and `e.preventDefault()` called inside `onPointerMove` on every frame
+ * (even for a fraction-of-a-pixel mouse jitter while clicking), some
+ * desktop browsers will suppress the synthetic click entirely — while
+ * touch taps (which don't jitter the same way) kept working, masking the
+ * bug on mobile. This revision adds an explicit tap/click detector: we
+ * track total pointer movement between pointerdown and pointerup, and if
+ * it stayed under a small threshold (a real tap/click, not a drag), we
+ * hit-test the release point ourselves via `document.elementFromPoint`
+ * and select the plot directly — independent of whether the browser
+ * decides to fire "click". The original onClick handlers are left in
+ * place too, so nothing regresses; this is pure redundancy for desktop.
+ *
+ * FIX (this revision — image "zooming out" / background bleeding in):
+ * the default camera fit previously sized itself to CONTENT_BOUNDS (the
+ * abstract plot-grid box) at 92% "contain", which — depending on the
+ * screen's aspect ratio — often left the master-plan image smaller than
+ * the stage, so the plain background color showed as a visible gap above
+ * the image (between the header and the image top) and below it (between
+ * the image bottom and the footer/controls). computeFitScale now fits in
+ * "cover" mode against the actual image bounds (IMAGE_BOUNDS), so the
+ * image always fills the entire stage edge-to-edge at the default zoom —
+ * no background bleed, and users are never looking at an over-zoomed-out
+ * view where the image and the surrounding filler don't make sense
+ * together.
+ *
+ * FIX (this revision — remove selection highlight box): selecting a plot
+ * no longer draws a white stroke/outline box around it. Only the fill
+ * brightens slightly on selection now.
+ *
+ * No plot geometry, roads, colors, or other UI controls/interaction
  * behavior (pan/zoom/pinch/rotate/reset/filters/etc.) were changed.
  */
 
@@ -155,7 +170,7 @@ type Point = { x: number; y: number };
 const BASE_VB: Box = { x: 60, y: 190, w: 1130, h: 1010 };
 
 // Tight bounds around the actual plotted layout — this (not the huge
-// decorative canvas around it) is what the camera fits/centers on.
+// decorative canvas around it) is what pan clamping/elastic slack uses.
 const CONTENT_BOUNDS: Box = { x: 108, y: 174, w: 902, h: 796 };
 const CONTENT_CENTER: Point = { x: CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2, y: CONTENT_BOUNDS.y + CONTENT_BOUNDS.h / 2 };
 
@@ -168,12 +183,6 @@ const CONTENT_CENTER: Point = { x: CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2, y: C
 // transformed <g> as the plots/roads (see camGroupRef further down), so it
 // pans/zooms in perfect lockstep with the interactive layer — never as a
 // separate HTML-positioned element.
-//
-// CAMERA SAFETY: IMAGE_BOUNDS below is display-only data, exactly like the
-// old decoration arrays were. It is never read by computeFitScale /
-// computeFitCam / CONTENT_BOUNDS / CONTENT_CENTER (those remain the fixed
-// constants defined earlier), so the image cannot expand or shrink the
-// camera fit no matter what bounds it's given.
 //
 // REGISTRATION: IMAGE_BOUNDS maps the source PNG's own pixel box into this
 // component's SVG coordinate system. It was derived by measuring the pixel
@@ -228,6 +237,10 @@ type Cam = { s: number; tx: number; ty: number; rot: number };
 type StageRect = { left: number; top: number; width: number; height: number };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+// How far (in screen px) a pointer is allowed to drift between down and up
+// before we treat the gesture as a drag instead of a tap/click.
+const TAP_MOVE_TOLERANCE_PX = 6;
 
 function LayoutMapInner() {
     const [selected, setSelected] = useState<string | null>(null);
@@ -375,6 +388,13 @@ function LayoutMapInner() {
     const dragState = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
     const pinchState = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
 
+    // Desktop-safe tap/click tracking (see top-of-file note). tapStartRef
+    // holds the pointerdown position for the current single-pointer gesture;
+    // tapMovedRef flips true the moment that gesture drifts past the
+    // tolerance, at which point it's a drag/pan, not a tap.
+    const tapStartRef = useRef<{ x: number; y: number } | null>(null);
+    const tapMovedRef = useRef(false);
+
     const idleTimer = useRef<number | null>(null);
     // True once the user has actually touched/dragged/zoomed the map. Until
     // then we keep re-fitting the camera to the content on every measurement
@@ -467,11 +487,20 @@ function LayoutMapInner() {
         stageRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
     };
 
-    // The scale that fits CONTENT_BOUNDS to ~92% of the current stage.
+    // The scale used at default zoom. COVER (not contain): sized so the
+    // master-plan IMAGE fills the entire stage with no gaps on any edge —
+    // previously this fit CONTENT_BOUNDS at 92% "contain", which on many
+    // screen aspect ratios left the plain background color showing between
+    // the header and the top of the image, and between the bottom of the
+    // image and the footer/controls. Fitting against IMAGE_BOUNDS with
+    // Math.max guarantees the image itself always covers the full stage at
+    // the default zoom, so there's never a mismatched gap of bare background
+    // around it. The small 1.02 multiplier is just a safety margin so
+    // sub-pixel rounding never leaves a hairline gap at the edge.
     const computeFitScale = () => {
         const r = stageRectRef.current;
         if (!r.width || !r.height) return 1;
-        return Math.min((r.width * 0.92) / CONTENT_BOUNDS.w, (r.height * 0.92) / CONTENT_BOUNDS.h);
+        return Math.max(r.width / IMAGE_BOUNDS.w, r.height / IMAGE_BOUNDS.h) * 1.02;
     };
 
     const sMin = () => fitScaleRef.current * 0.4;
@@ -573,8 +602,13 @@ function LayoutMapInner() {
         if (pointers.current.size === 1) {
             dragState.current = { px: e.clientX, py: e.clientY, tx: camRef.current.tx, ty: camRef.current.ty };
             pinchState.current = null;
+            // Start tracking this as a potential tap/click.
+            tapStartRef.current = { x: e.clientX, y: e.clientY };
+            tapMovedRef.current = false;
         } else if (pointers.current.size === 2) {
             dragState.current = null;
+            // A second finger landed — this is a pinch/rotate gesture, not a tap.
+            tapStartRef.current = null;
             const pts = Array.from(pointers.current.values());
             const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
             const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
@@ -586,6 +620,11 @@ function LayoutMapInner() {
     const onPointerMove = (e: React.PointerEvent) => {
         if (!pointers.current.has(e.pointerId)) return;
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (tapStartRef.current && !tapMovedRef.current) {
+            const dist = Math.hypot(e.clientX - tapStartRef.current.x, e.clientY - tapStartRef.current.y);
+            if (dist > TAP_MOVE_TOLERANCE_PX) tapMovedRef.current = true;
+        }
 
         if (pointers.current.size >= 2 && pinchState.current) {
             e.preventDefault();
@@ -607,14 +646,35 @@ function LayoutMapInner() {
     };
 
     const endPointer = (e: React.PointerEvent) => {
+        // Snapshot whether this release completes a genuine tap/click BEFORE
+        // mutating the pointers map below.
+        const wasSinglePointerTap = pointers.current.size === 1 && !!tapStartRef.current && !tapMovedRef.current;
+        const tapX = e.clientX;
+        const tapY = e.clientY;
+
         pointers.current.delete(e.pointerId);
         if (pointers.current.size === 0) {
             dragState.current = null;
             pinchState.current = null;
             settle();
             scheduleIdleRestore(0);
+
+            // Desktop-safe tap/click handling: rather than relying solely on the
+            // browser's synthetic "click" event (which can be suppressed by some
+            // desktop browsers once pointer capture + a preventDefault()'d
+            // pointermove are involved, even for a sub-pixel mouse jitter), hit
+            // -test the release point ourselves and select the plot directly.
+            if (wasSinglePointerTap) {
+                const el = document.elementFromPoint(tapX, tapY) as HTMLElement | SVGElement | null;
+                const plotEl = (el as Element | null)?.closest?.("[data-plot-id]") as Element | null;
+                const plotId = plotEl?.getAttribute("data-plot-id");
+                if (plotId) setSelected(plotId);
+            }
+            tapStartRef.current = null;
+            tapMovedRef.current = false;
         } else if (pointers.current.size === 1) {
             pinchState.current = null;
+            tapStartRef.current = null; // a multi-touch gesture happened — not a tap
             const [[, pt]] = Array.from(pointers.current.entries());
             dragState.current = { px: pt.x, py: pt.y, tx: camRef.current.tx, ty: camRef.current.ty };
         }
@@ -633,25 +693,6 @@ function LayoutMapInner() {
     // Uses useLayoutEffect (not useEffect) so this measure-and-paint pass runs
     // *before* the browser's first paint — the user should never see a frame
     // where the camera hasn't been fitted yet.
-    //
-    // FIX: a 0×0 (or otherwise invalid) stage rect is NOT treated as a
-    // successful fit anymore. Previously `hasFitRef.current` was set to
-    // `true` unconditionally on the very first pass, so if that pass happened
-    // to read a zero-size rect (parent not laid out yet, mobile browser still
-    // resolving the real viewport height, etc.) the code considered the map
-    // "fitted" against the degenerate `{s:1,tx:0,ty:0}` camera. Now, on an
-    // invalid rect, we simply retry on the next animation frame without
-    // marking anything as fitted — and `mapCameraReady` (which gates the
-    // splash) is only set once a REAL fit has been computed and painted.
-    //
-    // On top of that, until the user actually interacts with the map we keep
-    // re-measuring and re-fitting on a short burst of follow-up passes (two
-    // animation frames + a couple of short timeouts). This is deliberately
-    // defensive: on real devices the stage's measured size can still change
-    // shortly after mount for reasons outside our control — the mobile
-    // browser's address bar collapsing/expanding, a web font swapping in and
-    // changing header height, etc. Once `interactedRef` flips true (real
-    // touch/drag/zoom), we stop overriding the user's own view.
     useLayoutEffect(() => {
         const el = wrapRef.current; if (!el) return;
         let cancelled = false;
@@ -824,7 +865,11 @@ function LayoutMapInner() {
                 still readable at a glance without painting a solid block
                 over the realistic image. pointerEvents is set explicitly
                 (rather than relying on the SVG default) so nothing upstream
-                can accidentally swallow clicks on these plots. */}
+                can accidentally swallow clicks on these plots. Each plot
+                also carries a data-plot-id attribute so the manual desktop
+                tap/click hit-test (see endPointer) can identify it via
+                document.elementFromPoint without depending on React's
+                synthetic click event. */}
                         <g pointerEvents="auto">
                             {PLOTS.map((p) => {
                                 const isSel = p.id === selected;
@@ -834,17 +879,15 @@ function LayoutMapInner() {
                                 const meta = STATUS_META[shown];
                                 const dimmed = filter !== "all" && effective !== filter;
                                 const fillOpacity = isSel ? 0.4 : 0.2;
-                                const strokeColor = isSel ? "#fff" : "transparent";
-                                const strokeWidth = isSel ? 2.2 : 0;
                                 return (
-                                    <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
+                                    <g key={p.id} className="lm-plot" data-plot-id={p.id}
+                                        onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className="lm-plot-shape" pointerEvents="visiblePainted"
+                                        <polygon points={p.pts} data-plot-id={p.id} className="lm-plot-shape" pointerEvents="visiblePainted"
                                             fill={isSel ? meta.sel : meta.fill}
-                                            fillOpacity={fillOpacity}
-                                            stroke={strokeColor} strokeWidth={strokeWidth} />
+                                            fillOpacity={fillOpacity} />
                                     </g>
                                 );
                             })}
@@ -1217,7 +1260,7 @@ const css = `
 .lm-plot-shape{ transition:filter .18s ease; }
 .lm-plot:hover .lm-plot-shape{ filter:brightness(1.08); }
 .lm-plot:focus{ outline:none; }
-.lm-plot:focus-visible .lm-plot-shape{ stroke:#fff; stroke-width:2.6; }
+.lm-plot:focus-visible .lm-plot-shape{ filter:brightness(1.15); }
 .lm-amen-label{ fill:#2c4a1a; font-size:20px; font-weight:800; text-anchor:middle; letter-spacing:.16em; font-family:'Playfair Display',serif; }
 .lm-ca-label{ fill:#234017; font-size:26px; font-weight:900; text-anchor:middle; font-family:'Playfair Display',serif; }
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
