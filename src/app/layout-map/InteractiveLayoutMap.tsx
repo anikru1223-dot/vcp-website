@@ -13,6 +13,15 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
  * sizes the viewBox to the stage's own pixel box every render, so there is
  * no hidden browser-side offset — ALL centering/zoom/pan math is ours, in
  * plain pixels, and the map is always framed around its content center.
+ *
+ * FIX (this revision): computeFitCam() and clampPan() previously treated
+ * `cam.tx/ty` as if they were the on-screen position of CONTENT_CENTER.
+ * They are not — at rot=0 the paint transform reduces to
+ * `screen(p) = tx + s * p`, so `tx/ty` is the screen position of SVG
+ * coordinate (0,0), not of CONTENT_CENTER. That mismatch made the initial
+ * "fit" camera land off in a corner instead of centering the whole 32-plot
+ * layout. Both functions now correctly account for `s * CONTENT_CENTER`
+ * when computing/clamping where the content center lands on screen.
  */
 
 type Plot = {
@@ -243,8 +252,11 @@ const StreetLight = React.memo(function StreetLight({ x, y, night = false }: { x
 
 // ---------------------------------------------------------------------------
 // Camera — all math in real stage pixels. cam.s is an absolute px-per-unit
-// scale (not a multiplier), cam.tx/ty are absolute px translate, pivoted on
-// CONTENT_CENTER. No SVG-side letterboxing is involved anywhere.
+// scale (not a multiplier), cam.tx/ty are absolute px translate for the SVG
+// origin. The on-screen position of CONTENT_CENTER at rot=0 is
+// (tx + s*CONTENT_CENTER.x, ty + s*CONTENT_CENTER.y) — every place that
+// needs to reason about "where the content center sits on screen" must add
+// that offset back in; treating tx/ty as that position directly was the bug.
 // ---------------------------------------------------------------------------
 
 type Cam = { s: number; tx: number; ty: number; rot: number };
@@ -478,15 +490,18 @@ export default function LayoutMap() {
     const sMin = () => fitScaleRef.current * 0.4;
     const sMax = () => fitScaleRef.current * 16;
 
+    // clampPan works in terms of where the *content center* sits on screen.
+    // At rot=0, screen(CONTENT_CENTER) = (tx + s*CONTENT_CENTER.x, ty + s*CONTENT_CENTER.y).
+    // We clamp that screen position into range, then convert back to tx/ty.
     const clampPan = (c: Cam, elastic = false): Cam => {
         const r = stageRectRef.current;
         const contentW = CONTENT_BOUNDS.w * c.s;
         const contentH = CONTENT_BOUNDS.h * c.s;
         const slackX = r.width * 0.35, slackY = r.height * 0.35;
-        // Content-space center maps to screen at: stageOrigin + c.tx (see paintNow).
-        // Keep that mapped center within the stage bounds (+ slack) either way.
-        const centerScreenX = c.tx; // because translate already carries the pivot cancellation at rot 0
-        const centerScreenY = c.ty;
+
+        const centerScreenX = c.tx + c.s * CONTENT_CENTER.x;
+        const centerScreenY = c.ty + c.s * CONTENT_CENTER.y;
+
         const minX = -contentW / 2 - slackX, maxX = r.width + contentW / 2 + slackX;
         const minY = -contentH / 2 - slackY, maxY = r.height + contentH / 2 + slackY;
         const soft = (val: number, lo: number, hi: number) => {
@@ -495,7 +510,15 @@ export default function LayoutMap() {
             if (val > hi) return elastic ? hi + (val - hi) * 0.35 : hi;
             return val;
         };
-        return { ...c, tx: soft(centerScreenX, minX, maxX), ty: soft(centerScreenY, minY, maxY) };
+
+        const clampedCenterX = soft(centerScreenX, minX, maxX);
+        const clampedCenterY = soft(centerScreenY, minY, maxY);
+
+        return {
+            ...c,
+            tx: clampedCenterX - c.s * CONTENT_CENTER.x,
+            ty: clampedCenterY - c.s * CONTENT_CENTER.y,
+        };
     };
 
     const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
@@ -516,11 +539,19 @@ export default function LayoutMap() {
     }, [animateTo]);
 
     // The default, centered camera: content center at stage center, at fitScale.
+    // tx/ty are the screen position of SVG (0,0), so we back-solve them from
+    // "content center should land at stage center":
+    //   stageCenter = tx + s * CONTENT_CENTER  =>  tx = stageCenter - s * CONTENT_CENTER
     const computeFitCam = useCallback((): Cam => {
         const r = stageRectRef.current;
         if (!r.width || !r.height) return { s: 1, tx: 0, ty: 0, rot: 0 };
         const s = computeFitScale();
-        return { s, tx: r.width / 2, ty: r.height / 2, rot: 0 };
+        return {
+            s,
+            tx: r.width / 2 - s * CONTENT_CENTER.x,
+            ty: r.height / 2 - s * CONTENT_CENTER.y,
+            rot: 0,
+        };
     }, []);
 
     const fitToContent = useCallback((animated: boolean) => {
