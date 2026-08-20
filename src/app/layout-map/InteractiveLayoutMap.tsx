@@ -14,14 +14,37 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
  * no hidden browser-side offset — ALL centering/zoom/pan math is ours, in
  * plain pixels, and the map is always framed around its content center.
  *
- * FIX (this revision): computeFitCam() and clampPan() previously treated
- * `cam.tx/ty` as if they were the on-screen position of CONTENT_CENTER.
- * They are not — at rot=0 the paint transform reduces to
- * `screen(p) = tx + s * p`, so `tx/ty` is the screen position of SVG
- * coordinate (0,0), not of CONTENT_CENTER. That mismatch made the initial
- * "fit" camera land off in a corner instead of centering the whole 32-plot
- * layout. Both functions now correctly account for `s * CONTENT_CENTER`
- * when computing/clamping where the content center lands on screen.
+ * FIX (initial-camera race): computeFitCam() and clampPan() treat
+ * `cam.tx/ty` as the on-screen position of SVG (0,0) — at rot=0 the paint
+ * transform reduces to `screen(p) = tx + s * p`, so `tx/ty` is NOT the
+ * screen position of CONTENT_CENTER. Both functions correctly account for
+ * `s * CONTENT_CENTER` when computing/clamping.
+ *
+ * FIX (this revision — "Image 2" bug): the very first `useLayoutEffect`
+ * measurement pass could occasionally read a 0×0 (or otherwise invalid)
+ * `.lm-stage` rect — before layout has settled, before the mobile browser
+ * chrome (address bar) has resolved its final height, etc. Previously
+ * `hasFitRef.current` was set to `true` unconditionally on that first pass,
+ * so `computeFitCam()`'s own zero-guard would return the degenerate
+ * `{ s: 1, tx: 0, ty: 0, rot: 0 }` camera and the code would consider the
+ * map "fitted" even though it wasn't. The loading splash was also gated
+ * purely on data/timers (`ready`), with no dependency on whether a real
+ * camera fit had actually happened — so the splash could disappear before,
+ * or right as, a corrective re-fit landed, producing a visible flash of the
+ * wrong framing ("Image 2"). This revision:
+ *   1. Never marks the fit as "done" against a 0×0 rect — it retries via
+ *      requestAnimationFrame until a real, non-zero rect is measured.
+ *   2. Introduces `mapCameraReady`, flipped true only once a real fit has
+ *      been computed and painted, and gates the splash overlay on
+ *      `ready && mapCameraReady` so the map is never revealed mid-fit.
+ *   3. Paints the camera group using the SVG-native `transform` attribute
+ *      instead of a CSS `transform` + `transform-box:fill-box`, removing a
+ *      known source of cross-engine inconsistency (fill-box resolves the
+ *      transform origin against the group's full bounding box, which here
+ *      includes the huge background rect, making the effective reference
+ *      frame less predictable across mobile browser engines).
+ * No plot geometry, roads, colors, UI controls, or existing interaction
+ * behavior (pan/zoom/pinch/rotate/reset/filters/etc.) were changed.
  */
 
 type Plot = {
@@ -276,6 +299,11 @@ export default function LayoutMap() {
     const [ready, setReady] = useState(false);
     const [loadPct, setLoadPct] = useState(6);
     const [dataLoaded, setDataLoaded] = useState(false);
+    // True only after the camera has been measured against a REAL, non-zero
+    // `.lm-stage` rect and painted at least once. The loading overlay must not
+    // disappear until BOTH this and `ready` are true — otherwise the user can
+    // see a frame of the map before it's actually framed correctly.
+    const [mapCameraReady, setMapCameraReady] = useState(false);
 
     // The <svg viewBox> tracks the stage's own pixel size exactly, so there is
     // never a browser-computed letterbox offset to fight against.
@@ -399,7 +427,7 @@ export default function LayoutMap() {
 
     const stageRectRef = useRef<StageRect>({ left: 0, top: 0, width: 0, height: 0 });
     const fitScaleRef = useRef(1); // the "100% / default" px-per-unit scale for the current stage size
-    const hasFitRef = useRef(false);
+    const hasFitRef = useRef(false); // true only once a fit has been computed against a REAL non-zero rect
 
     const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
     const dragState = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
@@ -416,11 +444,21 @@ export default function LayoutMap() {
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
+    // FIX: paint via the SVG-native `transform` attribute instead of a CSS
+    // `transform` on an element using `transform-box:fill-box`. fill-box
+    // resolves the transform-origin against the group's full bounding box —
+    // which here includes the huge background rect — so the effective
+    // reference frame is less predictable across mobile browser engines.
+    // The SVG attribute form is deterministic: it's always relative to the
+    // SVG's own user-space origin, matching exactly what CONTENT_CENTER math
+    // assumes.
     const paintNow = useCallback(() => {
         const c = camRef.current;
         if (camGroupRef.current) {
-            camGroupRef.current.style.transform =
-                `translate(${c.tx}px,${c.ty}px) scale(${c.s}) translate(${CONTENT_CENTER.x}px,${CONTENT_CENTER.y}px) rotate(${c.rot}deg) translate(${-CONTENT_CENTER.x}px,${-CONTENT_CENTER.y}px)`;
+            camGroupRef.current.setAttribute(
+                "transform",
+                `translate(${c.tx} ${c.ty}) scale(${c.s}) translate(${CONTENT_CENTER.x} ${CONTENT_CENTER.y}) rotate(${c.rot}) translate(${-CONTENT_CENTER.x} ${-CONTENT_CENTER.y})`
+            );
         }
         if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
     }, []);
@@ -649,31 +687,64 @@ export default function LayoutMap() {
     const rotate = () => { animateTo({ ...camRef.current, rot: camRef.current.rot + 45 }, 220); };
 
     // ---- Mount / resize wiring: viewBox always matches the stage, camera always re-fits ----
-    useEffect(() => {
+    //
+    // Uses useLayoutEffect (not useEffect) so this measure-and-paint pass runs
+    // *before* the browser's first paint — the user should never see a frame
+    // where the camera hasn't been fitted yet.
+    //
+    // FIX: a 0×0 (or otherwise invalid) stage rect is NOT treated as a
+    // successful fit anymore. Previously `hasFitRef.current` was set to
+    // `true` unconditionally on the very first pass, so if that pass happened
+    // to read a zero-size rect (parent not laid out yet, mobile browser still
+    // resolving the real viewport height, etc.) the code considered the map
+    // "fitted" against the degenerate `{s:1,tx:0,ty:0}` camera. Now, on an
+    // invalid rect, we simply retry on the next animation frame without
+    // marking anything as fitted — and `mapCameraReady` (which gates the
+    // splash) is only set once a REAL fit has been computed and painted.
+    //
+    // On top of that, until the user actually interacts with the map we keep
+    // re-measuring and re-fitting on a short burst of follow-up passes (two
+    // animation frames + a couple of short timeouts). This is deliberately
+    // defensive: on real devices the stage's measured size can still change
+    // shortly after mount for reasons outside our control — the mobile
+    // browser's address bar collapsing/expanding, a web font swapping in and
+    // changing header height, etc. Once `interactedRef` flips true (real
+    // touch/drag/zoom), we stop overriding the user's own view.
+    useLayoutEffect(() => {
         const el = wrapRef.current; if (!el) return;
+        let cancelled = false;
+        let pendingRetryRaf = 0;
 
         const recalc = (animated: boolean) => {
+            if (cancelled) return;
             refreshStageRect();
             const r = stageRectRef.current;
-            if (r.width && r.height) {
-                setVb({ w: r.width, h: r.height });
-                // Set the viewBox on the real DOM node synchronously, right now —
-                // not just via React state. The camera transform we're about to
-                // compute/paint below is expressed in real stage px, and that only
-                // means what we intend if the <svg viewBox> already matches the
-                // stage's real size at the moment we paint. Relying on setVb alone
-                // leaves a gap (until React's next commit) where the viewBox is
-                // still stale, so the freshly-painted transform gets interpreted
-                // against the wrong scale — which is exactly why the very first
-                // paint after mount could land zoomed into a corner instead of
-                // showing the fitted, centered layout.
-                svgRef.current?.setAttribute("viewBox", `0 0 ${r.width} ${r.height}`);
+
+            // A 0×0 (or negative/NaN) stage is not a valid state to fit against.
+            // Retry next frame instead of locking in a degenerate camera and
+            // marking the fit as "done".
+            if (!r.width || !r.height) {
+                pendingRetryRaf = requestAnimationFrame(() => recalc(false));
+                return;
             }
+
+            setVb({ w: r.width, h: r.height });
+            // Set the viewBox on the real DOM node synchronously, right now —
+            // not just via React state. The camera transform we're about to
+            // compute/paint below is expressed in real stage px, and that only
+            // means what we intend if the <svg viewBox> already matches the
+            // stage's real size at the moment we paint.
+            svgRef.current?.setAttribute("viewBox", `0 0 ${r.width} ${r.height}`);
+
             fitScaleRef.current = computeFitScale();
+
             if (!hasFitRef.current) {
                 hasFitRef.current = true;
                 fitToContent(false);
-            } else {
+                // Only now — after a fit against a real, non-zero stage rect has
+                // actually been computed and applied — is it safe to reveal the map.
+                setMapCameraReady(true);
+            } else if (!interactedRef.current) {
                 fitToContent(animated);
             }
             paintNow();
@@ -682,29 +753,46 @@ export default function LayoutMap() {
         recalc(false);
         el.addEventListener("wheel", onWheel, { passive: false });
 
-        const ro = new ResizeObserver(() => recalc(false));
+        // Post-reveal auto-corrections ease in (no visible jump). Pre-reveal
+        // passes stay immediate since `hasFitRef.current` gates that.
+        const ro = new ResizeObserver(() => recalc(hasFitRef.current));
         ro.observe(el);
 
-        const onWinResize = () => recalc(false);
+        const onWinResize = () => recalc(hasFitRef.current);
         window.addEventListener("resize", onWinResize);
         window.visualViewport?.addEventListener("resize", onWinResize);
         window.addEventListener("orientationchange", onWinResize);
 
+        // Defensive follow-up passes: catch any layout settling that happens in
+        // the first moment after mount, without fighting the user once they've
+        // taken control of the camera themselves.
+        const raf1 = requestAnimationFrame(() => {
+            if (!interactedRef.current) recalc(false);
+        });
+        const t1 = window.setTimeout(() => { if (!interactedRef.current) recalc(false); }, 150);
+        const t2 = window.setTimeout(() => { if (!interactedRef.current) recalc(false); }, 500);
+        const t3 = window.setTimeout(() => { if (!interactedRef.current) recalc(false); }, 1200);
+
         return () => {
+            cancelled = true;
             el.removeEventListener("wheel", onWheel);
             ro.disconnect();
             window.removeEventListener("resize", onWinResize);
             window.visualViewport?.removeEventListener("resize", onWinResize);
             window.removeEventListener("orientationchange", onWinResize);
             if (idleTimer.current) window.clearTimeout(idleTimer.current);
+            cancelAnimationFrame(raf1);
+            if (pendingRetryRaf) cancelAnimationFrame(pendingRetryRaf);
+            window.clearTimeout(t1);
+            window.clearTimeout(t2);
+            window.clearTimeout(t3);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [onWheel, paintNow, fitToContent]);
 
     // Safety net: if `vb` ever changes through a path that didn't also touch
-    // the DOM viewBox directly (e.g. a future refactor, or React re-rendering
-    // it after the fact), repaint once it lands so the transform is never
-    // left stale relative to the viewBox actually on screen.
+    // the DOM viewBox directly, repaint once it lands so the transform is
+    // never left stale relative to the viewBox actually on screen.
     useEffect(() => {
         paintNow();
     }, [vb.w, vb.h, paintNow]);
@@ -713,7 +801,7 @@ export default function LayoutMap() {
         <div className={`lm-root ${night ? "is-night" : ""}`}>
             <style>{css}</style>
 
-            {!ready && (
+            {(!ready || !mapCameraReady) && (
                 <div className="lm-splash">
                     <div className="lm-splash-inner">
                         <div className="lm-splash-logo" aria-hidden="true">
@@ -1057,7 +1145,7 @@ export default function LayoutMap() {
                 )}
             </div>
 
-            {!sel && ready && <div className="lm-hint">Tap a plot · pinch to zoom · twist to rotate</div>}
+            {!sel && ready && mapCameraReady && <div className="lm-hint">Tap a plot · pinch to zoom · twist to rotate</div>}
         </div>
     );
 }
@@ -1101,7 +1189,7 @@ const css = `
   overflow:hidden; background:#6b5c32; contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
-.lm-camera{ transform-box:fill-box; transform-origin:0 0; will-change:transform; }
+.lm-camera{ }
 
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
