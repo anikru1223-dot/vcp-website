@@ -177,26 +177,27 @@ const CONTENT_CENTER: Point = { x: CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2, y: C
 //
 // REGISTRATION: IMAGE_BOUNDS maps the source PNG's own pixel box into this
 // component's SVG coordinate system. It was derived by measuring the pixel
-// coordinates of several known plot-grid corners in the uploaded render
-// (Plot 1's top-left corner, the Plot 31/32 boundary on the right column,
-// the Plot 1/4 row boundary, and the Plot 17/18 bottom edge) and fitting a
-// per-axis linear (scale + offset) map against those corners' KNOWN SVG
-// coordinates (e.g. Plot 1's top-left corner is exactly (250, 262) in
-// CONTENT_BOUNDS space). X and Y ended up with slightly different scales
-// (~0.98 vs ~0.93 px/unit) because the source render isn't a true
+// coordinates of several known plot-grid corners spread across the whole
+// render (Plot 7's top-left corner on the far left, Plot 1's top-left
+// corner, the Plot 3/11 row near the top, the Plot 1/4 row boundary, the
+// Plot 31/32 boundary on the right column, and the Plot 17/18 bottom edge)
+// and fitting a per-axis linear (scale + offset) map against those corners'
+// KNOWN SVG coordinates (e.g. Plot 1's top-left corner is exactly (250, 262)
+// in CONTENT_BOUNDS space). X and Y ended up with slightly different scales
+// (~1.01 vs ~0.93 px/unit) because the source render isn't a true
 // orthophoto — which is exactly the case preserveAspectRatio="none" exists
 // for below.
 //
-// This gives a strong starting alignment, not a guaranteed pixel-perfect
-// one for all 32 plots — a marketing render has some natural distortion a
-// single affine map can't fully absorb. Use the debug toggle (bug icon in
-// the control stack) to drop the image to 50% opacity with the real plot
-// boundaries drawn on top; nudge IMAGE_BOUNDS below (or use the on-screen
-// nudge buttons, which show live x/y/scale so you can copy the final
-// numbers back into this constant) until every plot lines up, then turn
-// debug off.
+// LIMITATION: measured residuals across these points run up to roughly
+// 2% of the image's own size (a marketing render has real lens/perspective
+// distortion a single global affine transform can't fully absorb — plots on
+// the far left/right won't align quite as tightly as plots near the middle
+// of the fit). If you need every one of the 32 plots pixel-perfect, the
+// next step up is slicing the source image into 2–3 regional crops (e.g.
+// left cluster / middle columns / right column) and giving each its own
+// local IMAGE_BOUNDS fit — ask and I'll set that up.
 const MASTER_PLAN_IMAGE_SRC = "/images/basava-ganguru-masterplan.png";
-const IMAGE_BOUNDS: Box = { x: -139, y: 9, w: 1430, h: 1208 };
+const IMAGE_BOUNDS: Box = { x: -110, y: 3, w: 1383, h: 1213 };
 
 
 const STREET_LIGHT_POS: [number, number][] = [
@@ -821,8 +822,10 @@ export default function LayoutMap() {
                 surface, transparent by default so the image shows through.
                 A faint status tint stays on so available/reserved/sold is
                 still readable at a glance without painting a solid block
-                over the realistic image. */}
-                        <g>
+                over the realistic image. pointerEvents is set explicitly
+                (rather than relying on the SVG default) so nothing upstream
+                can accidentally swallow clicks on these plots. */}
+                        <g pointerEvents="auto">
                             {PLOTS.map((p) => {
                                 const isSel = p.id === selected;
                                 const st = statusMap[p.id];
@@ -838,7 +841,7 @@ export default function LayoutMap() {
                                         role="button" tabIndex={0}
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className="lm-plot-shape"
+                                        <polygon points={p.pts} className="lm-plot-shape" pointerEvents="visiblePainted"
                                             fill={isSel ? meta.sel : meta.fill}
                                             fillOpacity={fillOpacity}
                                             stroke={strokeColor} strokeWidth={strokeWidth} />
