@@ -1,10 +1,17 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client"; // adjust path to your client
 
 /**
  * Basava Ganguru — Interactive Master Layout (AR3D style)
+ * Performance-optimized camera/interaction layer:
+ *  - Single RAF pump drives both direct-manipulation and eased animations
+ *  - No React state writes on pointer/wheel/touch move (refs only)
+ *  - Cached stage rect (no getBoundingClientRect in hot path)
+ *  - Unified Pointer Events for mouse + touch + pen (multi-touch pinch via pointer map)
+ *  - Temporary "fast mode" disables expensive filters while interacting
+ *  - Decorative trees/stones precomputed once at module scope
  */
 
 type Plot = {
@@ -121,7 +128,13 @@ const centroid = (pts: string): Point => {
     return { x: x / c, y: y / c };
 };
 
-function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
+// ---------------------------------------------------------------------------
+// Decorative objects: precomputed ONCE at module scope (deterministic seeded
+// RNG) so they never regenerate on re-render. Memoized presentational
+// components so they never re-render unless their own props change.
+// ---------------------------------------------------------------------------
+
+const Tree = React.memo(function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
     const fill = ["#3c6624", "#436f2c", "#345c20"][v % 3];
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
@@ -130,9 +143,9 @@ function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: nu
             <circle cx="-3.5" cy="-3.5" r="4.5" fill="#6fa43f" opacity="0.55" />
         </g>
     );
-}
+});
 
-function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
+const StreetLight = React.memo(function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
     return (
         <g transform={`translate(${x},${y})`} pointerEvents="none">
             <circle r={night ? 28 : 15} fill="url(#lightPool)" opacity={night ? 1 : 0.6} />
@@ -141,17 +154,72 @@ function StreetLight({ x, y, night = false }: { x: number; y: number; night?: bo
             <circle r={night ? 3 : 2} fill="#fff9e6" />
         </g>
     );
-}
+});
 
-function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+const Stone = React.memo(function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
             <ellipse cx="1.5" cy="2.5" rx="7" ry="2.6" fill="#000" opacity="0.18" />
             <ellipse cx="0" cy="0" rx="6" ry="4.2" fill="#a49c86" />
         </g>
     );
+});
+
+type DecoItem = [number, number, number];
+
+function generateDecorations(): { trees: DecoItem[]; stones: DecoItem[] } {
+    const trees: DecoItem[] = [];
+    const stones: DecoItem[] = [];
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
+    for (let g = 0; g < 34; g++) {
+        const gx = -120 + rnd() * 1440;
+        const gy = -60 + rnd() * 1420;
+        const count = 5 + Math.floor(rnd() * 7);
+        const spread = 55 + rnd() * 90;
+        for (let j = 0; j < count; j++) {
+            const ox = ((rnd() + rnd() - 1)) * spread;
+            const oy = ((rnd() + rnd() - 1)) * spread;
+            const x = gx + ox, y = gy + oy;
+            if (inCore(x, y)) continue;
+            trees.push([x, y, 1.1 + rnd() * 0.8]);
+        }
+    }
+    for (let i = 0; i < 60; i++) {
+        const x = -140 + rnd() * 1480;
+        const y = -80 + rnd() * 1460;
+        if (inCore(x, y)) continue;
+        trees.push([x, y, 1.1 + rnd() * 0.7]);
+    }
+    for (let i = 0; i < 40; i++) {
+        const x = -100 + rnd() * 1400;
+        const y = -60 + rnd() * 1420;
+        if (inCore(x, y)) continue;
+        stones.push([x, y, 1 + rnd() * 1.2]);
+    }
+    return { trees, stones };
 }
 
+// Computed once when the module loads — never regenerated per render/instance.
+const { trees: TREES, stones: STONES } = generateDecorations();
+
+const STREET_LIGHT_POS: [number, number][] = [
+    [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
+    [531, 300], [531, 499], [531, 720], [531, 930],
+    [822, 300], [822, 560], [822, 820], [822, 930],
+    [150, 499], [340, 499],
+];
+
+// ---------------------------------------------------------------------------
+// Camera types
+// ---------------------------------------------------------------------------
+
+type Cam = { s: number; tx: number; ty: number; rot: number };
+type StageRect = { left: number; top: number; width: number; height: number };
+
+const S_MIN = 0.35, S_MAX = 14;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 export default function LayoutMap() {
     const [selected, setSelected] = useState<string | null>(null);
@@ -167,7 +235,7 @@ export default function LayoutMap() {
     const [filter, setFilter] = useState<Status | "all">("all");
     const [filterOpen, setFilterOpen] = useState(false);
     const projectId = "basava-ganguru";
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
 
     // Log WhatsApp / Call taps to Supabase (non-blocking)
     const logEnquiry = async (type: "whatsapp" | "call", plotId: string) => {
@@ -228,7 +296,7 @@ export default function LayoutMap() {
             .subscribe();
 
         return () => { active = false; supabase.removeChannel(channel); };
-    }, [projectId]);
+    }, [projectId, supabase]);
 
     // Load project media (photos/videos) for the Photos popup
     useEffect(() => {
@@ -243,37 +311,121 @@ export default function LayoutMap() {
             if (alive && data) setMedia(data as MediaItem[]);
         })();
         return () => { alive = false; };
-    }, [projectId]);
+    }, [projectId, supabase]);
 
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
-    const cameraRef = useRef<SVGGElement | null>(null);
+    const camGroupRef = useRef<SVGGElement | null>(null);
     const compassRef = useRef<SVGGElement | null>(null);
 
-    type Cam = { s: number; tx: number; ty: number; rot: number };
-    const cur = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
-    const target = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
-    const raf = useRef<number | null>(null);
-    const animating = useRef(false);
-    const drag = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
-    const gesture = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
-    const [, forceCompass] = useState(0);
+    // ---- Camera state lives entirely in refs. React never re-renders per frame. ----
+    const camRef = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
+    const animRef = useRef<{ from: Cam; to: Cam; start: number; dur: number } | null>(null);
+    const loopRunning = useRef(false);
+    const pendingPaint = useRef(false);
+
+    // Cached stage geometry — refreshed only on mount / resize / gesture start,
+    // never inside a move handler.
+    const stageRectRef = useRef<StageRect>({ left: 0, top: 0, width: 0, height: 0 });
+    const baseScaleRef = useRef(1);
+
+    // Active pointer tracking for unified mouse/touch/pen handling + pinch.
+    const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+    const dragState = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
+    const pinchState = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
+
+    // Idle-restore timer for the temporary "fast mode" (filters disabled while interacting).
+    const idleTimer = useRef<number | null>(null);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
-    const S_MIN = 0.35, S_MAX = 14;
+    // ---- Paint: apply the current camera ref straight to the DOM (no React state) ----
+    const paintNow = useCallback(() => {
+        const c = camRef.current;
+        if (camGroupRef.current) {
+            const bs = baseScaleRef.current || 1;
+            const cx = BASE_VB.x + BASE_VB.w / 2;
+            const cy = BASE_VB.y + BASE_VB.h / 2;
+            camGroupRef.current.style.transform =
+                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) translate(${cx}px,${cy}px) rotate(${c.rot}deg) translate(${-cx}px,${-cy}px)`;
+        }
+        if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
+    }, []);
 
-    const baseScaleRef = useRef(1);
+    // ---- Single RAF pump: drives eased animations AND flushes direct-manipulation updates ----
+    const frame = useCallback((now: number) => {
+        let stillActive = false;
+        if (animRef.current) {
+            const { from, to, start, dur } = animRef.current;
+            const t = Math.min(1, (now - start) / dur);
+            const e = easeOutCubic(t);
+            camRef.current = {
+                s: from.s + (to.s - from.s) * e,
+                tx: from.tx + (to.tx - from.tx) * e,
+                ty: from.ty + (to.ty - from.ty) * e,
+                rot: from.rot + (to.rot - from.rot) * e,
+            };
+            paintNow();
+            if (t >= 1) { animRef.current = null; } else { stillActive = true; }
+        } else if (pendingPaint.current) {
+            paintNow();
+            pendingPaint.current = false;
+        }
+        if (stillActive || pendingPaint.current) {
+            requestAnimationFrame(frame);
+        } else {
+            loopRunning.current = false;
+        }
+    }, [paintNow]);
+
+    const ensureLoop = useCallback(() => {
+        if (!loopRunning.current) { loopRunning.current = true; requestAnimationFrame(frame); }
+    }, [frame]);
+
+    /** Direct manipulation: write camera immediately, flush on next RAF (no easing). */
+    const setCameraImmediate = useCallback((c: Cam) => {
+        animRef.current = null;
+        camRef.current = c;
+        pendingPaint.current = true;
+        ensureLoop();
+    }, [ensureLoop]);
+
+    /** Discrete action: short eased animation (zoom buttons, reset, rotate, snap-back). */
+    const animateTo = useCallback((to: Cam, dur = 180) => {
+        animRef.current = { from: { ...camRef.current }, to, start: performance.now(), dur };
+        ensureLoop();
+    }, [ensureLoop]);
+
+    // ---- Fast mode: disable expensive filters while interacting, restore after idle ----
+    const setFastMode = (on: boolean) => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        svg.classList.toggle("lm-fast", on);
+    };
+    const beginInteraction = () => {
+        if (idleTimer.current) { window.clearTimeout(idleTimer.current); idleTimer.current = null; }
+        setFastMode(true);
+    };
+    const scheduleIdleRestore = (delay = 140) => {
+        if (idleTimer.current) window.clearTimeout(idleTimer.current);
+        idleTimer.current = window.setTimeout(() => { setFastMode(false); idleTimer.current = null; }, delay);
+    };
+
+    // ---- Stage geometry caching ----
     const computeBaseScale = () => {
-        const el = wrapRef.current; if (!el) return 1;
-        const r = el.getBoundingClientRect();
+        const r = stageRectRef.current;
+        if (!r.width || !r.height) return 1;
         return Math.min(r.width / BASE_VB.w, r.height / BASE_VB.h) || 1;
+    };
+    const refreshStageRect = () => {
+        const el = wrapRef.current; if (!el) return;
+        const r = el.getBoundingClientRect();
+        stageRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
     };
 
     const clampPan = (c: Cam, elastic = false): Cam => {
-        const el = wrapRef.current; if (!el) return c;
-        const r = el.getBoundingClientRect();
+        const r = stageRectRef.current;
         const bs = baseScaleRef.current || 1;
         const contentW = BASE_VB.w * bs * c.s;
         const contentH = BASE_VB.h * bs * c.s;
@@ -289,42 +441,6 @@ export default function LayoutMap() {
         return { ...c, tx: soft(c.tx, minTx, maxTx), ty: soft(c.ty, minTy, maxTy) };
     };
 
-    const paint = (c: Cam) => {
-        if (cameraRef.current) {
-            const bs = baseScaleRef.current || 1;
-            const cx = BASE_VB.x + BASE_VB.w / 2;
-            const cy = BASE_VB.y + BASE_VB.h / 2;
-            cameraRef.current.style.transform =
-                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) translate(${cx}px,${cy}px) rotate(${c.rot}deg) translate(${-cx}px,${-cy}px)`;
-        }
-        if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
-    };
-
-    const tick = useCallback(() => {
-        const c = cur.current, t = target.current, k = 0.32;
-        c.s += (t.s - c.s) * k;
-        c.tx += (t.tx - c.tx) * k;
-        c.ty += (t.ty - c.ty) * k;
-        let dr = t.rot - c.rot; c.rot += dr * k;
-        const done = Math.abs(t.s - c.s) < 0.0005 && Math.abs(t.tx - c.tx) < 0.1 &&
-            Math.abs(t.ty - c.ty) < 0.1 && Math.abs(dr) < 0.05;
-        if (done) {
-            cur.current = { ...t }; paint(t); animating.current = false; raf.current = null;
-            forceCompass((n) => n + 1); return;
-        }
-        paint(c); raf.current = requestAnimationFrame(tick);
-    }, []);
-
-    const startAnim = useCallback(() => {
-        if (!animating.current) { animating.current = true; raf.current = requestAnimationFrame(tick); }
-    }, [tick]);
-
-    const setNow = (c: Cam) => {
-        if (raf.current) { cancelAnimationFrame(raf.current); raf.current = null; }
-        animating.current = false;
-        cur.current = { ...c }; target.current = { ...c }; paint(c);
-    };
-
     const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
         const ns = Math.min(S_MAX, Math.max(S_MIN, base.s * factor));
         const f = ns / base.s;
@@ -332,97 +448,126 @@ export default function LayoutMap() {
     };
 
     const relPt = (clientX: number, clientY: number) => {
-        const el = wrapRef.current; if (!el) return { x: 0, y: 0 };
-        const r = el.getBoundingClientRect();
+        const r = stageRectRef.current;
         return { x: clientX - r.left, y: clientY - r.top };
     };
 
-    const smoothZoom = (factor: number, clientX: number, clientY: number) => {
-        const p = relPt(clientX, clientY);
-        target.current = clampPan(zoomAt(target.current, factor, p.x, p.y), false); startAnim();
-    };
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); smoothZoom(e.deltaY < 0 ? 1.22 : 1 / 1.22, e.clientX, e.clientY); };
+    const settle = useCallback(() => {
+        const c = clampPan({ ...camRef.current, s: Math.min(S_MAX, Math.max(S_MIN, camRef.current.s)) }, false);
+        animateTo(c, 180);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [animateTo]);
 
-    const dist = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    const angle = (a: React.Touch, b: React.Touch) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI;
+    // ---- Wheel (mouse + trackpad), normalized across delta modes ----
+    const onWheel = useCallback((e: WheelEvent) => {
+        e.preventDefault();
+        refreshStageRect();
+        beginInteraction();
+        let delta = e.deltaY;
+        if (e.deltaMode === 1) delta *= 18;       // "line" mode → approx px
+        else if (e.deltaMode === 2) delta *= stageRectRef.current.height || 800; // "page" mode
 
-    const onTouchStart = (e: React.TouchEvent) => {
-        if (e.touches.length === 2) {
-            const p = relPt((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
-            gesture.current = { d: dist(e.touches[0], e.touches[1]), ang: angle(e.touches[0], e.touches[1]), cx: p.x, cy: p.y };
-            drag.current = null;
-        } else if (e.touches.length === 1) {
-            drag.current = { px: e.touches[0].clientX, py: e.touches[0].clientY, tx: cur.current.tx, ty: cur.current.ty };
+        // Smooth, small per-event multiplier (~1.05–1.13 for a typical notch),
+        // continuous for high-resolution trackpads.
+        let factor = Math.exp(-delta * 0.0012);
+        factor = Math.min(1.6, Math.max(1 / 1.6, factor));
+
+        const p = relPt(e.clientX, e.clientY);
+        const c = clampPan(zoomAt(camRef.current, factor, p.x, p.y), false);
+        setCameraImmediate(c);
+        scheduleIdleRestore();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setCameraImmediate]);
+
+    // ---- Pointer events: unified mouse / touch / pen, multi-touch pinch via pointer map ----
+    const onPointerDown = (e: React.PointerEvent) => {
+        (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+        refreshStageRect();
+        beginInteraction();
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pointers.current.size === 1) {
+            dragState.current = { px: e.clientX, py: e.clientY, tx: camRef.current.tx, ty: camRef.current.ty };
+            pinchState.current = null;
+        } else if (pointers.current.size === 2) {
+            dragState.current = null;
+            const pts = Array.from(pointers.current.values());
+            const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
+            const p = relPt((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2);
+            pinchState.current = { d, ang, cx: p.x, cy: p.y };
         }
     };
-    const onTouchMove = (e: React.TouchEvent) => {
-        if (e.touches.length === 2 && gesture.current) {
+
+    const onPointerMove = (e: React.PointerEvent) => {
+        if (!pointers.current.has(e.pointerId)) return;
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pointers.current.size >= 2 && pinchState.current) {
             e.preventDefault();
-            const g = gesture.current, nd = dist(e.touches[0], e.touches[1]), na = angle(e.touches[0], e.touches[1]);
-            const p = relPt((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
-            let c = zoomAt(cur.current, nd / g.d, p.x, p.y);
-            c = { ...c, tx: c.tx + (p.x - g.cx), ty: c.ty + (p.y - g.cy), rot: c.rot + (na - g.ang) };
-            setNow(clampPan(c, true));
-            g.d = nd; g.ang = na; g.cx = p.x; g.cy = p.y;
-        } else if (e.touches.length === 1 && drag.current) {
+            const pts = Array.from(pointers.current.values()).slice(0, 2);
+            const nd = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            const na = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) * 180 / Math.PI;
+            const p = relPt((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2);
+            const g = pinchState.current;
+            let c = zoomAt(camRef.current, nd / g.d, p.x, p.y);
+            c = clampPan({ ...c, tx: c.tx + (p.x - g.cx), ty: c.ty + (p.y - g.cy), rot: c.rot + (na - g.ang) }, true);
+            setCameraImmediate(c);
+            pinchState.current = { d: nd, ang: na, cx: p.x, cy: p.y };
+        } else if (pointers.current.size === 1 && dragState.current) {
             e.preventDefault();
-            const d = drag.current;
-            setNow(clampPan({ ...cur.current, tx: d.tx + (e.touches[0].clientX - d.px), ty: d.ty + (e.touches[0].clientY - d.py) }, true));
+            const d = dragState.current;
+            const c = clampPan({ ...camRef.current, tx: d.tx + (e.clientX - d.px), ty: d.ty + (e.clientY - d.py) }, true);
+            setCameraImmediate(c);
         }
     };
-    const settle = () => { target.current = clampPan({ ...cur.current, s: Math.min(S_MAX, Math.max(S_MIN, cur.current.s)) }, false); startAnim(); };
-    const onTouchEnd = (e: React.TouchEvent) => { if (e.touches.length === 0) { drag.current = null; gesture.current = null; settle(); } };
-    const onMouseDown = (e: React.MouseEvent) => { drag.current = { px: e.clientX, py: e.clientY, tx: cur.current.tx, ty: cur.current.ty }; };
-    const onMouseMove = (e: React.MouseEvent) => {
-        const d = drag.current; if (!d) return;
-        setNow(clampPan({ ...cur.current, tx: d.tx + (e.clientX - d.px), ty: d.ty + (e.clientY - d.py) }, true));
+
+    const endPointer = (e: React.PointerEvent) => {
+        pointers.current.delete(e.pointerId);
+        if (pointers.current.size === 0) {
+            dragState.current = null;
+            pinchState.current = null;
+            settle();
+            scheduleIdleRestore(0);
+        } else if (pointers.current.size === 1) {
+            // Dropped from a pinch to a single finger — resume panning from here.
+            pinchState.current = null;
+            const [[, pt]] = Array.from(pointers.current.entries());
+            dragState.current = { px: pt.x, py: pt.y, tx: camRef.current.tx, ty: camRef.current.ty };
+        }
     };
-    const onMouseUp = () => { if (drag.current) { drag.current = null; settle(); } };
 
-    const reset = () => { target.current = { s: 1, tx: 0, ty: 0, rot: 0 }; startAnim(); };
-    const btnZoom = (f: number) => { const el = wrapRef.current; if (el) { const r = el.getBoundingClientRect(); smoothZoom(f, r.left + r.width / 2, r.top + r.height / 2); } };
-    const rotate = () => { target.current = { ...target.current, rot: target.current.rot + 45 }; startAnim(); };
+    const reset = () => { animateTo({ s: 1, tx: 0, ty: 0, rot: 0 }, 180); };
+    const btnZoom = (f: number) => {
+        const r = stageRectRef.current;
+        const c = clampPan(zoomAt(camRef.current, f, r.width / 2, r.height / 2), false);
+        animateTo(c, 180);
+    };
+    const rotate = () => { animateTo({ ...camRef.current, rot: camRef.current.rot + 45 }, 200); };
 
+    // ---- Mount / resize wiring ----
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
+        refreshStageRect();
         baseScaleRef.current = computeBaseScale();
-        paint(cur.current);
-        el.addEventListener("wheel", onWheel, { passive: false });
-        const onResize = () => { baseScaleRef.current = computeBaseScale(); paint(cur.current); };
-        window.addEventListener("resize", onResize);
-        return () => { el.removeEventListener("wheel", onWheel); window.removeEventListener("resize", onResize); if (raf.current) cancelAnimationFrame(raf.current); };
-    }, []);
+        paintNow();
 
-    const trees: [number, number, number][] = [];
-    const stones: [number, number, number][] = [];
-    let seed = 7;
-    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
-    for (let g = 0; g < 34; g++) {
-        const gx = -120 + rnd() * 1440;
-        const gy = -60 + rnd() * 1420;
-        const count = 5 + Math.floor(rnd() * 7);
-        const spread = 55 + rnd() * 90;
-        for (let j = 0; j < count; j++) {
-            const ox = ((rnd() + rnd() - 1)) * spread;
-            const oy = ((rnd() + rnd() - 1)) * spread;
-            const x = gx + ox, y = gy + oy;
-            if (inCore(x, y)) continue;
-            trees.push([x, y, 1.1 + rnd() * 0.8]);
-        }
-    }
-    for (let i = 0; i < 60; i++) {
-        const x = -140 + rnd() * 1480;
-        const y = -80 + rnd() * 1460;
-        if (inCore(x, y)) continue;
-        trees.push([x, y, 1.1 + rnd() * 0.7]);
-    }
-    for (let i = 0; i < 40; i++) {
-        const x = -100 + rnd() * 1400;
-        const y = -60 + rnd() * 1420;
-        if (inCore(x, y)) continue;
-        stones.push([x, y, 1 + rnd() * 1.2]);
-    }
+        el.addEventListener("wheel", onWheel, { passive: false });
+
+        const ro = new ResizeObserver(() => {
+            refreshStageRect();
+            baseScaleRef.current = computeBaseScale();
+            paintNow();
+        });
+        ro.observe(el);
+
+        return () => {
+            el.removeEventListener("wheel", onWheel);
+            ro.disconnect();
+            if (idleTimer.current) window.clearTimeout(idleTimer.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onWheel, paintNow]);
 
     return (
         <div className={`lm-root ${night ? "is-night" : ""}`}>
@@ -471,9 +616,15 @@ export default function LayoutMap() {
                 </div>
             </header>
 
-            <div className="lm-stage" ref={wrapRef}
-                onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-                onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+            <div
+                className="lm-stage"
+                ref={wrapRef}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={endPointer}
+                onPointerCancel={endPointer}
+                onPointerLeave={(e) => { if (pointers.current.has(e.pointerId)) endPointer(e); }}
+            >
                 <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
                         <radialGradient id="terrain" cx="0.32" cy="0.22" r="1.15">
@@ -571,7 +722,7 @@ export default function LayoutMap() {
                         </radialGradient>
                     </defs>
 
-                    <g ref={cameraRef} className="lm-camera">
+                    <g ref={camGroupRef} className="lm-camera">
                         <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
                         <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
                         <g pointerEvents="none">
@@ -653,7 +804,7 @@ export default function LayoutMap() {
 
 
                         <g>
-                            <g filter="url(#plotSh)">
+                            <g className="lm-heavy-fx" filter="url(#plotSh)">
                                 <polygon points={ROADS.top} fill="url(#asphalt)" />
                                 <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
                                 <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
@@ -695,13 +846,13 @@ export default function LayoutMap() {
                                 <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
                             </g>
 
-                            <polygon points={KARAB} fill="url(#grass)" filter="url(#plotSh)" />
+                            <polygon points={KARAB} className="lm-heavy-fx" fill="url(#grass)" filter="url(#plotSh)" />
                             <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                             <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
                             <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
                             <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
                             <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx + 6} ry={KARAB_LAKE.ry + 5} fill="#7d8a5c" opacity="0.6" pointerEvents="none" />
-                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="url(#lake)" filter="url(#softSh)" />
+                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} className="lm-heavy-fx" fill="url(#lake)" filter="url(#softSh)" />
                             <ellipse cx={KARAB_LAKE.cx + 10} cy={KARAB_LAKE.cy + 6} rx={KARAB_LAKE.rx * 0.62} ry={KARAB_LAKE.ry * 0.6} fill="#3f8f96" opacity="0.5" pointerEvents="none" />
                             <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 22} rx="54" ry="18" fill="#fff" opacity="0.28" pointerEvents="none" />
                             {[0.78, 0.55, 0.34].map((k, i) => (
@@ -720,7 +871,7 @@ export default function LayoutMap() {
                             ))}
                             <text x="300" y="835" className="lm-amen-label">KARAB</text>
 
-                            <polygon points={CA} fill="url(#ca)" filter="url(#plotSh)" />
+                            <polygon points={CA} className="lm-heavy-fx" fill="url(#ca)" filter="url(#plotSh)" />
                             <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
                             <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
                             <polygon points={CA} className="lm-amen-border" pointerEvents="none" />
@@ -733,7 +884,7 @@ export default function LayoutMap() {
                             <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
                             <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
 
-                            <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
+                            <polygon points={STP} className="lm-heavy-fx" fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
                             <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
                             <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
                             <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
@@ -754,7 +905,7 @@ export default function LayoutMap() {
                                         role="button" tabIndex={0}
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className="lm-plot-shape"
+                                        <polygon points={p.pts} className={`lm-plot-shape${isSel ? " lm-heavy-fx" : ""}`}
                                             fill={isSel ? fillSel : fillNormal}
                                             stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3}
                                             filter={isSel ? "url(#selGlow)" : undefined} />
@@ -764,8 +915,8 @@ export default function LayoutMap() {
                             })}
 
                             <g>
-                                {trees.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
-                                {stones.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
+                                {TREES.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
+                                {STONES.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
                             </g>
 
                             {night
@@ -791,17 +942,12 @@ export default function LayoutMap() {
                                         </g>
                                     </g>
                                 )}
-                                {[
-                                    [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
-                                    [531, 300], [531, 499], [531, 720], [531, 930],
-                                    [822, 300], [822, 560], [822, 820], [822, 930],
-                                    [150, 499], [340, 499],
-                                ].map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
+                                {STREET_LIGHT_POS.map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
                             </g>
                         </g>
                     </g>
 
-                    <g transform="translate(1120,250)">
+                    <g transform="translate(1120,250)" ref={compassRef}>
                         <circle r="20" fill="rgba(20,24,16,.72)" stroke="url(#gold)" strokeWidth="1.6" />
                         <path d="M0,-13 L4.5,3 L0,-1 L-4.5,3 Z" fill="#e0504a" />
                         <path d="M0,13 L4.5,-3 L0,1 L-4.5,-3 Z" fill="#6a7256" />
@@ -932,8 +1078,8 @@ export default function LayoutMap() {
                 )}
 
                 <div className="lm-ctrl">
-                    <button onClick={() => btnZoom(1.8)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
-                    <button onClick={() => btnZoom(1 / 1.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
+                    <button onClick={() => btnZoom(1.25)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
+                    <button onClick={() => btnZoom(0.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
                     <button onClick={reset} aria-label="Reset"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
                     <button className={night ? "lm-ctrl-on" : ""} onClick={() => setNight((v) => !v)} aria-label="Toggle day / night">
@@ -1069,6 +1215,11 @@ const css = `
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
+
+/* "Fast mode" — expensive filters temporarily disabled while the camera is
+   being actively dragged / pinched / wheel-zoomed. CSS filter overrides the
+   SVG presentation attribute, so this needs no re-render / no JSX changes. */
+.lm-svg.lm-fast .lm-heavy-fx{ filter:none !important; }
 
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
