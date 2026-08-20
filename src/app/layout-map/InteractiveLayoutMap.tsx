@@ -167,23 +167,34 @@ const centroid = (pts: string): Point => {
 };
 
 // ---------------------------------------------------------------------------
-// Landscaping v2 — premium master-plan style greenery.
+// Landscaping v3 — premium master-plan style greenery.
 //
-// Geometry is defined ONCE per shape as reusable <g id="..."> symbols inside
-// the SVG <defs> (see the <defs> block further down) and every tree/bush on
-// the map is a single lightweight <use href="#id"> instance — no per-tree
-// SVG structure is generated, no filters/blur/gradients, so DOM size stays
-// tiny no matter how many instances are placed. Per-instance color
-// variation (so trees don't all look identical) is done with CSS custom
-// properties (--tc1/--tc2/--tc3) set inline on each <use>, which the symbol
-// geometry references via var(...) fills — geometry is shared, only three
-// CSS values differ per instance.
+// IMPORTANT / CAMERA SAFETY: everything below is pure decoration data. It is
+// never read by computeFitScale/computeFitCam/CONTENT_BOUNDS/CONTENT_CENTER
+// (those are fixed constants defined earlier and take no landscaping input),
+// and every tree/bush/flower is rendered inside the SAME camera-transformed
+// <g> as the plots/roads — it cannot expand or otherwise influence the
+// camera fit. If the map ever appears "zoomed out" or the layout looks tiny,
+// the cause is not this section.
 //
-// Placement is strictly zone-based (property boundary, KARAB, CA) — there
-// is no full-canvas random scatter. Every generated point is additionally
-// checked against the real road rectangles and every plot polygon before
-// being kept, so landscaping can never land on a road, a plot, or a plot
-// number/road label.
+// v3 fixes the v2 regression where landscaping was walked as a continuous
+// evenly-spaced line, which reads as a dotted/confetti border once combined
+// with realistic tree density. This version instead places small CLUSTERS
+// of 2–4 items at irregular intervals along each zone (with occasional
+// gaps), and the tree/bush symbols themselves are bigger, bolder, and built
+// from fewer/larger overlapping canopy blobs so each instance reads clearly
+// as a tree rather than a speck — while staying well under plot size.
+//
+// Geometry is still defined ONCE per shape as reusable <g id="..."> symbols
+// in <defs> and instanced via lightweight <use> (see the <defs> block
+// further down); per-instance color comes from CSS custom properties
+// (--tc1/--tc2/--tc3) set inline on each <use>, so geometry is never
+// duplicated no matter how many instances exist.
+//
+// Placement stays strictly zone-based (property boundary, KARAB, CA) — no
+// full-canvas scatter — and every candidate point is checked against the
+// real road rectangles and every plot polygon before being kept, so
+// landscaping can never land on a road, a plot, or a plot number/road label.
 // ---------------------------------------------------------------------------
 
 type Pt = [number, number];
@@ -200,11 +211,11 @@ const parsePolygon = (pts: string): Pt[] => {
 // combination as a whole (never mixes across triads), so variation stays
 // controlled rather than looking noisy.
 const LEAF_PALETTES: [string, string, string][] = [
-    ["#245C2A", "#3F7D32", "#78AA4D"],
-    ["#245C2A", "#5C963D", "#8FBA5B"],
-    ["#3F7D32", "#5C963D", "#78AA4D"],
-    ["#245C2A", "#3F7D32", "#5C963D"],
-    ["#3F7D32", "#78AA4D", "#8FBA5B"],
+    ["#285C2D", "#3F7A35", "#73A84A"],
+    ["#285C2D", "#568F3D", "#8DBB5A"],
+    ["#3F7A35", "#568F3D", "#73A84A"],
+    ["#285C2D", "#3F7A35", "#568F3D"],
+    ["#3F7A35", "#73A84A", "#8DBB5A"],
 ];
 
 const TREE_VARIANTS = ["tA", "tB", "tC", "tD", "tE", "tF"];
@@ -214,17 +225,22 @@ const BUSH_VARIANTS = ["bA", "bB"];
 const pickPalette = (rnd: () => number): [string, string, string] =>
     LEAF_PALETTES[Math.floor(rnd() * LEAF_PALETTES.length) % LEAF_PALETTES.length];
 
+// Bigger/bolder than v2 so a single tree reads clearly at normal zoom
+// instead of shrinking into a dot, while staying well under plot size
+// (a plot side here is ~80–100 units; a tree's full canopy footprint at
+// scale 1 is ~16 units, so even at the top of the range it's a fraction of
+// a plot, not a giant tree).
 const scaleForTree = (rnd: () => number, accent = false) =>
-    accent ? 1.2 + rnd() * 0.15 : 0.55 + rnd() * 0.6; // 0.55–1.15, accents 1.2–1.35
+    accent ? 1.35 + rnd() * 0.25 : 0.75 + rnd() * 0.6; // 0.75–1.35 base, accents 1.35–1.6
 
 function makeDeco(x: number, y: number, rot: number, rnd: () => number, pool: string[], accent = false): Deco {
     const sym = pool[Math.floor(rnd() * pool.length) % pool.length];
     return { x, y, s: scaleForTree(rnd, accent), rot, sym, pal: pickPalette(rnd) };
 }
 
-// Road rectangles (with the top road normalized to a plain rect — it's
-// axis-aligned in practice) plus a safety margin. Any candidate landscaping
-// point that falls inside one of these is rejected outright.
+// Road rectangles (the top road is axis-aligned in practice, so it's
+// normalized to a plain rect too) plus a safety margin. Any candidate
+// landscaping point inside one of these — or too close to it — is rejected.
 const ROAD_MARGIN = 7;
 const ROAD_RECTS: Box[] = [
     { x: 118, y: 262 - R12, w: 1108 - 118, h: R12 },
@@ -248,10 +264,10 @@ const PLOT_POLYS: Pt[][] = PLOTS.map((p) => parsePolygon(p.pts));
 const isInAnyPlot = (x: number, y: number) => PLOT_POLYS.some((poly) => pointInPolygon(x, y, poly));
 const isBlocked = (x: number, y: number) => isOnRoad(x, y) || isInAnyPlot(x, y);
 
-// Walks a single edge from p1 to p2, dropping a point roughly every
-// `baseSpacing` units but with randomized spacing (±spacingVariation) so the
-// rhythm reads as natural landscaping rather than a mathematically even row.
-function walkEdge(p1: Pt, p2: Pt, baseSpacing: number, spacingVariation: number, rnd: () => number): Pt[] {
+// Picks cluster CENTER points along a single edge, spaced irregularly
+// (base ± variation), with an occasional chance to skip a slot entirely —
+// this is what creates natural gaps instead of a continuous dotted line.
+function clusterCenters(p1: Pt, p2: Pt, baseSpacing: number, spacingVariation: number, rnd: () => number, skipChance = 0): Pt[] {
     const [x1, y1] = p1, [x2, y2] = p2;
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.hypot(dx, dy);
@@ -260,14 +276,39 @@ function walkEdge(p1: Pt, p2: Pt, baseSpacing: number, spacingVariation: number,
     const out: Pt[] = [];
     let d = baseSpacing * 0.5 + (rnd() - 0.5) * spacingVariation;
     while (d < len) {
-        out.push([x1 + ux * d, y1 + uy * d]);
+        if (!(skipChance > 0 && rnd() < skipChance)) out.push([x1 + ux * d, y1 + uy * d]);
         d += baseSpacing + (rnd() - 0.5) * 2 * spacingVariation;
     }
     return out;
 }
 
-// Outward unit normal of a polygon edge (or inward, for a negative offset
-// direction elsewhere) — always points away from the polygon's own centroid.
+// Scatters 2–4 items around a cluster center: some pulled further along the
+// "across" direction (outward from the zone), some pulled slightly negative
+// (inward), and spread a little along the edge's own tangent — this is what
+// gives "some trees inside, some outside, some grouped" instead of every
+// item sitting exactly on the boundary line.
+function scatterCluster(
+    center: Pt, normal: Pt, rnd: () => number,
+    opts: { countMin: number; countMax: number; alongSpread: number; acrossBase: number; acrossVariation: number; treeChance: number }
+): { pos: Pt; isTree: boolean }[] {
+    const [cx, cy] = center;
+    const [nx, ny] = normal;
+    const txv = ny, tyv = -nx; // tangent, perpendicular to the normal
+    const count = opts.countMin + Math.floor(rnd() * (opts.countMax - opts.countMin + 1));
+    const out: { pos: Pt; isTree: boolean }[] = [];
+    for (let i = 0; i < count; i++) {
+        const along = (rnd() - 0.5) * opts.alongSpread;
+        const across = opts.acrossBase + (rnd() - 0.5) * opts.acrossVariation;
+        out.push({
+            pos: [cx + txv * along + nx * across, cy + tyv * along + ny * across],
+            isTree: rnd() < opts.treeChance,
+        });
+    }
+    return out;
+}
+
+// Outward unit normal of a polygon edge — always points away from the
+// polygon's own centroid (negate it for the inward direction).
 function outwardNormal(p1: Pt, p2: Pt, cx: number, cy: number): Pt {
     const [x1, y1] = p1, [x2, y2] = p2;
     const dx = x2 - x1, dy = y2 - y1;
@@ -278,9 +319,11 @@ function outwardNormal(p1: Pt, p2: Pt, cx: number, cy: number): Pt {
     return [nx, ny];
 }
 
-// --- Zone 1: property boundary — a layered, continuous landscaped border
-// that follows the actual (irregular) BOUNDARY polygon rather than a
-// rectangle, with denser clusters at each corner.
+// --- Zone 1: property boundary — irregular clusters following the actual
+// BOUNDARY polygon, with denser clusters at each corner and a few sparse,
+// larger accent trees. Roughly ~26–34 clusters total along this perimeter
+// (2–4 items each) rather than one item every ~20 units, so it reads as
+// planted groves with gaps, not a dotted outline.
 function generateBorderLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bushes: Deco[] } {
     let s = seed;
     const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
@@ -291,33 +334,28 @@ function generateBorderLandscaping(poly: Pt[], seed: number): { trees: Deco[]; b
 
     for (let i = 0; i < poly.length; i++) {
         const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
-        const [nx, ny] = outwardNormal(p1, p2, cx, cy);
+        const normal = outwardNormal(p1, p2, cx, cy);
 
-        // Layer 1 — small trees directly along the boundary line.
-        walkEdge(p1, p2, 22, 6, rnd).forEach(([px, py]) => {
-            const ox = px + nx * 22, oy = py + ny * 22;
-            if (isBlocked(ox, oy)) return;
-            trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
+        clusterCenters(p1, p2, 130, 34, rnd, 0.12).forEach((center) => {
+            scatterCluster(center, normal, rnd, {
+                countMin: 2, countMax: 4, alongSpread: 26, acrossBase: 20, acrossVariation: 26, treeChance: 0.62,
+            }).forEach(({ pos: [ox, oy], isTree }) => {
+                if (isBlocked(ox, oy)) return;
+                if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
+                else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
+            });
         });
 
-        // Layer 2 — low bushes a little closer in, kept airy (not a solid hedge).
-        walkEdge(p1, p2, 16, 5, rnd).forEach(([px, py]) => {
-            if (rnd() < 0.35) return;
-            const ox = px + nx * 10, oy = py + ny * 10;
-            if (isBlocked(ox, oy)) return;
-            bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-        });
-
-        // Layer 3 — occasional larger accent trees at wide intervals.
-        walkEdge(p1, p2, 90, 20, rnd).forEach(([px, py]) => {
-            const ox = px + nx * 30, oy = py + ny * 30;
+        // Sparse, larger accent trees at wide intervals.
+        clusterCenters(p1, p2, 260, 60, rnd, 0.2).forEach(([px, py]) => {
+            const ox = px + normal[0] * 34, oy = py + normal[1] * 34;
             if (isBlocked(ox, oy)) return;
             trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 20, rnd, ACCENT_TREE_VARIANTS, true));
         });
     }
 
-    // Corner clusters — a few extra plantings set back from each vertex
-    // (never exactly on it), so corners read slightly denser than straight runs.
+    // Corner clusters — denser groupings set back from each vertex (never
+    // exactly on it).
     poly.forEach(([vx, vy], idx) => {
         const prev = poly[(idx - 1 + poly.length) % poly.length];
         const next = poly[(idx + 1) % poly.length];
@@ -326,23 +364,21 @@ function generateBorderLandscaping(poly: Pt[], seed: number): { trees: Deco[]; b
         let bx = n1x + n2x, by = n1y + n2y;
         const bl = Math.hypot(bx, by) || 1;
         bx /= bl; by /= bl;
-        for (let k = 0; k < 3; k++) {
-            const dist = 18 + rnd() * 16;
-            const spread = (rnd() - 0.5) * 26;
-            const ox = vx + bx * dist + (n1x + n2x) * 0.5 * spread;
-            const oy = vy + by * dist + (n1y + n2y) * 0.5 * spread;
-            if (isBlocked(ox, oy)) continue;
-            if (rnd() < 0.55) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
+        scatterCluster([vx, vy], [bx, by], rnd, {
+            countMin: 3, countMax: 5, alongSpread: 22, acrossBase: 26, acrossVariation: 20, treeChance: 0.6,
+        }).forEach(({ pos: [ox, oy], isTree }) => {
+            if (isBlocked(ox, oy)) return;
+            if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
             else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-        }
+        });
     });
 
     return { trees, bushes };
 }
 
-// --- Zone 2: KARAB — a landscaped ring that follows the park's own shape,
-// staying clear of the lake and the pathway above it, with occasional
-// flowering accents so it reads as an intentionally designed park.
+// --- Zone 2: KARAB — the richest landscaping. Clusters follow the park's
+// own shape, staying clear of the lake and the pathway above it, with
+// occasional flowering accents so it reads as an intentionally designed park.
 function generateKarabLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bushes: Deco[]; flowers: Deco[] } {
     let s = seed;
     const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
@@ -356,25 +392,26 @@ function generateKarabLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bu
 
     for (let i = 0; i < poly.length; i++) {
         const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
-        const [nx, ny] = outwardNormal(p1, p2, cx, cy);
+        const outward = outwardNormal(p1, p2, cx, cy);
+        const inward: Pt = [-outward[0], -outward[1]];
 
-        walkEdge(p1, p2, 24, 6, rnd).forEach(([px, py]) => {
-            const ox = px - nx * 20, oy = py - ny * 20; // inward, hugging KARAB's own edge
-            if (!clearOfLake(ox, oy, 0.75) || isOnRoad(ox, oy)) return;
-            trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
-        });
+        clusterCenters(p1, p2, 78, 18, rnd, 0.08).forEach((center) => {
+            scatterCluster(center, inward, rnd, {
+                countMin: 2, countMax: 4, alongSpread: 20, acrossBase: 16, acrossVariation: 18, treeChance: 0.55,
+            }).forEach(({ pos: [ox, oy], isTree }) => {
+                if (isOnRoad(ox, oy)) return;
+                if (!clearOfLake(ox, oy, isTree ? 0.72 : 0.58)) return;
+                if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
+                else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
+            });
 
-        walkEdge(p1, p2, 17, 5, rnd).forEach(([px, py]) => {
-            if (rnd() < 0.3) return;
-            const ox = px - nx * 9, oy = py - ny * 9;
-            if (!clearOfLake(ox, oy, 0.6) || isOnRoad(ox, oy)) return;
-            bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-        });
-
-        walkEdge(p1, p2, 60, 16, rnd).forEach(([px, py]) => {
-            const ox = px - nx * 14, oy = py - ny * 14;
-            if (!clearOfLake(ox, oy, 0.65) || isOnRoad(ox, oy)) return;
-            flowers.push({ x: ox, y: oy, s: 0.8 + rnd() * 0.3, rot: (rnd() - 0.5) * 30, sym: "fC", pal: pickPalette(rnd) });
+            // Occasional flowering ornamental accent in the same cluster.
+            if (rnd() < 0.4) {
+                const ox = center[0] + inward[0] * 10, oy = center[1] + inward[1] * 10;
+                if (clearOfLake(ox, oy, 0.62) && !isOnRoad(ox, oy)) {
+                    flowers.push({ x: ox, y: oy, s: 0.85 + rnd() * 0.3, rot: (rnd() - 0.5) * 30, sym: "fC", pal: pickPalette(rnd) });
+                }
+            }
         });
     }
 
@@ -383,24 +420,24 @@ function generateKarabLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bu
 
 // --- Zone 3: CA — a subtle planted buffer along the one edge that actually
 // has open ground next to it (the boundary-facing side); the other three
-// edges sit flush against roads/plots, so nothing is planted there.
+// edges sit flush against roads/plots, so nothing is planted there, and the
+// CA / CIVIC AMENITY labels stay fully clear.
 function generateCaLandscaping(seed: number): { trees: Deco[]; bushes: Deco[] } {
     let s = seed;
     const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
     const trees: Deco[] = [];
     const bushes: Deco[] = [];
     const p1: Pt = [140, 262], p2: Pt = [140, 470];
+    const normal: Pt = [-1, 0]; // west, toward the boundary — the only open side
 
-    walkEdge(p1, p2, 22, 6, rnd).forEach(([px, py]) => {
-        const ox = px - 13, oy = py;
-        if (isBlocked(ox, oy)) return;
-        trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 24, rnd, TREE_VARIANTS));
-    });
-    walkEdge(p1, p2, 15, 4, rnd).forEach(([px, py]) => {
-        if (rnd() < 0.3) return;
-        const ox = px - 6, oy = py;
-        if (isBlocked(ox, oy)) return;
-        bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 36, rnd, BUSH_VARIANTS));
+    clusterCenters(p1, p2, 70, 14, rnd, 0.1).forEach((center) => {
+        scatterCluster(center, normal, rnd, {
+            countMin: 2, countMax: 3, alongSpread: 16, acrossBase: 10, acrossVariation: 10, treeChance: 0.6,
+        }).forEach(({ pos: [ox, oy], isTree }) => {
+            if (isBlocked(ox, oy)) return;
+            if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 24, rnd, TREE_VARIANTS));
+            else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 36, rnd, BUSH_VARIANTS));
+        });
     });
 
     return { trees, bushes };
@@ -1038,79 +1075,80 @@ export default function LayoutMap() {
                 times via <use>. Canopy fills reference CSS custom properties
                 (--tc1 dark / --tc2 mid / --tc3 light) so each instance can
                 take a different palette combination without duplicating any
-                geometry. Built from small overlapping organic shapes rather
-                than single large ellipses, per the "no giant blobs" brief. */}
+                geometry. v3: bigger, bolder, fewer/larger overlapping blobs
+                per tree so each instance reads clearly as a tree at normal
+                map zoom instead of shrinking into a dot. */}
 
                         {/* Tree A — round, compact canopy */}
                         <g id="tA">
-                            <rect x="-0.6" y="-1" width="1.2" height="4" fill="#5a4326" />
-                            <ellipse cx="0" cy="-7" rx="4.6" ry="4" fill="var(--tc1)" />
-                            <ellipse cx="-2.6" cy="-5.4" rx="3.4" ry="3" fill="var(--tc2)" />
-                            <ellipse cx="2.6" cy="-5.6" rx="3.6" ry="3.1" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-9.6" rx="3.2" ry="2.8" fill="var(--tc3)" />
+                            <rect x="-0.8" y="-1" width="1.6" height="5" fill="#5a4326" />
+                            <ellipse cx="0" cy="-9" rx="6.2" ry="5.4" fill="var(--tc1)" />
+                            <ellipse cx="-3.6" cy="-7" rx="4.6" ry="4" fill="var(--tc2)" />
+                            <ellipse cx="3.6" cy="-7.4" rx="4.9" ry="4.2" fill="var(--tc2)" />
+                            <ellipse cx="0" cy="-13" rx="4.2" ry="3.6" fill="var(--tc3)" />
                         </g>
 
-                        {/* Tree B — slightly wider canopy */}
+                        {/* Tree B — wider, fuller canopy */}
                         <g id="tB">
-                            <rect x="-0.6" y="-1" width="1.2" height="3.6" fill="#5a4326" />
-                            <ellipse cx="-3.6" cy="-5.6" rx="4" ry="3.2" fill="var(--tc1)" transform="rotate(-8 -3.6 -5.6)" />
-                            <ellipse cx="3.6" cy="-5.4" rx="4.2" ry="3.3" fill="var(--tc1)" transform="rotate(8 3.6 -5.4)" />
-                            <ellipse cx="0" cy="-6.8" rx="4.6" ry="3.4" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-9" rx="3" ry="2.4" fill="var(--tc3)" />
+                            <rect x="-0.8" y="-1" width="1.6" height="4.6" fill="#5a4326" />
+                            <ellipse cx="-4.8" cy="-7.4" rx="5.4" ry="4.4" fill="var(--tc1)" transform="rotate(-8 -4.8 -7.4)" />
+                            <ellipse cx="4.8" cy="-7.2" rx="5.7" ry="4.5" fill="var(--tc1)" transform="rotate(8 4.8 -7.2)" />
+                            <ellipse cx="0" cy="-9" rx="6.2" ry="4.6" fill="var(--tc2)" />
+                            <ellipse cx="0" cy="-12" rx="4" ry="3.2" fill="var(--tc3)" />
                         </g>
 
-                        {/* Tree C — small layered/tiered canopy */}
+                        {/* Tree C — layered/tiered canopy */}
                         <g id="tC">
-                            <rect x="-0.5" y="-1" width="1" height="4.4" fill="#5a4326" />
-                            <ellipse cx="0" cy="-4.6" rx="4.4" ry="2.2" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-7" rx="3.4" ry="2" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-9.2" rx="2.3" ry="1.7" fill="var(--tc3)" />
+                            <rect x="-0.7" y="-1" width="1.4" height="5.6" fill="#5a4326" />
+                            <ellipse cx="0" cy="-6" rx="5.9" ry="3" fill="var(--tc1)" />
+                            <ellipse cx="0" cy="-9.4" rx="4.6" ry="2.7" fill="var(--tc2)" />
+                            <ellipse cx="0" cy="-12.4" rx="3.1" ry="2.3" fill="var(--tc3)" />
                         </g>
 
-                        {/* Tree D — slightly taller, narrower canopy */}
+                        {/* Tree D — taller, narrower canopy */}
                         <g id="tD">
-                            <rect x="-0.5" y="-1" width="1" height="5.2" fill="#5a4326" />
-                            <ellipse cx="-1.2" cy="-7" rx="2.4" ry="4.2" fill="var(--tc1)" />
-                            <ellipse cx="1.3" cy="-7.4" rx="2.5" ry="4.4" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-11" rx="2" ry="2.6" fill="var(--tc3)" />
+                            <rect x="-0.7" y="-1" width="1.4" height="6.6" fill="#5a4326" />
+                            <ellipse cx="-1.6" cy="-9.4" rx="3.2" ry="5.6" fill="var(--tc1)" />
+                            <ellipse cx="1.8" cy="-10" rx="3.4" ry="6" fill="var(--tc2)" />
+                            <ellipse cx="0" cy="-14.8" rx="2.7" ry="3.5" fill="var(--tc3)" />
                         </g>
 
-                        {/* Tree E — small ornamental tree */}
+                        {/* Tree E — small ornamental tree, subtle blossom highlights */}
                         <g id="tE">
-                            <rect x="-0.5" y="-1" width="1" height="3.4" fill="#5a4326" />
-                            <ellipse cx="0" cy="-5.6" rx="3.6" ry="3.1" fill="var(--tc1)" />
-                            <ellipse cx="-2.1" cy="-4.6" rx="2.4" ry="2.1" fill="var(--tc2)" />
-                            <ellipse cx="2.1" cy="-4.5" rx="2.4" ry="2.1" fill="var(--tc2)" />
-                            <circle cx="-1.2" cy="-6.4" r="0.7" fill="var(--tc3)" opacity="0.9" />
-                            <circle cx="1.6" cy="-5.8" r="0.6" fill="var(--tc3)" opacity="0.9" />
+                            <rect x="-0.7" y="-1" width="1.4" height="4.4" fill="#5a4326" />
+                            <ellipse cx="0" cy="-7.6" rx="4.9" ry="4.2" fill="var(--tc1)" />
+                            <ellipse cx="-2.8" cy="-6.2" rx="3.2" ry="2.8" fill="var(--tc2)" />
+                            <ellipse cx="2.8" cy="-6.1" rx="3.2" ry="2.8" fill="var(--tc2)" />
+                            <circle cx="-1.6" cy="-8.6" r="0.95" fill="var(--tc3)" opacity="0.9" />
+                            <circle cx="2.1" cy="-7.8" r="0.85" fill="var(--tc3)" opacity="0.9" />
                         </g>
 
                         {/* Tree F — low bush/tree hybrid, no visible trunk */}
                         <g id="tF">
-                            <ellipse cx="-2.4" cy="-1.6" rx="3" ry="2.2" fill="var(--tc1)" />
-                            <ellipse cx="2.4" cy="-1.5" rx="3" ry="2.2" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-2.6" rx="3.4" ry="2.4" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-3.6" rx="2" ry="1.4" fill="var(--tc3)" opacity="0.85" />
+                            <ellipse cx="-3.2" cy="-2.2" rx="4" ry="3" fill="var(--tc1)" />
+                            <ellipse cx="3.2" cy="-2" rx="4" ry="3" fill="var(--tc1)" />
+                            <ellipse cx="0" cy="-3.6" rx="4.6" ry="3.3" fill="var(--tc2)" />
+                            <ellipse cx="0" cy="-4.9" rx="2.7" ry="1.9" fill="var(--tc3)" opacity="0.85" />
                         </g>
 
                         {/* Bush A / B — low layer-2 greenery, no trunk */}
                         <g id="bA">
-                            <ellipse cx="-1.8" cy="0.2" rx="2.1" ry="1.5" fill="var(--tc1)" />
-                            <ellipse cx="1.8" cy="0.2" rx="2.1" ry="1.5" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-0.6" rx="2.3" ry="1.7" fill="var(--tc2)" />
+                            <ellipse cx="-2.4" cy="0.3" rx="2.8" ry="2" fill="var(--tc1)" />
+                            <ellipse cx="2.4" cy="0.3" rx="2.8" ry="2" fill="var(--tc1)" />
+                            <ellipse cx="0" cy="-0.8" rx="3.1" ry="2.3" fill="var(--tc2)" />
                         </g>
                         <g id="bB">
-                            <ellipse cx="0" cy="0" rx="2.6" ry="1.8" fill="var(--tc1)" />
-                            <ellipse cx="-1.2" cy="-0.8" rx="1.5" ry="1.2" fill="var(--tc2)" />
-                            <ellipse cx="1.2" cy="-0.9" rx="1.4" ry="1.1" fill="var(--tc3)" opacity="0.9" />
+                            <ellipse cx="0" cy="0" rx="3.5" ry="2.4" fill="var(--tc1)" />
+                            <ellipse cx="-1.6" cy="-1.1" rx="2" ry="1.6" fill="var(--tc2)" />
+                            <ellipse cx="1.6" cy="-1.2" rx="1.9" ry="1.5" fill="var(--tc3)" opacity="0.9" />
                         </g>
 
                         {/* Flower cluster — occasional ornamental accent near KARAB */}
                         <g id="fC">
-                            <ellipse cx="0" cy="0" rx="2.2" ry="1.6" fill="var(--tc1)" />
-                            <circle cx="-1" cy="-0.6" r="0.55" fill="#e7a7c0" />
-                            <circle cx="0.4" cy="-1" r="0.5" fill="#f0c33e" />
-                            <circle cx="1.1" cy="-0.3" r="0.5" fill="#e7a7c0" />
+                            <ellipse cx="0" cy="0" rx="2.9" ry="2.1" fill="var(--tc1)" />
+                            <circle cx="-1.2" cy="-0.7" r="0.7" fill="#e7a7c0" />
+                            <circle cx="0.5" cy="-1.2" r="0.65" fill="#f0c33e" />
+                            <circle cx="1.3" cy="-0.4" r="0.65" fill="#e7a7c0" />
                         </g>
                     </defs>
 
