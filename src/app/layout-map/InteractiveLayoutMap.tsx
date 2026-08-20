@@ -167,310 +167,44 @@ const centroid = (pts: string): Point => {
 };
 
 // ---------------------------------------------------------------------------
-// Landscaping v3 — premium master-plan style greenery.
+// Master-plan image overlay.
 //
-// IMPORTANT / CAMERA SAFETY: everything below is pure decoration data. It is
-// never read by computeFitScale/computeFitCam/CONTENT_BOUNDS/CONTENT_CENTER
-// (those are fixed constants defined earlier and take no landscaping input),
-// and every tree/bush/flower is rendered inside the SAME camera-transformed
-// <g> as the plots/roads — it cannot expand or otherwise influence the
-// camera fit. If the map ever appears "zoomed out" or the layout looks tiny,
-// the cause is not this section.
+// The realistic rendered master-plan (roads, plots, trees, KARAB, CA, STP —
+// all baked into one image) replaces the previous generated-SVG landscaping
+// entirely. It is rendered as a single <image> INSIDE the same camera-
+// transformed <g> as the plots/roads (see camGroupRef further down), so it
+// pans/zooms in perfect lockstep with the interactive layer — never as a
+// separate HTML-positioned element.
 //
-// v3 fixes the v2 regression where landscaping was walked as a continuous
-// evenly-spaced line, which reads as a dotted/confetti border once combined
-// with realistic tree density. This version instead places small CLUSTERS
-// of 2–4 items at irregular intervals along each zone (with occasional
-// gaps), and the tree/bush symbols themselves are bigger, bolder, and built
-// from fewer/larger overlapping canopy blobs so each instance reads clearly
-// as a tree rather than a speck — while staying well under plot size.
+// CAMERA SAFETY: IMAGE_BOUNDS below is display-only data, exactly like the
+// old decoration arrays were. It is never read by computeFitScale /
+// computeFitCam / CONTENT_BOUNDS / CONTENT_CENTER (those remain the fixed
+// constants defined earlier), so the image cannot expand or shrink the
+// camera fit no matter what bounds it's given.
 //
-// Geometry is still defined ONCE per shape as reusable <g id="..."> symbols
-// in <defs> and instanced via lightweight <use> (see the <defs> block
-// further down); per-instance color comes from CSS custom properties
-// (--tc1/--tc2/--tc3) set inline on each <use>, so geometry is never
-// duplicated no matter how many instances exist.
+// REGISTRATION: IMAGE_BOUNDS maps the source PNG's own pixel box into this
+// component's SVG coordinate system. It was derived by measuring the pixel
+// coordinates of several known plot-grid corners in the uploaded render
+// (Plot 1's top-left corner, the Plot 31/32 boundary on the right column,
+// the Plot 1/4 row boundary, and the Plot 17/18 bottom edge) and fitting a
+// per-axis linear (scale + offset) map against those corners' KNOWN SVG
+// coordinates (e.g. Plot 1's top-left corner is exactly (250, 262) in
+// CONTENT_BOUNDS space). X and Y ended up with slightly different scales
+// (~0.98 vs ~0.93 px/unit) because the source render isn't a true
+// orthophoto — which is exactly the case preserveAspectRatio="none" exists
+// for below.
 //
-// Placement stays strictly zone-based (property boundary, KARAB, CA) — no
-// full-canvas scatter — and every candidate point is checked against the
-// real road rectangles and every plot polygon before being kept, so
-// landscaping can never land on a road, a plot, or a plot number/road label.
-// ---------------------------------------------------------------------------
+// This gives a strong starting alignment, not a guaranteed pixel-perfect
+// one for all 32 plots — a marketing render has some natural distortion a
+// single affine map can't fully absorb. Use the debug toggle (bug icon in
+// the control stack) to drop the image to 50% opacity with the real plot
+// boundaries drawn on top; nudge IMAGE_BOUNDS below (or use the on-screen
+// nudge buttons, which show live x/y/scale so you can copy the final
+// numbers back into this constant) until every plot lines up, then turn
+// debug off.
+const MASTER_PLAN_IMAGE_SRC = "/images/basava-ganguru-masterplan.png";
+const IMAGE_BOUNDS: Box = { x: -139, y: 9, w: 1430, h: 1208 };
 
-type Pt = [number, number];
-type Deco = { x: number; y: number; s: number; rot: number; sym: string; pal: [string, string, string] };
-
-const parsePolygon = (pts: string): Pt[] => {
-    const n = pts.split(/[ ,]+/).map(Number);
-    const out: Pt[] = [];
-    for (let i = 0; i < n.length; i += 2) out.push([n[i], n[i + 1]]);
-    return out;
-};
-
-// Curated dark→light triads from the requested palette. Each tree picks one
-// combination as a whole (never mixes across triads), so variation stays
-// controlled rather than looking noisy.
-const LEAF_PALETTES: [string, string, string][] = [
-    ["#285C2D", "#3F7A35", "#73A84A"],
-    ["#285C2D", "#568F3D", "#8DBB5A"],
-    ["#3F7A35", "#568F3D", "#73A84A"],
-    ["#285C2D", "#3F7A35", "#568F3D"],
-    ["#3F7A35", "#73A84A", "#8DBB5A"],
-];
-
-const TREE_VARIANTS = ["tA", "tB", "tC", "tD", "tE", "tF"];
-const ACCENT_TREE_VARIANTS = ["tB", "tD"];
-const BUSH_VARIANTS = ["bA", "bB"];
-
-const pickPalette = (rnd: () => number): [string, string, string] =>
-    LEAF_PALETTES[Math.floor(rnd() * LEAF_PALETTES.length) % LEAF_PALETTES.length];
-
-// Bigger/bolder than v2 so a single tree reads clearly at normal zoom
-// instead of shrinking into a dot, while staying well under plot size
-// (a plot side here is ~80–100 units; a tree's full canopy footprint at
-// scale 1 is ~16 units, so even at the top of the range it's a fraction of
-// a plot, not a giant tree).
-const scaleForTree = (rnd: () => number, accent = false) =>
-    accent ? 1.35 + rnd() * 0.25 : 0.75 + rnd() * 0.6; // 0.75–1.35 base, accents 1.35–1.6
-
-function makeDeco(x: number, y: number, rot: number, rnd: () => number, pool: string[], accent = false): Deco {
-    const sym = pool[Math.floor(rnd() * pool.length) % pool.length];
-    return { x, y, s: scaleForTree(rnd, accent), rot, sym, pal: pickPalette(rnd) };
-}
-
-// Road rectangles (the top road is axis-aligned in practice, so it's
-// normalized to a plain rect too) plus a safety margin. Any candidate
-// landscaping point inside one of these — or too close to it — is rejected.
-const ROAD_MARGIN = 7;
-const ROAD_RECTS: Box[] = [
-    { x: 118, y: 262 - R12, w: 1108 - 118, h: R12 },
-    ROADS.leftV, ROADS.rightV, ROADS.midH, ROADS.path,
-];
-const isOnRoad = (x: number, y: number, margin = ROAD_MARGIN) =>
-    ROAD_RECTS.some((r) => x > r.x - margin && x < r.x + r.w + margin && y > r.y - margin && y < r.y + r.h + margin);
-
-// Point-in-polygon (ray casting) — used so landscaping never lands on top
-// of a plot (and therefore never covers a plot number).
-function pointInPolygon(x: number, y: number, poly: Pt[]): boolean {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const [xi, yi] = poly[i], [xj, yj] = poly[j];
-        const hit = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-        if (hit) inside = !inside;
-    }
-    return inside;
-}
-const PLOT_POLYS: Pt[][] = PLOTS.map((p) => parsePolygon(p.pts));
-const isInAnyPlot = (x: number, y: number) => PLOT_POLYS.some((poly) => pointInPolygon(x, y, poly));
-const isBlocked = (x: number, y: number) => isOnRoad(x, y) || isInAnyPlot(x, y);
-
-// Picks cluster CENTER points along a single edge, spaced irregularly
-// (base ± variation), with an occasional chance to skip a slot entirely —
-// this is what creates natural gaps instead of a continuous dotted line.
-function clusterCenters(p1: Pt, p2: Pt, baseSpacing: number, spacingVariation: number, rnd: () => number, skipChance = 0): Pt[] {
-    const [x1, y1] = p1, [x2, y2] = p2;
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    if (len < 1) return [];
-    const ux = dx / len, uy = dy / len;
-    const out: Pt[] = [];
-    let d = baseSpacing * 0.5 + (rnd() - 0.5) * spacingVariation;
-    while (d < len) {
-        if (!(skipChance > 0 && rnd() < skipChance)) out.push([x1 + ux * d, y1 + uy * d]);
-        d += baseSpacing + (rnd() - 0.5) * 2 * spacingVariation;
-    }
-    return out;
-}
-
-// Scatters 2–4 items around a cluster center: some pulled further along the
-// "across" direction (outward from the zone), some pulled slightly negative
-// (inward), and spread a little along the edge's own tangent — this is what
-// gives "some trees inside, some outside, some grouped" instead of every
-// item sitting exactly on the boundary line.
-function scatterCluster(
-    center: Pt, normal: Pt, rnd: () => number,
-    opts: { countMin: number; countMax: number; alongSpread: number; acrossBase: number; acrossVariation: number; treeChance: number }
-): { pos: Pt; isTree: boolean }[] {
-    const [cx, cy] = center;
-    const [nx, ny] = normal;
-    const txv = ny, tyv = -nx; // tangent, perpendicular to the normal
-    const count = opts.countMin + Math.floor(rnd() * (opts.countMax - opts.countMin + 1));
-    const out: { pos: Pt; isTree: boolean }[] = [];
-    for (let i = 0; i < count; i++) {
-        const along = (rnd() - 0.5) * opts.alongSpread;
-        const across = opts.acrossBase + (rnd() - 0.5) * opts.acrossVariation;
-        out.push({
-            pos: [cx + txv * along + nx * across, cy + tyv * along + ny * across],
-            isTree: rnd() < opts.treeChance,
-        });
-    }
-    return out;
-}
-
-// Outward unit normal of a polygon edge — always points away from the
-// polygon's own centroid (negate it for the inward direction).
-function outwardNormal(p1: Pt, p2: Pt, cx: number, cy: number): Pt {
-    const [x1, y1] = p1, [x2, y2] = p2;
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy) || 1;
-    let nx = -dy / len, ny = dx / len;
-    const mx = x1 + dx / 2, my = y1 + dy / 2;
-    if (nx * (cx - mx) + ny * (cy - my) > 0) { nx = -nx; ny = -ny; }
-    return [nx, ny];
-}
-
-// --- Zone 1: property boundary — irregular clusters following the actual
-// BOUNDARY polygon, with denser clusters at each corner and a few sparse,
-// larger accent trees. Roughly ~26–34 clusters total along this perimeter
-// (2–4 items each) rather than one item every ~20 units, so it reads as
-// planted groves with gaps, not a dotted outline.
-function generateBorderLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bushes: Deco[] } {
-    let s = seed;
-    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-    const trees: Deco[] = [];
-    const bushes: Deco[] = [];
-    const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
-    const cy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
-
-    for (let i = 0; i < poly.length; i++) {
-        const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
-        const normal = outwardNormal(p1, p2, cx, cy);
-
-        clusterCenters(p1, p2, 130, 34, rnd, 0.12).forEach((center) => {
-            scatterCluster(center, normal, rnd, {
-                countMin: 2, countMax: 4, alongSpread: 26, acrossBase: 20, acrossVariation: 26, treeChance: 0.62,
-            }).forEach(({ pos: [ox, oy], isTree }) => {
-                if (isBlocked(ox, oy)) return;
-                if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
-                else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-            });
-        });
-
-        // Sparse, larger accent trees at wide intervals.
-        clusterCenters(p1, p2, 260, 60, rnd, 0.2).forEach(([px, py]) => {
-            const ox = px + normal[0] * 34, oy = py + normal[1] * 34;
-            if (isBlocked(ox, oy)) return;
-            trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 20, rnd, ACCENT_TREE_VARIANTS, true));
-        });
-    }
-
-    // Corner clusters — denser groupings set back from each vertex (never
-    // exactly on it).
-    poly.forEach(([vx, vy], idx) => {
-        const prev = poly[(idx - 1 + poly.length) % poly.length];
-        const next = poly[(idx + 1) % poly.length];
-        const [n1x, n1y] = outwardNormal(prev, [vx, vy], cx, cy);
-        const [n2x, n2y] = outwardNormal([vx, vy], next, cx, cy);
-        let bx = n1x + n2x, by = n1y + n2y;
-        const bl = Math.hypot(bx, by) || 1;
-        bx /= bl; by /= bl;
-        scatterCluster([vx, vy], [bx, by], rnd, {
-            countMin: 3, countMax: 5, alongSpread: 22, acrossBase: 26, acrossVariation: 20, treeChance: 0.6,
-        }).forEach(({ pos: [ox, oy], isTree }) => {
-            if (isBlocked(ox, oy)) return;
-            if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
-            else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-        });
-    });
-
-    return { trees, bushes };
-}
-
-// --- Zone 2: KARAB — the richest landscaping. Clusters follow the park's
-// own shape, staying clear of the lake and the pathway above it, with
-// occasional flowering accents so it reads as an intentionally designed park.
-function generateKarabLandscaping(poly: Pt[], seed: number): { trees: Deco[]; bushes: Deco[]; flowers: Deco[] } {
-    let s = seed;
-    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-    const trees: Deco[] = [];
-    const bushes: Deco[] = [];
-    const flowers: Deco[] = [];
-    const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
-    const cy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
-    const clearOfLake = (x: number, y: number, factor: number) =>
-        Math.hypot(x - KARAB_LAKE.cx, y - KARAB_LAKE.cy) > KARAB_LAKE.rx * factor;
-
-    for (let i = 0; i < poly.length; i++) {
-        const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
-        const outward = outwardNormal(p1, p2, cx, cy);
-        const inward: Pt = [-outward[0], -outward[1]];
-
-        clusterCenters(p1, p2, 78, 18, rnd, 0.08).forEach((center) => {
-            scatterCluster(center, inward, rnd, {
-                countMin: 2, countMax: 4, alongSpread: 20, acrossBase: 16, acrossVariation: 18, treeChance: 0.55,
-            }).forEach(({ pos: [ox, oy], isTree }) => {
-                if (isOnRoad(ox, oy)) return;
-                if (!clearOfLake(ox, oy, isTree ? 0.72 : 0.58)) return;
-                if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 30, rnd, TREE_VARIANTS));
-                else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 40, rnd, BUSH_VARIANTS));
-            });
-
-            // Occasional flowering ornamental accent in the same cluster.
-            if (rnd() < 0.4) {
-                const ox = center[0] + inward[0] * 10, oy = center[1] + inward[1] * 10;
-                if (clearOfLake(ox, oy, 0.62) && !isOnRoad(ox, oy)) {
-                    flowers.push({ x: ox, y: oy, s: 0.85 + rnd() * 0.3, rot: (rnd() - 0.5) * 30, sym: "fC", pal: pickPalette(rnd) });
-                }
-            }
-        });
-    }
-
-    return { trees, bushes, flowers };
-}
-
-// --- Zone 3: CA — a subtle planted buffer along the one edge that actually
-// has open ground next to it (the boundary-facing side); the other three
-// edges sit flush against roads/plots, so nothing is planted there, and the
-// CA / CIVIC AMENITY labels stay fully clear.
-function generateCaLandscaping(seed: number): { trees: Deco[]; bushes: Deco[] } {
-    let s = seed;
-    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-    const trees: Deco[] = [];
-    const bushes: Deco[] = [];
-    const p1: Pt = [140, 262], p2: Pt = [140, 470];
-    const normal: Pt = [-1, 0]; // west, toward the boundary — the only open side
-
-    clusterCenters(p1, p2, 70, 14, rnd, 0.1).forEach((center) => {
-        scatterCluster(center, normal, rnd, {
-            countMin: 2, countMax: 3, alongSpread: 16, acrossBase: 10, acrossVariation: 10, treeChance: 0.6,
-        }).forEach(({ pos: [ox, oy], isTree }) => {
-            if (isBlocked(ox, oy)) return;
-            if (isTree) trees.push(makeDeco(ox, oy, (rnd() - 0.5) * 24, rnd, TREE_VARIANTS));
-            else bushes.push(makeDeco(ox, oy, (rnd() - 0.5) * 36, rnd, BUSH_VARIANTS));
-        });
-    });
-
-    return { trees, bushes };
-}
-
-function generateAllLandscaping() {
-    const boundaryPoly = parsePolygon(BOUNDARY);
-    const karabPoly = parsePolygon(KARAB);
-    const border = generateBorderLandscaping(boundaryPoly, 101);
-    const karab = generateKarabLandscaping(karabPoly, 202);
-    const ca = generateCaLandscaping(303);
-    return {
-        trees: [...border.trees, ...karab.trees, ...ca.trees],
-        bushes: [...border.bushes, ...karab.bushes, ...ca.bushes],
-        flowers: karab.flowers,
-    };
-}
-
-const { trees: TREES, bushes: BUSHES, flowers: FLOWERS } = generateAllLandscaping();
-
-// Single lightweight renderer for every tree/bush/flower instance — always
-// just a <use> referencing a shared <defs> symbol, with per-instance color
-// via CSS custom properties. No per-item SVG structure is ever generated.
-const DecoUse = React.memo(function DecoUse({ d }: { d: Deco }) {
-    return (
-        <use
-            href={`#${d.sym}`}
-            transform={`translate(${d.x} ${d.y}) rotate(${d.rot}) scale(${d.s})`}
-            style={{ ["--tc1" as any]: d.pal[0], ["--tc2" as any]: d.pal[1], ["--tc3" as any]: d.pal[2] }}
-            pointerEvents="none"
-        />
-    );
-});
 
 const STREET_LIGHT_POS: [number, number][] = [
     [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
@@ -508,6 +242,19 @@ export default function LayoutMap() {
     const [media, setMedia] = useState<MediaItem[]>([]);
     const [lightbox, setLightbox] = useState<number | null>(null);
     const [night, setNight] = useState(false);
+
+    // --- Master-plan image alignment debug (temporary, dev-only) ---
+    // When on: the image drops to 50% opacity and the real road/CA/KARAB/STP
+    // geometry (normally hidden, since the image already shows them) is drawn
+    // on top so every plot/road/amenity can be checked against the image.
+    // Nudge values are additive/multiplicative adjustments on top of
+    // IMAGE_BOUNDS for quick on-screen fine-tuning; once aligned, fold the
+    // final numbers into IMAGE_BOUNDS above and this whole block can be
+    // deleted along with the debug button.
+    const [masterPlanDebug, setMasterPlanDebug] = useState(false);
+    const [imgNudge, setImgNudge] = useState({ x: 0, y: 0, scale: 1 });
+    const nudgeImg = (dx: number, dy: number, ds: number) =>
+        setImgNudge((n) => ({ x: n.x + dx, y: n.y + dy, scale: Math.max(0.5, Math.min(2, n.scale + ds)) }));
 
     // ---- Real loading gate (data + fonts + a small minimum, capped by a timeout) ----
     const [ready, setReady] = useState(false);
@@ -1070,135 +817,87 @@ export default function LayoutMap() {
                         <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
                             <stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#a9822f" />
                         </linearGradient>
-
-                        {/* Reusable landscaping symbols — authored once, instanced many
-                times via <use>. Canopy fills reference CSS custom properties
-                (--tc1 dark / --tc2 mid / --tc3 light) so each instance can
-                take a different palette combination without duplicating any
-                geometry. v3: bigger, bolder, fewer/larger overlapping blobs
-                per tree so each instance reads clearly as a tree at normal
-                map zoom instead of shrinking into a dot. */}
-
-                        {/* Tree A — round, compact canopy */}
-                        <g id="tA">
-                            <rect x="-0.8" y="-1" width="1.6" height="5" fill="#5a4326" />
-                            <ellipse cx="0" cy="-9" rx="6.2" ry="5.4" fill="var(--tc1)" />
-                            <ellipse cx="-3.6" cy="-7" rx="4.6" ry="4" fill="var(--tc2)" />
-                            <ellipse cx="3.6" cy="-7.4" rx="4.9" ry="4.2" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-13" rx="4.2" ry="3.6" fill="var(--tc3)" />
-                        </g>
-
-                        {/* Tree B — wider, fuller canopy */}
-                        <g id="tB">
-                            <rect x="-0.8" y="-1" width="1.6" height="4.6" fill="#5a4326" />
-                            <ellipse cx="-4.8" cy="-7.4" rx="5.4" ry="4.4" fill="var(--tc1)" transform="rotate(-8 -4.8 -7.4)" />
-                            <ellipse cx="4.8" cy="-7.2" rx="5.7" ry="4.5" fill="var(--tc1)" transform="rotate(8 4.8 -7.2)" />
-                            <ellipse cx="0" cy="-9" rx="6.2" ry="4.6" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-12" rx="4" ry="3.2" fill="var(--tc3)" />
-                        </g>
-
-                        {/* Tree C — layered/tiered canopy */}
-                        <g id="tC">
-                            <rect x="-0.7" y="-1" width="1.4" height="5.6" fill="#5a4326" />
-                            <ellipse cx="0" cy="-6" rx="5.9" ry="3" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-9.4" rx="4.6" ry="2.7" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-12.4" rx="3.1" ry="2.3" fill="var(--tc3)" />
-                        </g>
-
-                        {/* Tree D — taller, narrower canopy */}
-                        <g id="tD">
-                            <rect x="-0.7" y="-1" width="1.4" height="6.6" fill="#5a4326" />
-                            <ellipse cx="-1.6" cy="-9.4" rx="3.2" ry="5.6" fill="var(--tc1)" />
-                            <ellipse cx="1.8" cy="-10" rx="3.4" ry="6" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-14.8" rx="2.7" ry="3.5" fill="var(--tc3)" />
-                        </g>
-
-                        {/* Tree E — small ornamental tree, subtle blossom highlights */}
-                        <g id="tE">
-                            <rect x="-0.7" y="-1" width="1.4" height="4.4" fill="#5a4326" />
-                            <ellipse cx="0" cy="-7.6" rx="4.9" ry="4.2" fill="var(--tc1)" />
-                            <ellipse cx="-2.8" cy="-6.2" rx="3.2" ry="2.8" fill="var(--tc2)" />
-                            <ellipse cx="2.8" cy="-6.1" rx="3.2" ry="2.8" fill="var(--tc2)" />
-                            <circle cx="-1.6" cy="-8.6" r="0.95" fill="var(--tc3)" opacity="0.9" />
-                            <circle cx="2.1" cy="-7.8" r="0.85" fill="var(--tc3)" opacity="0.9" />
-                        </g>
-
-                        {/* Tree F — low bush/tree hybrid, no visible trunk */}
-                        <g id="tF">
-                            <ellipse cx="-3.2" cy="-2.2" rx="4" ry="3" fill="var(--tc1)" />
-                            <ellipse cx="3.2" cy="-2" rx="4" ry="3" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-3.6" rx="4.6" ry="3.3" fill="var(--tc2)" />
-                            <ellipse cx="0" cy="-4.9" rx="2.7" ry="1.9" fill="var(--tc3)" opacity="0.85" />
-                        </g>
-
-                        {/* Bush A / B — low layer-2 greenery, no trunk */}
-                        <g id="bA">
-                            <ellipse cx="-2.4" cy="0.3" rx="2.8" ry="2" fill="var(--tc1)" />
-                            <ellipse cx="2.4" cy="0.3" rx="2.8" ry="2" fill="var(--tc1)" />
-                            <ellipse cx="0" cy="-0.8" rx="3.1" ry="2.3" fill="var(--tc2)" />
-                        </g>
-                        <g id="bB">
-                            <ellipse cx="0" cy="0" rx="3.5" ry="2.4" fill="var(--tc1)" />
-                            <ellipse cx="-1.6" cy="-1.1" rx="2" ry="1.6" fill="var(--tc2)" />
-                            <ellipse cx="1.6" cy="-1.2" rx="1.9" ry="1.5" fill="var(--tc3)" opacity="0.9" />
-                        </g>
-
-                        {/* Flower cluster — occasional ornamental accent near KARAB */}
-                        <g id="fC">
-                            <ellipse cx="0" cy="0" rx="2.9" ry="2.1" fill="var(--tc1)" />
-                            <circle cx="-1.2" cy="-0.7" r="0.7" fill="#e7a7c0" />
-                            <circle cx="0.5" cy="-1.2" r="0.65" fill="#f0c33e" />
-                            <circle cx="1.3" cy="-0.4" r="0.65" fill="#e7a7c0" />
-                        </g>
                     </defs>
 
                     <g ref={camGroupRef} className="lm-camera">
                         <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#8a794e" />
 
-                        <g pointerEvents="none">
-                            <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
-                            <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
-                            <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
-                            <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
-                            <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
-                            <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
-                            <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
-                            <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.4" />
-                        </g>
+                        {/* Master-plan image — the primary visual layer. Lives in the
+                exact same SVG coordinate system (and the same camera-
+                transformed <g>) as everything else below it, so it pans and
+                zooms in perfect lockstep with the plot hitboxes. Never a
+                CSS/HTML-positioned overlay. */}
+                        <image
+                            href={MASTER_PLAN_IMAGE_SRC}
+                            x={IMAGE_BOUNDS.x + imgNudge.x}
+                            y={IMAGE_BOUNDS.y + imgNudge.y}
+                            width={IMAGE_BOUNDS.w * imgNudge.scale}
+                            height={IMAGE_BOUNDS.h * imgNudge.scale}
+                            preserveAspectRatio="none"
+                            opacity={masterPlanDebug ? 0.5 : 1}
+                            pointerEvents="none"
+                        />
 
+                        {/* Debug-only: the original SVG-drawn roads/CA/KARAB/STP plus the
+                decorative "outside the site" filler rects. These are exactly
+                what the image already shows, so they stay hidden normally
+                and only appear (on top of the 50%-opacity image) to verify
+                alignment. */}
+                        {masterPlanDebug && (
+                            <>
+                                <g pointerEvents="none">
+                                    <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
+                                    <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
+                                    <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
+                                    <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
+                                    <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
+                                    <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
+                                    <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
+                                    <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.4" />
+                                </g>
+
+                                <g pointerEvents="none" opacity={0.85}>
+                                    <polygon points={ROADS.top} fill="#40392d" />
+                                    <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#40392d" />
+                                    <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#40392d" />
+                                    <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#40392d" />
+                                    <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
+
+                                    <g className="lm-lane">
+                                        <line x1="531" y1="270" x2="531" y2="944" />
+                                        <line x1="822" y1="270" x2="822" y2="944" />
+                                        <line x1="122" y1="499" x2="500" y2="499" />
+                                        <line x1="118" y1="223" x2="1108" y2="223" />
+                                    </g>
+
+                                    <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
+                                    <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
+                                    <text x="822" y="620" className="lm-road-lbl" transform="rotate(-90 822 620)">9m ROAD</text>
+                                    <text x="300" y="504" className="lm-road-lbl">9m ROAD</text>
+                                    <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
+
+                                    <polygon points={KARAB} fill="#77a648" />
+                                    <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="#5fada6" />
+                                    <text x="300" y="835" className="lm-amen-label">KARAB</text>
+
+                                    <polygon points={CA} fill="#8fbe5a" />
+                                    <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
+                                    <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
+
+                                    <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" />
+                                    <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
+                                </g>
+                            </>
+                        )}
+
+                        {/* Interactive plot layer — always rendered (this is the actual
+                click/hover/selection surface), but transparent by default so
+                the image shows through. A faint status tint stays on so
+                available/reserved/sold is still readable at a glance without
+                painting a solid block over the realistic image; debug mode
+                switches to solid fills + visible strokes for alignment
+                checks against the image underneath. */}
                         <g>
-                            <polygon points={ROADS.top} fill="#40392d" />
-                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#40392d" />
-                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#40392d" />
-                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#40392d" />
-                            <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
-
-                            <g className="lm-lane" pointerEvents="none">
-                                <line x1="531" y1="270" x2="531" y2="944" />
-                                <line x1="822" y1="270" x2="822" y2="944" />
-                                <line x1="122" y1="499" x2="500" y2="499" />
-                                <line x1="118" y1="223" x2="1108" y2="223" />
-                            </g>
-
-                            <g pointerEvents="none">
-                                <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
-                                <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
-                                <text x="822" y="620" className="lm-road-lbl" transform="rotate(-90 822 620)">9m ROAD</text>
-                                <text x="300" y="504" className="lm-road-lbl">9m ROAD</text>
-                                <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
-                            </g>
-
-                            <polygon points={KARAB} fill="#77a648" />
-                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="#5fada6" />
-                            <text x="300" y="835" className="lm-amen-label">KARAB</text>
-
-                            <polygon points={CA} fill="#8fbe5a" />
-                            <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
-                            <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
-
-                            <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" />
-                            <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
-
                             {PLOTS.map((p) => {
                                 const c = centroid(p.pts);
                                 const isSel = p.id === selected;
@@ -1207,6 +906,9 @@ export default function LayoutMap() {
                                 const shown: Status = filter === "all" ? "available" : effective;
                                 const meta = STATUS_META[shown];
                                 const dimmed = filter !== "all" && effective !== filter;
+                                const fillOpacity = masterPlanDebug ? 0.85 : isSel ? 0.4 : 0.2;
+                                const strokeColor = masterPlanDebug ? (isSel ? "#fff" : "url(#gold)") : isSel ? "#fff" : "transparent";
+                                const strokeWidth = masterPlanDebug ? (isSel ? 2.4 : 1.2) : isSel ? 2.2 : 0;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
@@ -1214,22 +916,17 @@ export default function LayoutMap() {
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
                                         <polygon points={p.pts} className="lm-plot-shape"
                                             fill={isSel ? meta.sel : meta.fill}
-                                            stroke={isSel ? "#fff" : "url(#gold)"} strokeWidth={isSel ? 2.4 : 1.2} />
+                                            fillOpacity={fillOpacity}
+                                            stroke={strokeColor} strokeWidth={strokeWidth} />
                                         <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                     </g>
                                 );
                             })}
-
-                            <g>
-                                {BUSHES.map((d, i) => <DecoUse key={`b${i}`} d={d} />)}
-                                {TREES.map((d, i) => <DecoUse key={`t${i}`} d={d} />)}
-                                {FLOWERS.map((d, i) => <DecoUse key={`f${i}`} d={d} />)}
-                            </g>
-
-                            {night && <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />}
-
-                            {STREET_LIGHT_POS.map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
                         </g>
+
+                        {night && <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />}
+
+                        {STREET_LIGHT_POS.map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
                     </g>
 
                     <g transform="translate(1120,250)" ref={compassRef}>
@@ -1369,7 +1066,37 @@ export default function LayoutMap() {
                             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" strokeLinejoin="round" /></svg>
                         )}
                     </button>
+                    {/* TEMPORARY — image-alignment debug toggle. Safe to delete this
+              button (and the masterPlanDebug/imgNudge state + the debug-only
+              JSX blocks above) once IMAGE_BOUNDS is confirmed correct. */}
+                    <button className={masterPlanDebug ? "lm-ctrl-on" : ""} onClick={() => setMasterPlanDebug((v) => !v)} aria-label="Toggle master-plan alignment debug">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><rect x="7" y="8" width="10" height="10" rx="4" /><path d="M9 8V6a3 3 0 0 1 6 0v2M4 12h3M17 12h3M6 8l-2-2M18 8l2-2M6 16l-2 2M18 16l2 2" strokeLinecap="round" /></svg>
+                    </button>
                 </div>
+
+                {masterPlanDebug && (
+                    <div className="lm-imgdebug">
+                        <div className="lm-imgdebug-row">
+                            <span>X {(IMAGE_BOUNDS.x + imgNudge.x).toFixed(0)}</span>
+                            <button onClick={() => nudgeImg(-10, 0, 0)}>−</button>
+                            <button onClick={() => nudgeImg(10, 0, 0)}>+</button>
+                        </div>
+                        <div className="lm-imgdebug-row">
+                            <span>Y {(IMAGE_BOUNDS.y + imgNudge.y).toFixed(0)}</span>
+                            <button onClick={() => nudgeImg(0, -10, 0)}>−</button>
+                            <button onClick={() => nudgeImg(0, 10, 0)}>+</button>
+                        </div>
+                        <div className="lm-imgdebug-row">
+                            <span>Scale {imgNudge.scale.toFixed(3)}</span>
+                            <button onClick={() => nudgeImg(0, 0, -0.01)}>−</button>
+                            <button onClick={() => nudgeImg(0, 0, 0.01)}>+</button>
+                        </div>
+                        <div className="lm-imgdebug-row lm-imgdebug-readout">
+                            w {(IMAGE_BOUNDS.w * imgNudge.scale).toFixed(0)} · h {(IMAGE_BOUNDS.h * imgNudge.scale).toFixed(0)}
+                        </div>
+                        <button className="lm-imgdebug-reset" onClick={() => setImgNudge({ x: 0, y: 0, scale: 1 })}>Reset nudge</button>
+                    </div>
+                )}
 
                 <div className="lm-tiq-wrap">
                     {tiqOpen && (
@@ -1587,6 +1314,21 @@ const css = `
 .lm-ctrl button.lm-ctrl-on{ background:#1a2338; color:#ffd76a; }
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
+
+/* TEMPORARY — image-alignment debug panel, safe to delete with the debug
+   toggle button once IMAGE_BOUNDS is confirmed correct. */
+.lm-imgdebug{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 300px); z-index:9;
+  background:rgba(18,22,16,.94); border:1px solid var(--line); border-radius:12px;
+  padding:8px; display:flex; flex-direction:column; gap:5px; min-width:150px; }
+.lm-imgdebug-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:11px; color:var(--txt); }
+.lm-imgdebug-row button{ width:24px; height:24px; border-radius:6px; border:1px solid var(--line);
+  background:transparent; color:var(--gold-lt); cursor:pointer; font-size:14px; line-height:1; }
+.lm-imgdebug-row button:hover{ background:rgba(212,171,84,.15); }
+.lm-imgdebug-readout{ color:var(--muted); justify-content:flex-start; }
+.lm-imgdebug-reset{ margin-top:2px; font-size:11px; padding:5px; border-radius:7px; border:1px solid var(--line);
+  background:transparent; color:var(--muted); cursor:pointer; }
+.lm-imgdebug-reset:hover{ background:rgba(212,171,84,.1); color:var(--txt); }
 
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
   z-index:7; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px;
