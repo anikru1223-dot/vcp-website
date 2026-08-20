@@ -648,7 +648,20 @@ export default function LayoutMap() {
         const recalc = (animated: boolean) => {
             refreshStageRect();
             const r = stageRectRef.current;
-            if (r.width && r.height) setVb({ w: r.width, h: r.height });
+            if (r.width && r.height) {
+                setVb({ w: r.width, h: r.height });
+                // Set the viewBox on the real DOM node synchronously, right now —
+                // not just via React state. The camera transform we're about to
+                // compute/paint below is expressed in real stage px, and that only
+                // means what we intend if the <svg viewBox> already matches the
+                // stage's real size at the moment we paint. Relying on setVb alone
+                // leaves a gap (until React's next commit) where the viewBox is
+                // still stale, so the freshly-painted transform gets interpreted
+                // against the wrong scale — which is exactly why the very first
+                // paint after mount could land zoomed into a corner instead of
+                // showing the fitted, centered layout.
+                svgRef.current?.setAttribute("viewBox", `0 0 ${r.width} ${r.height}`);
+            }
             fitScaleRef.current = computeFitScale();
             if (!hasFitRef.current) {
                 hasFitRef.current = true;
@@ -680,6 +693,14 @@ export default function LayoutMap() {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [onWheel, paintNow, fitToContent]);
+
+    // Safety net: if `vb` ever changes through a path that didn't also touch
+    // the DOM viewBox directly (e.g. a future refactor, or React re-rendering
+    // it after the fact), repaint once it lands so the transform is never
+    // left stale relative to the viewBox actually on screen.
+    useEffect(() => {
+        paintNow();
+    }, [vb.w, vb.h, paintNow]);
 
     return (
         <div className={`lm-root ${night ? "is-night" : ""}`}>
