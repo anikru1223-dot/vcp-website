@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client"; // adjust path to your client
 
 /**
@@ -406,6 +406,12 @@ export default function LayoutMap() {
     const pinchState = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
 
     const idleTimer = useRef<number | null>(null);
+    // True once the user has actually touched/dragged/zoomed the map. Until
+    // then we keep re-fitting the camera to the content on every measurement
+    // pass, so a late-settling layout (mobile address bar collapsing, web
+    // fonts finishing, header height changing, etc.) can't leave the user
+    // staring at an off-center/zoomed-in view with no way to know why.
+    const interactedRef = useRef(false);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
@@ -466,6 +472,7 @@ export default function LayoutMap() {
         svg.classList.toggle("lm-fast", on);
     };
     const beginInteraction = () => {
+        interactedRef.current = true;
         if (idleTimer.current) { window.clearTimeout(idleTimer.current); idleTimer.current = null; }
         setFastMode(true);
     };
