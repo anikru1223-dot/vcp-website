@@ -4,14 +4,13 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"; // adjust path to your client
 
 /**
- * Basava Ganguru — Interactive Master Layout (AR3D style)
- * Performance-optimized camera/interaction layer:
- *  - Single RAF pump drives both direct-manipulation and eased animations
- *  - No React state writes on pointer/wheel/touch move (refs only)
- *  - Cached stage rect (no getBoundingClientRect in hot path)
- *  - Unified Pointer Events for mouse + touch + pen (multi-touch pinch via pointer map)
- *  - Temporary "fast mode" disables expensive filters while interacting
- *  - Decorative trees/stones precomputed once at module scope
+ * Basava Ganguru — Interactive Master Layout (flat 2D)
+ * - Camera auto-fits the plotted layout and stays centered on load/resize
+ * - Flat, lightweight 2D styling (no drop-shadow "3D" filters, no texture fills)
+ * - Real loading gate: waits for data + fonts (with a safety timeout) before
+ *   the map is revealed, instead of a fixed-length splash timer
+ * - Same performance approach as before: camera state lives in refs, a single
+ *   RAF pump drives both eased animation and direct-manipulation painting
  */
 
 type Plot = {
@@ -22,10 +21,10 @@ type Status = "available" | "reserved" | "sold";
 
 type MediaItem = { id: string; type: "image" | "video"; url: string; caption: string | null };
 
-const STATUS_META: Record<Status, { label: string; fill: string; sel: string; legend: string }> = {
-    available: { label: "Available", fill: "url(#plotFill)", sel: "url(#plotSel)", legend: "linear-gradient(180deg,#568636,#365b21)" },
-    reserved: { label: "Reserved", fill: "url(#plotInt)", sel: "url(#plotIntSel)", legend: "linear-gradient(180deg,#f5b942,#d98a1f)" },
-    sold: { label: "Sold", fill: "url(#plotSold)", sel: "url(#plotSoldSel)", legend: "linear-gradient(180deg,#e0504a,#a52a24)" },
+const STATUS_META: Record<Status, { label: string; fill: string; sel: string }> = {
+    available: { label: "Available", fill: "#4d7a34", sel: "#6dbf46" },
+    reserved: { label: "Reserved", fill: "#d98a1f", sel: "#f5b942" },
+    sold: { label: "Sold", fill: "#a52a24", sel: "#e0504a" },
 };
 
 const PLOTS: Plot[] = [
@@ -100,7 +99,6 @@ const SIDES: Record<string, Sides> = {
 };
 
 const BOUNDARY = "118,232 1108,268 1150,700 900,1090 118,1150 118,232";
-
 const CA = "140,262 250,262 250,470 140,470";
 const STP = "434,690 502,690 502,760 434,760";
 const KARAB = "118,690 434,690 502,760 502,948 118,948";
@@ -119,7 +117,11 @@ const ROADS = {
 type ViewBox = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
 
+// The natural drawing canvas for all coordinates above.
 const BASE_VB: ViewBox = { x: 60, y: 190, w: 1130, h: 1010 };
+
+// Tight bounds around the actual layout (used to auto-fit + center the camera).
+const CONTENT_BOUNDS: ViewBox = { x: 108, y: 174, w: 902, h: 796 };
 
 const centroid = (pts: string): Point => {
     const n = pts.split(/[ ,]+/).map(Number);
@@ -129,18 +131,15 @@ const centroid = (pts: string): Point => {
 };
 
 // ---------------------------------------------------------------------------
-// Decorative objects: precomputed ONCE at module scope (deterministic seeded
-// RNG) so they never regenerate on re-render. Memoized presentational
-// components so they never re-render unless their own props change.
+// Flat decorative props — no drop shadows, no gradients, precomputed once.
 // ---------------------------------------------------------------------------
 
 const Tree = React.memo(function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
     const fill = ["#3c6624", "#436f2c", "#345c20"][v % 3];
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            <ellipse cx="3" cy="7" rx="12" ry="4" fill="#0a1c08" opacity="0.32" />
-            <circle cx="0" cy="0" r="12" fill={fill} />
-            <circle cx="-3.5" cy="-3.5" r="4.5" fill="#6fa43f" opacity="0.55" />
+            <circle cx="0" cy="0" r="11" fill={fill} />
+            <circle cx="-3" cy="-3" r="4" fill="#6fa43f" opacity="0.5" />
         </g>
     );
 });
@@ -148,21 +147,13 @@ const Tree = React.memo(function Tree({ x, y, s = 1, v = 0 }: { x: number; y: nu
 const StreetLight = React.memo(function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
     return (
         <g transform={`translate(${x},${y})`} pointerEvents="none">
-            <circle r={night ? 28 : 15} fill="url(#lightPool)" opacity={night ? 1 : 0.6} />
-            {night && <circle r="16" fill="#ffdd93" opacity="0.28" />}
-            <circle r={night ? 8 : 6} fill="#ffdd93" opacity={night ? 0.6 : 0.3} />
-            <circle r={night ? 3 : 2} fill="#fff9e6" />
+            <circle r={night ? 5 : 3.5} fill="#ffdd93" opacity={night ? 0.9 : 0.4} />
         </g>
     );
 });
 
 const Stone = React.memo(function Stone({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
-    return (
-        <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            <ellipse cx="1.5" cy="2.5" rx="7" ry="2.6" fill="#000" opacity="0.18" />
-            <ellipse cx="0" cy="0" rx="6" ry="4.2" fill="#a49c86" />
-        </g>
-    );
+    return <ellipse cx={x} cy={y} rx={6 * s} ry={4.2 * s} fill="#a49c86" pointerEvents="none" />;
 });
 
 type DecoItem = [number, number, number];
@@ -173,35 +164,28 @@ function generateDecorations(): { trees: DecoItem[]; stones: DecoItem[] } {
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
-    for (let g = 0; g < 34; g++) {
+    for (let g = 0; g < 18; g++) {
         const gx = -120 + rnd() * 1440;
         const gy = -60 + rnd() * 1420;
-        const count = 5 + Math.floor(rnd() * 7);
+        const count = 4 + Math.floor(rnd() * 5);
         const spread = 55 + rnd() * 90;
         for (let j = 0; j < count; j++) {
-            const ox = ((rnd() + rnd() - 1)) * spread;
-            const oy = ((rnd() + rnd() - 1)) * spread;
+            const ox = (rnd() + rnd() - 1) * spread;
+            const oy = (rnd() + rnd() - 1) * spread;
             const x = gx + ox, y = gy + oy;
             if (inCore(x, y)) continue;
-            trees.push([x, y, 1.1 + rnd() * 0.8]);
+            trees.push([x, y, 1 + rnd() * 0.6]);
         }
     }
-    for (let i = 0; i < 60; i++) {
-        const x = -140 + rnd() * 1480;
-        const y = -80 + rnd() * 1460;
-        if (inCore(x, y)) continue;
-        trees.push([x, y, 1.1 + rnd() * 0.7]);
-    }
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 24; i++) {
         const x = -100 + rnd() * 1400;
         const y = -60 + rnd() * 1420;
         if (inCore(x, y)) continue;
-        stones.push([x, y, 1 + rnd() * 1.2]);
+        stones.push([x, y, 1 + rnd() * 1.1]);
     }
     return { trees, stones };
 }
 
-// Computed once when the module loads — never regenerated per render/instance.
 const { trees: TREES, stones: STONES } = generateDecorations();
 
 const STREET_LIGHT_POS: [number, number][] = [
@@ -212,7 +196,7 @@ const STREET_LIGHT_POS: [number, number][] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Camera types
+// Camera
 // ---------------------------------------------------------------------------
 
 type Cam = { s: number; tx: number; ty: number; rot: number };
@@ -228,16 +212,18 @@ export default function LayoutMap() {
     const [media, setMedia] = useState<MediaItem[]>([]);
     const [lightbox, setLightbox] = useState<number | null>(null);
     const [night, setNight] = useState(false);
-    const [splash, setSplash] = useState(true);
 
-    // Plot status (from Supabase) + active filter
+    // ---- Real loading gate (data + fonts + a small minimum, capped by a timeout) ----
+    const [ready, setReady] = useState(false);
+    const [loadPct, setLoadPct] = useState(6);
+    const [dataLoaded, setDataLoaded] = useState(false);
+
     const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
     const [filter, setFilter] = useState<Status | "all">("all");
     const [filterOpen, setFilterOpen] = useState(false);
     const projectId = "basava-ganguru";
     const supabase = useMemo(() => createClient(), []);
 
-    // Log WhatsApp / Call taps to Supabase (non-blocking)
     const logEnquiry = async (type: "whatsapp" | "call", plotId: string) => {
         try {
             await supabase.from("enquiries").insert({
@@ -250,11 +236,6 @@ export default function LayoutMap() {
             /* never block the user */
         }
     };
-
-    useEffect(() => {
-        const t = window.setTimeout(() => setSplash(false), 2000);
-        return () => window.clearTimeout(t);
-    }, []);
 
     // Lock page scroll while the map is on screen so nothing shifts underneath it.
     useEffect(() => {
@@ -270,16 +251,21 @@ export default function LayoutMap() {
 
     useEffect(() => {
         let active = true;
-
         const load = async () => {
-            const { data } = await supabase
-                .from("plot_status")
-                .select("plot_id,status")
-                .eq("project_id", projectId);
-            if (!active || !data) return;
-            const m: Record<string, Status> = {};
-            data.forEach((r: { plot_id: string; status: Status }) => { m[r.plot_id] = r.status; });
-            setStatusMap(m);
+            try {
+                const { data } = await supabase
+                    .from("plot_status")
+                    .select("plot_id,status")
+                    .eq("project_id", projectId);
+                if (!active) return;
+                if (data) {
+                    const m: Record<string, Status> = {};
+                    data.forEach((r: { plot_id: string; status: Status }) => { m[r.plot_id] = r.status; });
+                    setStatusMap(m);
+                }
+            } finally {
+                if (active) setDataLoaded(true);
+            }
         };
         load();
 
@@ -298,7 +284,6 @@ export default function LayoutMap() {
         return () => { active = false; supabase.removeChannel(channel); };
     }, [projectId, supabase]);
 
-    // Load project media (photos/videos) for the Photos popup
     useEffect(() => {
         let alive = true;
         (async () => {
@@ -313,34 +298,59 @@ export default function LayoutMap() {
         return () => { alive = false; };
     }, [projectId, supabase]);
 
+    // Drive the loading bar from real signals: data fetch, web fonts, and a
+    // short minimum so it never just flashes. A hard cap prevents it from
+    // ever hanging if something stalls.
+    useEffect(() => {
+        let cancelled = false;
+        const minDelay = new Promise((res) => setTimeout(res, 500));
+        const fontsReady = (document as any).fonts?.ready ? (document as any).fonts.ready : Promise.resolve();
+        const safetyTimeout = new Promise((res) => setTimeout(res, 4500));
+
+        const tick = window.setInterval(() => {
+            setLoadPct((p) => (p < 88 ? p + (88 - p) * 0.12 + 1 : p));
+        }, 120);
+
+        Promise.race([
+            Promise.all([minDelay, fontsReady, new Promise((res) => {
+                const check = () => (dataLoaded ? res(true) : setTimeout(check, 60));
+                check();
+            })]),
+            safetyTimeout,
+        ]).then(() => {
+            if (cancelled) return;
+            window.clearInterval(tick);
+            setLoadPct(100);
+            window.setTimeout(() => { if (!cancelled) setReady(true); }, 220);
+        });
+
+        return () => { cancelled = true; window.clearInterval(tick); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataLoaded]);
+
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
     const camGroupRef = useRef<SVGGElement | null>(null);
     const compassRef = useRef<SVGGElement | null>(null);
 
-    // ---- Camera state lives entirely in refs. React never re-renders per frame. ----
     const camRef = useRef<Cam>({ s: 1, tx: 0, ty: 0, rot: 0 });
     const animRef = useRef<{ from: Cam; to: Cam; start: number; dur: number } | null>(null);
     const loopRunning = useRef(false);
     const pendingPaint = useRef(false);
 
-    // Cached stage geometry — refreshed only on mount / resize / gesture start,
-    // never inside a move handler.
     const stageRectRef = useRef<StageRect>({ left: 0, top: 0, width: 0, height: 0 });
     const baseScaleRef = useRef(1);
+    const hasFitRef = useRef(false);
 
-    // Active pointer tracking for unified mouse/touch/pen handling + pinch.
     const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
     const dragState = useRef<{ px: number; py: number; tx: number; ty: number } | null>(null);
     const pinchState = useRef<{ d: number; ang: number; cx: number; cy: number } | null>(null);
 
-    // Idle-restore timer for the temporary "fast mode" (filters disabled while interacting).
     const idleTimer = useRef<number | null>(null);
 
     const sel = PLOTS.find((p) => p.id === selected) || null;
     const selStatus: Status | undefined = sel ? statusMap[sel.id] : undefined;
 
-    // ---- Paint: apply the current camera ref straight to the DOM (no React state) ----
     const paintNow = useCallback(() => {
         const c = camRef.current;
         if (camGroupRef.current) {
@@ -353,7 +363,6 @@ export default function LayoutMap() {
         if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
     }, []);
 
-    // ---- Single RAF pump: drives eased animations AND flushes direct-manipulation updates ----
     const frame = useCallback((now: number) => {
         let stillActive = false;
         if (animRef.current) {
@@ -383,7 +392,6 @@ export default function LayoutMap() {
         if (!loopRunning.current) { loopRunning.current = true; requestAnimationFrame(frame); }
     }, [frame]);
 
-    /** Direct manipulation: write camera immediately, flush on next RAF (no easing). */
     const setCameraImmediate = useCallback((c: Cam) => {
         animRef.current = null;
         camRef.current = c;
@@ -391,13 +399,11 @@ export default function LayoutMap() {
         ensureLoop();
     }, [ensureLoop]);
 
-    /** Discrete action: short eased animation (zoom buttons, reset, rotate, snap-back). */
     const animateTo = useCallback((to: Cam, dur = 180) => {
         animRef.current = { from: { ...camRef.current }, to, start: performance.now(), dur };
         ensureLoop();
     }, [ensureLoop]);
 
-    // ---- Fast mode: disable expensive filters while interacting, restore after idle ----
     const setFastMode = (on: boolean) => {
         const svg = svgRef.current;
         if (!svg) return;
@@ -412,7 +418,6 @@ export default function LayoutMap() {
         idleTimer.current = window.setTimeout(() => { setFastMode(false); idleTimer.current = null; }, delay);
     };
 
-    // ---- Stage geometry caching ----
     const computeBaseScale = () => {
         const r = stageRectRef.current;
         if (!r.width || !r.height) return 1;
@@ -458,17 +463,36 @@ export default function LayoutMap() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [animateTo]);
 
-    // ---- Wheel (mouse + trackpad), normalized across delta modes ----
+    // ---- Fit-to-content camera: keeps the layout centered, at a sensible zoom ----
+    const computeFitCam = useCallback((): Cam => {
+        const r = stageRectRef.current;
+        const bs = baseScaleRef.current || 1;
+        if (!r.width || !r.height) return { s: 1, tx: 0, ty: 0, rot: 0 };
+        const contentCx = (CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2 - BASE_VB.x) * bs;
+        const contentCy = (CONTENT_BOUNDS.y + CONTENT_BOUNDS.h / 2 - BASE_VB.y) * bs;
+        const stageCx = r.width / 2;
+        const stageCy = r.height / 2;
+        const fitScale = Math.min(
+            (r.width * 0.92) / (CONTENT_BOUNDS.w * bs),
+            (r.height * 0.92) / (CONTENT_BOUNDS.h * bs)
+        );
+        const s = Math.min(S_MAX, Math.max(S_MIN, fitScale));
+        return { s, tx: stageCx - s * contentCx, ty: stageCy - s * contentCy, rot: 0 };
+    }, []);
+
+    const fitToContent = useCallback((animated: boolean) => {
+        const cam = computeFitCam();
+        if (animated) animateTo(cam, 260); else setCameraImmediate(cam);
+    }, [computeFitCam, animateTo, setCameraImmediate]);
+
     const onWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
         refreshStageRect();
         beginInteraction();
         let delta = e.deltaY;
-        if (e.deltaMode === 1) delta *= 18;       // "line" mode → approx px
-        else if (e.deltaMode === 2) delta *= stageRectRef.current.height || 800; // "page" mode
+        if (e.deltaMode === 1) delta *= 18;
+        else if (e.deltaMode === 2) delta *= stageRectRef.current.height || 800;
 
-        // Smooth, small per-event multiplier (~1.05–1.13 for a typical notch),
-        // continuous for high-resolution trackpads.
         let factor = Math.exp(-delta * 0.0012);
         factor = Math.min(1.6, Math.max(1 / 1.6, factor));
 
@@ -479,7 +503,6 @@ export default function LayoutMap() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [setCameraImmediate]);
 
-    // ---- Pointer events: unified mouse / touch / pen, multi-touch pinch via pointer map ----
     const onPointerDown = (e: React.PointerEvent) => {
         (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
         refreshStageRect();
@@ -530,14 +553,13 @@ export default function LayoutMap() {
             settle();
             scheduleIdleRestore(0);
         } else if (pointers.current.size === 1) {
-            // Dropped from a pinch to a single finger — resume panning from here.
             pinchState.current = null;
             const [[, pt]] = Array.from(pointers.current.entries());
             dragState.current = { px: pt.x, py: pt.y, tx: camRef.current.tx, ty: camRef.current.ty };
         }
     };
 
-    const reset = () => { animateTo({ s: 1, tx: 0, ty: 0, rot: 0 }, 180); };
+    const reset = () => { fitToContent(true); };
     const btnZoom = (f: number) => {
         const r = stageRectRef.current;
         const c = clampPan(zoomAt(camRef.current, f, r.width / 2, r.height / 2), false);
@@ -545,49 +567,62 @@ export default function LayoutMap() {
     };
     const rotate = () => { animateTo({ ...camRef.current, rot: camRef.current.rot + 45 }, 200); };
 
-    // ---- Mount / resize wiring ----
+    // ---- Mount / resize wiring: always re-fits so the map stays centered ----
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
-        refreshStageRect();
-        baseScaleRef.current = computeBaseScale();
-        paintNow();
 
-        el.addEventListener("wheel", onWheel, { passive: false });
-
-        const ro = new ResizeObserver(() => {
+        const recalc = (animated: boolean) => {
             refreshStageRect();
             baseScaleRef.current = computeBaseScale();
+            if (!hasFitRef.current) {
+                hasFitRef.current = true;
+                fitToContent(false);
+            } else {
+                fitToContent(animated);
+            }
             paintNow();
-        });
+        };
+
+        recalc(false);
+        el.addEventListener("wheel", onWheel, { passive: false });
+
+        const ro = new ResizeObserver(() => recalc(false));
         ro.observe(el);
+
+        const onWinResize = () => recalc(false);
+        window.addEventListener("resize", onWinResize);
+        window.visualViewport?.addEventListener("resize", onWinResize);
+        window.addEventListener("orientationchange", onWinResize);
 
         return () => {
             el.removeEventListener("wheel", onWheel);
             ro.disconnect();
+            window.removeEventListener("resize", onWinResize);
+            window.visualViewport?.removeEventListener("resize", onWinResize);
+            window.removeEventListener("orientationchange", onWinResize);
             if (idleTimer.current) window.clearTimeout(idleTimer.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [onWheel, paintNow]);
+    }, [onWheel, paintNow, fitToContent]);
 
     return (
         <div className={`lm-root ${night ? "is-night" : ""}`}>
             <style>{css}</style>
 
-            {splash && (
-                <div className="lm-splash" onClick={() => setSplash(false)}>
+            {!ready && (
+                <div className="lm-splash">
                     <div className="lm-splash-inner">
                         <div className="lm-splash-logo" aria-hidden="true">
-                            <svg viewBox="0 0 40 40" width="64" height="64">
-                                <defs><linearGradient id="scg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#c9a24b" /></linearGradient></defs>
-                                <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="url(#scg)" strokeWidth="1.6" />
-                                <rect x="14" y="16" width="5" height="12" fill="url(#scg)" /><rect x="21" y="13" width="5" height="15" fill="url(#scg)" />
+                            <svg viewBox="0 0 40 40" width="56" height="56">
+                                <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="#d4ab54" strokeWidth="1.6" />
+                                <rect x="14" y="16" width="5" height="12" fill="#d4ab54" /><rect x="21" y="13" width="5" height="15" fill="#d4ab54" />
                             </svg>
                         </div>
                         <div className="lm-splash-name">Basava Ganguru</div>
                         <div className="lm-splash-sub">VIJAYALAXMI C PATIL · SHIVAMOGGA</div>
                         <div className="lm-splash-tag">Residential Layout · 32 Plots</div>
-                        <div className="lm-splash-bar"><span /></div>
-                        <div className="lm-splash-loading">Loading master plan…</div>
+                        <div className="lm-splash-bar"><span style={{ width: `${Math.min(100, loadPct)}%` }} /></div>
+                        <div className="lm-splash-loading">{loadPct >= 100 ? "Ready" : "Loading master plan…"}</div>
                     </div>
                     <div className="lm-splash-credit">Built by Train IQ · trainiq.in</div>
                 </div>
@@ -596,10 +631,9 @@ export default function LayoutMap() {
             <header className="lm-head">
                 <div className="lm-brand">
                     <div className="lm-logo" aria-hidden="true">
-                        <svg viewBox="0 0 40 40" width="30" height="30">
-                            <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#c9a24b" /></linearGradient></defs>
-                            <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="url(#cg)" strokeWidth="1.6" />
-                            <rect x="14" y="16" width="5" height="12" fill="url(#cg)" /><rect x="21" y="13" width="5" height="15" fill="url(#cg)" />
+                        <svg viewBox="0 0 40 40" width="28" height="28">
+                            <path d="M20 3 L34 9 V21 C34 30 27 35 20 37 C13 35 6 30 6 21 V9 Z" fill="none" stroke="#d4ab54" strokeWidth="1.6" />
+                            <rect x="14" y="16" width="5" height="12" fill="#d4ab54" /><rect x="21" y="13" width="5" height="15" fill="#d4ab54" />
                         </svg>
                     </div>
                     <div>
@@ -627,217 +661,39 @@ export default function LayoutMap() {
             >
                 <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
                     <defs>
-                        <radialGradient id="terrain" cx="0.32" cy="0.22" r="1.15">
-                            <stop offset="0" stopColor="#b6a468" /><stop offset="0.45" stopColor="#9c8a54" />
-                            <stop offset="0.8" stopColor="#84733f" /><stop offset="1" stopColor="#6b5c32" />
-                        </radialGradient>
-                        <pattern id="terrainTex" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
-                            <rect width="26" height="26" fill="transparent" />
-                            <circle cx="5" cy="7" r="1" fill="#a89258" opacity="0.25" />
-                            <circle cx="17" cy="15" r="0.9" fill="#75643a" opacity="0.3" />
-                            <circle cx="12" cy="22" r="0.8" fill="#b6a468" opacity="0.2" />
-                            <circle cx="22" cy="4" r="0.7" fill="#8a7846" opacity="0.25" />
-                        </pattern>
-                        <radialGradient id="patch" cx="0.5" cy="0.5" r="0.5">
-                            <stop offset="0" stopColor="#8a9a4a" stopOpacity="0.35" /><stop offset="1" stopColor="#8a9a4a" stopOpacity="0" />
-                        </radialGradient>
-
-                        <linearGradient id="plotFill" x1="0" y1="0" x2="0.35" y2="1">
-                            <stop offset="0" stopColor="#568636" /><stop offset="0.5" stopColor="#457029" /><stop offset="1" stopColor="#365b21" />
-                        </linearGradient>
-                        <linearGradient id="plotSel" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#8fd257" /><stop offset="1" stopColor="#5fa538" />
-                        </linearGradient>
-                        <linearGradient id="plotInt" x1="0" y1="0" x2="0.35" y2="1">
-                            <stop offset="0" stopColor="#f5b942" /><stop offset="0.5" stopColor="#e09a2a" /><stop offset="1" stopColor="#b8791c" />
-                        </linearGradient>
-                        <linearGradient id="plotIntSel" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#ffd076" /><stop offset="1" stopColor="#e5a536" />
-                        </linearGradient>
-                        <linearGradient id="plotSold" x1="0" y1="0" x2="0.35" y2="1">
-                            <stop offset="0" stopColor="#e0504a" /><stop offset="0.5" stopColor="#c23a34" /><stop offset="1" stopColor="#96271f" />
-                        </linearGradient>
-                        <linearGradient id="plotSoldSel" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#f27a74" /><stop offset="1" stopColor="#cc4038" />
-                        </linearGradient>
-                        <pattern id="turf" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-                            <rect width="8" height="8" fill="transparent" />
-                            <line x1="2" y1="7" x2="2.6" y2="3" stroke="#6aa347" strokeWidth="0.5" opacity="0.3" />
-                            <line x1="5" y1="8" x2="5.5" y2="4" stroke="#3c6424" strokeWidth="0.5" opacity="0.3" />
-                        </pattern>
-
-                        <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#2e2a22" /><stop offset="0.12" stopColor="#413a2e" />
-                            <stop offset="0.5" stopColor="#4c4436" /><stop offset="0.88" stopColor="#413a2e" /><stop offset="1" stopColor="#2e2a22" />
-                        </linearGradient>
-                        <linearGradient id="asphaltV" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0" stopColor="#2e2a22" /><stop offset="0.12" stopColor="#413a2e" />
-                            <stop offset="0.5" stopColor="#4c4436" /><stop offset="0.88" stopColor="#413a2e" /><stop offset="1" stopColor="#2e2a22" />
-                        </linearGradient>
-                        <pattern id="asphaltTex" width="9" height="9" patternUnits="userSpaceOnUse">
-                            <rect width="9" height="9" fill="transparent" />
-                            <circle cx="2" cy="3" r="0.5" fill="#5c5342" opacity="0.4" />
-                            <circle cx="6" cy="6" r="0.45" fill="#232019" opacity="0.5" />
-                        </pattern>
-
-                        <radialGradient id="lake" cx="0.38" cy="0.28" r="0.95">
-                            <stop offset="0" stopColor="#bdeee6" /><stop offset="0.5" stopColor="#63b5ac" /><stop offset="1" stopColor="#2f7d78" />
-                        </radialGradient>
-                        <radialGradient id="grass" cx="0.4" cy="0.3" r="1">
-                            <stop offset="0" stopColor="#a9d475" /><stop offset="0.6" stopColor="#8fbe5a" /><stop offset="1" stopColor="#77a648" />
-                        </radialGradient>
-                        <linearGradient id="ca" x1="0" y1="0" x2="0.4" y2="1">
-                            <stop offset="0" stopColor="#a9d475" /><stop offset="1" stopColor="#77a648" />
-                        </linearGradient>
                         <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stopColor="#f6e6b0" /><stop offset="0.5" stopColor="#d4ab54" /><stop offset="1" stopColor="#a9822f" />
+                            <stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#a9822f" />
                         </linearGradient>
-                        <linearGradient id="stpRoof" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stopColor="#cdb4ec" /><stop offset="1" stopColor="#9772c6" />
-                        </linearGradient>
-
-                        <filter id="plotSh" x="-25%" y="-25%" width="150%" height="150%">
-                            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000" floodOpacity="0.42" />
-                        </filter>
-                        <filter id="softSh" x="-40%" y="-40%" width="180%" height="180%">
-                            <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#000" floodOpacity="0.4" />
-                        </filter>
-                        <filter id="selGlow" x="-70%" y="-70%" width="240%" height="240%">
-                            <feDropShadow dx="0" dy="0" stdDeviation="9" floodColor="#a6ff7a" floodOpacity="0.95" />
-                        </filter>
-                        <filter id="treeSh" x="-60%" y="-60%" width="220%" height="220%">
-                            <feDropShadow dx="2.5" dy="3" stdDeviation="1.6" floodColor="#000" floodOpacity="0.32" />
-                        </filter>
-                        <radialGradient id="lightPool" cx="0.5" cy="0.5" r="0.5">
-                            <stop offset="0" stopColor="#ffe9b0" stopOpacity="0.6" /><stop offset="0.5" stopColor="#ffce6e" stopOpacity="0.2" /><stop offset="1" stopColor="#ffce6e" stopOpacity="0" />
-                        </radialGradient>
-                        <linearGradient id="headBeam" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0" stopColor="#fff3c4" stopOpacity="0.7" /><stop offset="1" stopColor="#fff3c4" stopOpacity="0" />
-                        </linearGradient>
-                        <radialGradient id="sun" cx="0.28" cy="0.16" r="0.9">
-                            <stop offset="0" stopColor="#ffe4a0" stopOpacity="0.22" /><stop offset="0.5" stopColor="#ffd48a" stopOpacity="0.05" /><stop offset="1" stopColor="#000" stopOpacity="0" />
-                        </radialGradient>
-                        <radialGradient id="vignette" cx="0.5" cy="0.46" r="0.85">
-                            <stop offset="0" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.34" />
-                        </radialGradient>
                     </defs>
 
                     <g ref={camGroupRef} className="lm-camera">
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrain)" />
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="url(#terrainTex)" />
-                        <g pointerEvents="none">
-                            <ellipse cx="220" cy="380" rx="130" ry="80" fill="url(#patch)" />
-                            <ellipse cx="1000" cy="450" rx="150" ry="90" fill="url(#patch)" />
-                            <ellipse cx="320" cy="1080" rx="160" ry="90" fill="url(#patch)" />
-                            <ellipse cx="1050" cy="950" rx="140" ry="80" fill="url(#patch)" />
-                            <ellipse cx="700" cy="1120" rx="180" ry="70" fill="url(#patch)" />
-                        </g>
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#8a794e" />
 
                         <g pointerEvents="none">
-                            {[
-                                { x: -700, y: -400, w: 520, h: 360, c: "#7ba045" },
-                                { x: -700, y: 20, w: 520, h: 380, c: "#8caf52" },
-                                { x: -700, y: 460, w: 470, h: 420, c: "#6f9a3e" },
-                                { x: -680, y: 960, w: 560, h: 380, c: "#83a84c" },
-                                { x: 1230, y: -360, w: 520, h: 420, c: "#7ba045" },
-                                { x: 1260, y: 120, w: 500, h: 400, c: "#8caf52" },
-                                { x: 1240, y: 580, w: 520, h: 440, c: "#6f9a3e" },
-                                { x: 320, y: 1180, w: 640, h: 360, c: "#83a84c" },
-                                { x: 120, y: -560, w: 560, h: 300, c: "#8caf52" },
-                                { x: 760, y: -560, w: 520, h: 300, c: "#7ba045" },
-                            ].map((f, i) => (
-                                <g key={`fld${i}`}>
-                                    <rect x={f.x} y={f.y} width={f.w} height={f.h} rx="6" fill={f.c} opacity="0.9" />
-                                    {Array.from({ length: Math.floor(f.h / 26) }).map((_, r) => (
-                                        <line key={r} x1={f.x + 8} y1={f.y + 14 + r * 26} x2={f.x + f.w - 8} y2={f.y + 14 + r * 26} stroke="#5c8232" strokeWidth="1.5" opacity="0.4" />
-                                    ))}
-                                </g>
-                            ))}
-
                             <rect x="300" y="-120" width="42" height="304" fill="#3a342a" />
                             <rect x="560" y="-120" width="46" height="304" fill="#3a342a" />
                             <rect x="820" y="-120" width="42" height="304" fill="#3a342a" />
                             <rect x="1108" y="184" width="60" height="900" fill="#3a342a" />
-                            <rect x="1108" y="184" width="62" height="78" fill="#3a342a" />
                             <rect x="-40" y="470" width="158" height="58" fill="#3a342a" />
                             <rect x="502" y="948" width="58" height="360" fill="#3a342a" />
                             <rect x="786" y="948" width="72" height="360" fill="#3a342a" />
-
-                            <g stroke="#e8d9a0" strokeWidth="2" strokeDasharray="10 12" opacity="0.5">
-                                <line x1="321" y1="-110" x2="321" y2="180" />
-                                <line x1="583" y1="-110" x2="583" y2="180" />
-                                <line x1="841" y1="-110" x2="841" y2="180" />
-                                <line x1="1138" y1="200" x2="1138" y2="1070" />
-                            </g>
-
-                            <g className="lm-syno">
-                                <text x="300" y="-140" textAnchor="middle">Sy.No.39</text>
-                                <text x="581" y="-140" textAnchor="middle">Sy.No.42</text>
-                                <text x="70" y="430" textAnchor="middle" transform="rotate(-90 70 430)">Sy.No.44</text>
-                                <text x="70" y="720" textAnchor="middle" transform="rotate(-90 70 720)">Sy.No.43/1</text>
-                                <text x="1195" y="500" textAnchor="middle" transform="rotate(90 1195 500)">Sy.No.43/3</text>
-                                <text x="1195" y="820" textAnchor="middle" transform="rotate(90 1195 820)">Sy.No.43/3</text>
-                                <text x="600" y="1090" textAnchor="middle">Sy.No.46</text>
-                            </g>
-
-                            <g pointerEvents="none">
-                                <text x="321" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 321 60)">EXISTING 9m ROAD</text>
-                                <text x="583" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 583 60)">EXISTING 9m ROAD</text>
-                                <text x="841" y="60" className="lm-exist-lbl" textAnchor="middle" transform="rotate(-90 841 60)">EXISTING 9m ROAD</text>
-                                <text x="1138" y="640" className="lm-exist-lbl" textAnchor="middle" transform="rotate(90 1138 640)">EXISTING 12m ROAD</text>
-                            </g>
-
-                            {[
-                                { x: -520, y: 120, s: 1.2 }, { x: 1420, y: 300, s: 1.1 }, { x: -420, y: 720, s: 1 },
-                                { x: 1480, y: 820, s: 1.2 }, { x: 560, y: 1360, s: 1.1 }, { x: -560, y: 1080, s: 1 },
-                            ].map((h, i) => (
-                                <g key={`hut${i}`} transform={`translate(${h.x},${h.y}) scale(${h.s})`}>
-                                    <rect x="-20" y="12" width="40" height="6" fill="#000" opacity="0.15" />
-                                    <rect x="-18" y="-6" width="36" height="20" rx="1" fill="#e8ddc8" />
-                                    <polygon points="-22,-6 22,-6 14,-20 -14,-20" fill="#a8552f" />
-                                    <rect x="-4" y="2" width="8" height="12" fill="#7a5a3a" />
-                                </g>
-                            ))}
-
-                            <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.45" />
+                            <rect x="112" y="180" width="1002" height="774" rx="4" fill="none" stroke="#6b5c3f" strokeWidth="3" strokeDasharray="2 6" opacity="0.4" />
                         </g>
 
-
                         <g>
-                            <g className="lm-heavy-fx" filter="url(#plotSh)">
-                                <polygon points={ROADS.top} fill="url(#asphalt)" />
-                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltV)" />
-                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltV)" />
-                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphalt)" />
-                            </g>
-                            <g opacity="0.9" pointerEvents="none">
-                                <polygon points={ROADS.top} fill="url(#asphaltTex)" />
-                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="url(#asphaltTex)" />
-                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="url(#asphaltTex)" />
-                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="url(#asphaltTex)" />
-                            </g>
-                            <g className="lm-kerb" pointerEvents="none">
-                                <polygon points={ROADS.top} />
-                                <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} />
-                                <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} />
-                                <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} />
-                            </g>
+                            <polygon points={ROADS.top} fill="#40392d" />
+                            <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#40392d" />
+                            <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#40392d" />
+                            <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#40392d" />
                             <rect x={ROADS.path.x} y={ROADS.path.y} width={ROADS.path.w} height={ROADS.path.h} fill="#7d7454" opacity="0.95" />
-                            <g className="lm-paver" pointerEvents="none">
-                                {Array.from({ length: Math.floor((ROADS.path.w - 14) / 30) }).map((_, i) => (
-                                    <line key={i} x1={ROADS.path.x + 14 + i * 30} y1={ROADS.path.y} x2={ROADS.path.x + 14 + i * 30} y2={ROADS.path.y + ROADS.path.h} />
-                                ))}
-                            </g>
+
                             <g className="lm-lane" pointerEvents="none">
                                 <line x1="531" y1="270" x2="531" y2="944" />
                                 <line x1="822" y1="270" x2="822" y2="944" />
                                 <line x1="122" y1="499" x2="500" y2="499" />
                                 <line x1="118" y1="223" x2="1108" y2="223" />
                             </g>
-                            <g className="lm-drain" pointerEvents="none">
-                                <circle cx="531" cy="360" r="3.4" /><circle cx="531" cy="640" r="3.4" /><circle cx="531" cy="880" r="3.4" />
-                                <circle cx="822" cy="420" r="3.4" /><circle cx="822" cy="700" r="3.4" /><circle cx="822" cy="900" r="3.4" />
-                            </g>
+
                             <g pointerEvents="none">
                                 <text x="600" y="216" className="lm-road-lbl lm-road-lbl-lg">APPROVED LAYOUT 12m ROAD</text>
                                 <text x="531" y="620" className="lm-road-lbl" transform="rotate(-90 531 620)">9m ROAD</text>
@@ -846,48 +702,15 @@ export default function LayoutMap() {
                                 <text x="300" y="666" className="lm-road-lbl lm-road-lbl-sm">3m PATHWAY</text>
                             </g>
 
-                            <polygon points={KARAB} className="lm-heavy-fx" fill="url(#grass)" filter="url(#plotSh)" />
-                            <polygon points={KARAB} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
-                            <polygon points={KARAB} className="lm-turf-edge" pointerEvents="none" />
-                            <polygon points={KARAB} className="lm-amen-border" pointerEvents="none" />
-                            <path d="M175,795 Q300,760 430,795 Q470,860 430,915 Q300,935 180,915 Q150,855 175,795 Z" className="lm-jog" pointerEvents="none" />
-                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx + 6} ry={KARAB_LAKE.ry + 5} fill="#7d8a5c" opacity="0.6" pointerEvents="none" />
-                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} className="lm-heavy-fx" fill="url(#lake)" filter="url(#softSh)" />
-                            <ellipse cx={KARAB_LAKE.cx + 10} cy={KARAB_LAKE.cy + 6} rx={KARAB_LAKE.rx * 0.62} ry={KARAB_LAKE.ry * 0.6} fill="#3f8f96" opacity="0.5" pointerEvents="none" />
-                            <ellipse cx={KARAB_LAKE.cx - 40} cy={KARAB_LAKE.cy - 22} rx="54" ry="18" fill="#fff" opacity="0.28" pointerEvents="none" />
-                            {[0.78, 0.55, 0.34].map((k, i) => (
-                                <ellipse key={`rip${i}`} cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx * k} ry={KARAB_LAKE.ry * k} fill="none" stroke="#cfeef0" strokeWidth="1" opacity={0.22 - i * 0.04} pointerEvents="none" />
-                            ))}
-                            {Array.from({ length: 30 }).map((_, i) => {
-                                const a = (i / 30) * Math.PI * 2;
-                                return <circle key={i} cx={KARAB_LAKE.cx + Math.cos(a) * (KARAB_LAKE.rx + 6)} cy={KARAB_LAKE.cy + Math.sin(a) * (KARAB_LAKE.ry + 5)} r={2.4 + (i % 3) * 0.8} fill={i % 2 ? "#b3ab94" : "#9a927c"} opacity="0.85" pointerEvents="none" />;
-                            })}
-                            {[[200, 760, "#e07aa8"], [420, 770, "#f0b429"], [180, 905, "#c85a9a"], [440, 900, "#e8a020"]].map(([x, y, col], i) => (
-                                <g key={i} pointerEvents="none">
-                                    <circle cx={x as number} cy={y as number} r="9" fill="#3c6424" />
-                                    <circle cx={(x as number) - 3} cy={(y as number) - 2} r="4" fill={col as string} />
-                                    <circle cx={(x as number) + 3} cy={(y as number) + 1} r="3.4" fill={col as string} opacity="0.8" />
-                                </g>
-                            ))}
+                            <polygon points={KARAB} fill="#77a648" />
+                            <ellipse cx={KARAB_LAKE.cx} cy={KARAB_LAKE.cy} rx={KARAB_LAKE.rx} ry={KARAB_LAKE.ry} fill="#5fada6" />
                             <text x="300" y="835" className="lm-amen-label">KARAB</text>
 
-                            <polygon points={CA} className="lm-heavy-fx" fill="url(#ca)" filter="url(#plotSh)" />
-                            <polygon points={CA} fill="url(#turf)" opacity="0.5" pointerEvents="none" />
-                            <polygon points={CA} className="lm-turf-edge" pointerEvents="none" />
-                            <polygon points={CA} className="lm-amen-border" pointerEvents="none" />
-                            <g transform="translate(195,330)" pointerEvents="none">
-                                <ellipse cx="0" cy="20" rx="30" ry="8" fill="#000" opacity="0.16" />
-                                <rect x="-26" y="-6" width="52" height="24" rx="2" fill="#eef4ea" />
-                                <polygon points="-30,-6 30,-6 22,-20 -22,-20" fill="#8fb87a" />
-                                <rect x="-18" y="4" width="7" height="12" fill="#a9c99a" /><rect x="-4" y="4" width="7" height="12" fill="#a9c99a" /><rect x="10" y="4" width="7" height="12" fill="#a9c99a" />
-                            </g>
+                            <polygon points={CA} fill="#8fbe5a" />
                             <text x={centroid(CA).x} y={centroid(CA).y - 6} className="lm-ca-label">CA</text>
                             <text x={centroid(CA).x} y={centroid(CA).y + 40} className="lm-ca-sub">CIVIC AMENITY</text>
 
-                            <polygon points={STP} className="lm-heavy-fx" fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" filter="url(#softSh)" />
-                            <rect x="446" y="704" width="40" height="38" rx="2" fill="#b9aecb" />
-                            <polygon points="444,704 488,704 482,692 450,692" fill="url(#stpRoof)" />
-                            <circle cx="456" cy="726" r="5" fill="#9d88c4" /><circle cx="474" cy="726" r="5" fill="#9d88c4" />
+                            <polygon points={STP} fill="#e4d7f4" stroke="#9670c2" strokeWidth="1.4" strokeDasharray="4 3" />
                             <text x={centroid(STP).x} y={centroid(STP).y + 6} className="lm-stp-label">STP</text>
 
                             {PLOTS.map((p) => {
@@ -897,18 +720,15 @@ export default function LayoutMap() {
                                 const effective: Status = st || "available";
                                 const shown: Status = filter === "all" ? "available" : effective;
                                 const meta = STATUS_META[shown];
-                                const fillNormal = meta.fill;
-                                const fillSel = meta.sel;
                                 const dimmed = filter !== "all" && effective !== filter;
                                 return (
                                     <g key={p.id} className="lm-plot" onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
                                         role="button" tabIndex={0}
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
-                                        <polygon points={p.pts} className={`lm-plot-shape${isSel ? " lm-heavy-fx" : ""}`}
-                                            fill={isSel ? fillSel : fillNormal}
-                                            stroke="url(#gold)" strokeWidth={isSel ? 2.6 : 1.3}
-                                            filter={isSel ? "url(#selGlow)" : undefined} />
+                                        <polygon points={p.pts} className="lm-plot-shape"
+                                            fill={isSel ? meta.sel : meta.fill}
+                                            stroke={isSel ? "#fff" : "url(#gold)"} strokeWidth={isSel ? 2.4 : 1.2} />
                                         <text x={c.x} y={c.y + 5} className="lm-plot-num">{p.id}</text>
                                     </g>
                                 );
@@ -919,31 +739,9 @@ export default function LayoutMap() {
                                 {STONES.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
                             </g>
 
-                            {night
-                                ? <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />
-                                : <polygon points={BOUNDARY} fill="url(#sun)" pointerEvents="none" />}
+                            {night && <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#0a1424" opacity="0.72" pointerEvents="none" />}
 
-                            <g style={{ transition: "opacity .18s ease" }}>
-                                {night && (
-                                    <g pointerEvents="none">
-                                        <polygon points={ROADS.top} fill="#5a5548" opacity="0.5" />
-                                        <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#5a5548" opacity="0.5" />
-                                        <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#5a5548" opacity="0.5" />
-                                        <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#5a5548" opacity="0.5" />
-                                        <polygon points={ROADS.top} fill="#4a463a" />
-                                        <rect x={ROADS.leftV.x} y={ROADS.leftV.y} width={ROADS.leftV.w} height={ROADS.leftV.h} fill="#4a463a" />
-                                        <rect x={ROADS.rightV.x} y={ROADS.rightV.y} width={ROADS.rightV.w} height={ROADS.rightV.h} fill="#4a463a" />
-                                        <rect x={ROADS.midH.x} y={ROADS.midH.y} width={ROADS.midH.w} height={ROADS.midH.h} fill="#4a463a" />
-                                        <g stroke="#fff0b8" strokeWidth="2.6" strokeDasharray="14 16" opacity="0.85" strokeLinecap="round">
-                                            <line x1="531" y1="266" x2="531" y2="944" />
-                                            <line x1="822" y1="266" x2="822" y2="944" />
-                                            <line x1="122" y1="499" x2="556" y2="499" />
-                                            <line x1="118" y1="223" x2="1108" y2="223" />
-                                        </g>
-                                    </g>
-                                )}
-                                {STREET_LIGHT_POS.map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
-                            </g>
+                            {STREET_LIGHT_POS.map(([x, y], i) => <StreetLight key={i} x={x} y={y} night={night} />)}
                         </g>
                     </g>
 
@@ -955,7 +753,6 @@ export default function LayoutMap() {
                     </g>
                 </svg>
 
-                {/* Bottom action row — Filter · Maps · Photos (side by side) */}
                 <div className="lm-actionrow">
                     <div className="lm-filterwrap">
                         <button
@@ -966,9 +763,7 @@ export default function LayoutMap() {
                             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#d4ab54" strokeWidth="2">
                                 <path d="M4 5h16M7 12h10M10 19h4" strokeLinecap="round" />
                             </svg>
-                            <span className="lm-actbtn-txt">
-                                {filter === "all" ? "All" : STATUS_META[filter].label}
-                            </span>
+                            <span className="lm-actbtn-txt">{filter === "all" ? "All" : STATUS_META[filter].label}</span>
                         </button>
                     </div>
 
@@ -988,7 +783,6 @@ export default function LayoutMap() {
                     </button>
                 </div>
 
-                {/* Filter menu — fixed overlay, floats ABOVE the map without shifting it */}
                 {filterOpen && (
                     <div className="lm-filtermenu">
                         <div className="lm-filtermenu-head">
@@ -1049,7 +843,6 @@ export default function LayoutMap() {
                     </div>
                 )}
 
-                {/* Lightbox — tap to enlarge */}
                 {lightbox !== null && media[lightbox] && (
                     <div className="lm-lightbox" onClick={() => setLightbox(null)}>
                         <button className="lm-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close">
@@ -1081,7 +874,7 @@ export default function LayoutMap() {
                     <button onClick={() => btnZoom(1.25)} aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={() => btnZoom(0.8)} aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg></button>
                     <button onClick={rotate} aria-label="Rotate"><svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 9a8 8 0 1 1-.8 4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" /><path d="M4 4v5h5" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
-                    <button onClick={reset} aria-label="Reset"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
+                    <button onClick={reset} aria-label="Center map"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
                     <button className={night ? "lm-ctrl-on" : ""} onClick={() => setNight((v) => !v)} aria-label="Toggle day / night">
                         {night ? (
                             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><path d="M12 2v2M12 20v2M4.5 4.5l1.4 1.4M18.1 18.1l1.4 1.4M2 12h2M20 12h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" strokeLinecap="round" /></svg>
@@ -1099,7 +892,7 @@ export default function LayoutMap() {
                         </a>
                     )}
                     <button className="lm-tiq-logo" onClick={() => setTiqOpen((v) => !v)} aria-label="Train IQ">
-                        <svg viewBox="0 0 62 34" width="46" height="25" aria-hidden="true">
+                        <svg viewBox="0 0 62 34" width="42" height="23" aria-hidden="true">
                             <rect x="4" y="6" width="5.4" height="22" rx="1" fill="#14243c" />
                             <path d="M32 6.4 a11 11 0 1 0 6.4 19.9 l4.2 4.2 3.8-3.8 -4.1-4.1 A11 11 0 0 0 32 6.4 Z M32 11.4 a6 6 0 1 1 0 12 a6 6 0 0 1 0-12 Z" fill="#14243c" />
                             <rect x="50" y="22.5" width="5.6" height="5.6" rx="1" fill="#14243c" />
@@ -1108,7 +901,6 @@ export default function LayoutMap() {
                 </div>
             </div>
 
-            {/* Detail panel */}
             <div className={`lm-panel ${sel ? "open" : ""}`}>
                 {sel && (
                     <>
@@ -1160,7 +952,7 @@ export default function LayoutMap() {
                 )}
             </div>
 
-            {!sel && <div className="lm-hint">Tap a plot · pinch to zoom · twist to rotate</div>}
+            {!sel && ready && <div className="lm-hint">Tap a plot · pinch to zoom · twist to rotate</div>}
         </div>
     );
 }
@@ -1179,7 +971,7 @@ const css = `
   --gold:#d4ab54; --gold-lt:#f2dd9a; --line:rgba(212,171,84,.32);
   --txt:#f3f6ee; --muted:#aeb6a4; --glass:rgba(18,22,16,.62);
   position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%;
-  background:radial-gradient(120% 90% at 30% 10%,#20261a,#0c0f0a);
+  background:#1c2317;
   color:var(--txt); font-family:'Inter',system-ui,-apple-system,sans-serif;
   overflow:hidden; overscroll-behavior:none; touch-action:none;
 }
@@ -1190,36 +982,21 @@ const css = `
   background:linear-gradient(180deg,rgba(8,11,7,.9),rgba(8,11,7,.5) 70%,transparent);
   backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
 .lm-brand{ display:flex; align-items:center; gap:11px; }
-.lm-logo{ display:flex; filter:drop-shadow(0 2px 10px rgba(212,171,84,.4)); }
-.lm-brand-name{ font-family:'Playfair Display',Georgia,serif; font-weight:800; font-size:21px; line-height:1;
-  background:linear-gradient(180deg,#fdf6e2,#e7cd85 55%,#c9a24b);
-  -webkit-background-clip:text; background-clip:text; color:transparent; letter-spacing:-.01em; }
+.lm-logo{ display:flex; }
+.lm-brand-name{ font-family:'Playfair Display',Georgia,serif; font-weight:800; font-size:21px; line-height:1; color:var(--gold-lt); letter-spacing:-.01em; }
 .lm-brand-sub{ font-size:10px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-top:3px; }
 
 .lm-search{ flex:1; min-width:160px; position:relative; }
-.lm-search::before{ content:""; position:absolute; left:14px; top:50%; transform:translateY(-50%);
-  width:15px; height:15px; border:2px solid var(--gold); border-radius:50%;
-  box-shadow:0 0 0 0 transparent; opacity:.8; }
-.lm-search::after{ content:""; position:absolute; left:25px; top:calc(50% + 4px); width:6px; height:2px;
-  background:var(--gold); transform:rotate(45deg); opacity:.8; border-radius:2px; }
 .lm-search input{ width:100%; box-sizing:border-box; background:var(--glass);
-  border:1px solid var(--line); border-radius:999px; padding:11px 16px 11px 38px;
-  color:var(--txt); font-size:13px; outline:none; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-  transition:border-color .2s, box-shadow .2s; }
-.lm-search input:focus{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,171,84,.18); }
+  border:1px solid var(--line); border-radius:999px; padding:11px 16px; color:var(--txt); font-size:13px; outline:none; }
+.lm-search input:focus{ border-color:var(--gold); }
 .lm-search input::placeholder{ color:#8b9280; }
 
 .lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
-  overflow:hidden; background:radial-gradient(120% 90% at 38% 18%,#9c8a54,#5f5230);
-  contain:layout size; }
+  overflow:hidden; background:#6b5c32; contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
-
-/* "Fast mode" — expensive filters temporarily disabled while the camera is
-   being actively dragged / pinched / wheel-zoomed. CSS filter overrides the
-   SVG presentation attribute, so this needs no re-render / no JSX changes. */
-.lm-svg.lm-fast .lm-heavy-fx{ filter:none !important; }
 
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
@@ -1227,19 +1004,16 @@ const css = `
 .lm-actbtn.lm-filterbtn.lm-fchip-sold{ border-color:#e0504a; }
 .lm-filterbackdrop{ position:absolute; inset:0; z-index:15; }
 .lm-filtermenu-head{ display:flex; align-items:center; justify-content:space-between; padding:6px 8px 8px 12px; margin-bottom:2px; border-bottom:1px solid rgba(212,171,84,.16); font-size:13px; font-weight:700; color:var(--gold-lt); font-family:'Playfair Display',serif; }
-.lm-menu-close{ width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
-.lm-menu-close:hover{ background:rgba(255,255,255,.06); }
+.lm-menu-close{ width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .lm-filtermenu{ position:absolute; left:50%;
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:17;
   background:rgba(18,22,16,.97); border:1px solid var(--line); border-radius:16px; padding:6px;
-  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 12px 32px rgba(0,0,0,.5);
   display:flex; flex-direction:column; gap:2px; min-width:200px;
-  transform:translateX(-50%); animation:fmenu .18s ease; }
-@keyframes fmenu{ from{ opacity:0; transform:translate(-50%,8px);} to{ opacity:1; transform:translate(-50%,0);} }
-.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; transition:background .15s; white-space:nowrap; }
+  transform:translateX(-50%); }
+.lm-filteritem{ display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--txt); font-size:13px; font-weight:600; padding:11px 14px; border-radius:11px; cursor:pointer; text-align:left; white-space:nowrap; }
 .lm-filteritem:hover{ background:rgba(212,171,84,.1); }
 .lm-filteritem.active{ background:rgba(212,171,84,.16); }
-.lm-filteritem-dot{ width:11px; height:11px; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.4); background:#568636; }
+.lm-filteritem-dot{ width:11px; height:11px; border-radius:50%; background:#568636; }
 .lm-filteritem-dot.lm-fchip-all{ background:#8b93a4; }
 .lm-filteritem-dot.lm-fchip-available{ background:#568636; }
 .lm-filteritem-dot.lm-fchip-reserved{ background:#f5b942; }
@@ -1248,69 +1022,39 @@ const css = `
 .lm-tiq-wrap{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 16px);
   bottom:calc(env(safe-area-inset-bottom,0px) + 20px); z-index:40; display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px; }
 .lm-tiq-logo{ display:flex; align-items:center; justify-content:center; cursor:pointer;
-  background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:12px;
-  padding:6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.35); transition:transform .15s; }
-.lm-tiq-logo:active{ transform:scale(.94); }
+  background:rgba(244,246,240,.94); border:1px solid rgba(20,32,54,.14); border-radius:12px; padding:6px 10px; }
 .lm-tiq-pop{ text-decoration:none; background:rgba(20,36,60,.96); color:#fff; border-radius:12px;
-  padding:9px 14px; box-shadow:0 8px 24px rgba(0,0,0,.45); backdrop-filter:blur(10px);
-  white-space:nowrap; animation:tiqpop .2s ease; }
-.lm-tiq-pop-title{ font-size:12px; font-weight:700; letter-spacing:.01em; }
+  padding:9px 14px; white-space:nowrap; }
+.lm-tiq-pop-title{ font-size:12px; font-weight:700; }
 .lm-tiq-pop-sub{ font-size:11px; color:#a9c4e6; margin-top:1px; }
-@keyframes tiqpop{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
 
-.lm-kerb polygon, .lm-kerb rect{ fill:none; stroke:#b9b39c; stroke-width:2.4; opacity:.4; }
-.lm-paver line{ stroke:#5f5945; stroke-width:1; opacity:.55; }
-.lm-lane line{ stroke:#f4e6b0; stroke-width:2.4; stroke-dasharray:12 16; opacity:.62; stroke-linecap:round; }
-.lm-road-lbl{ fill:#e8dcb8; font-size:12px; font-weight:600; letter-spacing:.16em; text-anchor:middle;
-  font-family:'Inter',sans-serif; opacity:.85; }
-.lm-road-lbl-lg{ font-size:15px; font-weight:700; letter-spacing:.2em; fill:#f4e6b0; opacity:.95; }
+.lm-lane line{ stroke:#f4e6b0; stroke-width:2.4; stroke-dasharray:12 16; opacity:.55; stroke-linecap:round; }
+.lm-road-lbl{ fill:#e8dcb8; font-size:12px; font-weight:600; letter-spacing:.16em; text-anchor:middle; opacity:.85; }
+.lm-road-lbl-lg{ font-size:15px; font-weight:700; letter-spacing:.2em; fill:#f4e6b0; }
 .lm-road-lbl-sm{ font-size:9.5px; letter-spacing:.12em; }
-.lm-syno text{ fill:#5a4f38; font-size:15px; font-weight:700; letter-spacing:.04em; font-family:'Inter',sans-serif; }
-.lm-exist-lbl{ fill:#cfc39a; font-size:11px; font-weight:700; letter-spacing:.12em; font-family:'Inter',sans-serif; opacity:.8; }
-.lm-drain circle{ fill:#1e1b15; stroke:#4c4636; stroke-width:.8; }
-.lm-turf-edge{ fill:none; stroke:#1e3510; stroke-width:3.5; opacity:.95; stroke-linejoin:round; }
-.lm-amen-border{ fill:none; stroke:#14260a; stroke-width:1.6; stroke-dasharray:7 5; opacity:.9; stroke-linejoin:round; }
 
 .lm-splash{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; cursor:pointer;
-  background:radial-gradient(120% 100% at 50% 30%,#1c2417,#0a0d07 80%);
-  animation:splashOut .4s ease forwards; animation-delay:1.6s; }
-.lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center;
-  animation:splashIn .8s cubic-bezier(.22,1,.36,1); }
-.lm-splash-logo{ filter:drop-shadow(0 4px 20px rgba(212,171,84,.5)); margin-bottom:18px;
-  animation:logoFloat 3s ease-in-out infinite; }
-@keyframes logoFloat{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
-.lm-splash-name{ font-family:'Playfair Display',serif; font-weight:800; font-size:34px; line-height:1;
-  background:linear-gradient(180deg,#fdf6e2,#e7cd85 55%,#c9a24b);
-  -webkit-background-clip:text; background-clip:text; color:transparent; letter-spacing:-.01em; }
+  align-items:center; justify-content:center;
+  background:#151b10; }
+.lm-splash-inner{ display:flex; flex-direction:column; align-items:center; text-align:center; }
+.lm-splash-logo{ margin-bottom:18px; }
+.lm-splash-name{ font-family:'Playfair Display',serif; font-weight:800; font-size:30px; line-height:1; color:var(--gold-lt); }
 .lm-splash-sub{ margin-top:10px; font-size:11px; letter-spacing:.24em; color:#b9c2a8; }
 .lm-splash-tag{ margin-top:6px; font-size:12px; color:#8b9280; letter-spacing:.08em; }
 .lm-splash-bar{ margin-top:26px; width:180px; height:3px; border-radius:99px; background:rgba(212,171,84,.18); overflow:hidden; }
-.lm-splash-bar span{ display:block; height:100%; width:0; border-radius:99px;
-  background:linear-gradient(90deg,#f2dd9a,#d4ab54); animation:barFill 1.7s ease forwards; }
-@keyframes barFill{ 0%{width:0} 100%{width:100%} }
-.lm-splash-loading{ margin-top:14px; font-size:11px; letter-spacing:.14em; color:#8b9280; text-transform:uppercase;
-  animation:pulse 1.6s ease-in-out infinite; }
-@keyframes pulse{ 0%,100%{opacity:.5} 50%{opacity:1} }
+.lm-splash-bar span{ display:block; height:100%; border-radius:99px; background:#d4ab54; transition:width .25s ease; }
+.lm-splash-loading{ margin-top:14px; font-size:11px; letter-spacing:.14em; color:#8b9280; text-transform:uppercase; }
 .lm-splash-credit{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
   font-size:10px; letter-spacing:.1em; color:#6b7358; }
-@keyframes splashIn{ from{opacity:0; transform:translateY(14px) scale(.97)} to{opacity:1; transform:none} }
-@keyframes splashOut{ to{opacity:0; visibility:hidden} }
-.lm-jog{ fill:none; stroke:#e6dbb2; stroke-width:8; opacity:.5; stroke-linecap:round; }
-.lm-wall{ fill:none; stroke:#3a3527; stroke-width:8; stroke-linejoin:round; opacity:.75; }
-.lm-redline{ fill:none; stroke:#e0504a; stroke-width:2.6; stroke-linejoin:round; opacity:.9;
-  filter:drop-shadow(0 0 4px rgba(224,80,74,.45)); }
 
 .lm-plot{ cursor:pointer; }
-.lm-plot-shape{ transition:filter .22s ease, transform .22s ease; }
-.lm-plot-bevel{ fill:none; stroke:#ffffff; stroke-width:1; opacity:.28; }
-.lm-plot:hover .lm-plot-shape{ filter:url(#selGlow) brightness(1.06); }
+.lm-plot-shape{ transition:filter .18s ease; }
+.lm-plot:hover .lm-plot-shape{ filter:brightness(1.08); }
 .lm-plot:focus{ outline:none; }
 .lm-plot:focus-visible .lm-plot-shape{ stroke:#fff; stroke-width:2.6; }
 .lm-plot-num{ fill:#ffffff; font-size:15px; font-weight:800; text-anchor:middle; pointer-events:none;
-  font-family:'Inter',sans-serif; paint-order:stroke; stroke:rgba(0,0,0,.4); stroke-width:2.2px; stroke-linejoin:round; }
-.lm-amen-label{ fill:#2c4a1a; font-size:20px; font-weight:800; text-anchor:middle; letter-spacing:.16em;
-  font-family:'Playfair Display',serif; }
+  paint-order:stroke; stroke:rgba(0,0,0,.4); stroke-width:2.2px; stroke-linejoin:round; }
+.lm-amen-label{ fill:#2c4a1a; font-size:20px; font-weight:800; text-anchor:middle; letter-spacing:.16em; font-family:'Playfair Display',serif; }
 .lm-ca-label{ fill:#234017; font-size:26px; font-weight:900; text-anchor:middle; font-family:'Playfair Display',serif; }
 .lm-ca-sub{ fill:#2c4a1a; font-size:8px; font-weight:700; text-anchor:middle; letter-spacing:.14em; opacity:.85; }
 .lm-stp-label{ fill:#3a2358; font-size:12px; font-weight:800; text-anchor:middle; }
@@ -1320,32 +1064,22 @@ const css = `
   display:flex; gap:10px; align-items:flex-end; }
 .lm-actbtn{ text-decoration:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   width:64px; height:60px; border-radius:16px; cursor:pointer;
-  border:1px solid var(--line); background:var(--glass); color:var(--txt);
-  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  box-shadow:0 8px 24px rgba(0,0,0,.45); transition:transform .15s, background .2s; }
+  border:1px solid var(--line); background:var(--glass); color:var(--txt); }
 .lm-actbtn:hover{ background:rgba(212,171,84,.12); }
 .lm-actbtn:active{ transform:scale(.95); }
 .lm-actbtn-txt{ font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.9; }
 
-.lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
-  background:rgba(6,9,6,.6); backdrop-filter:blur(6px); animation:fadein .2s ease; }
-.lm-photos-modal{ width:min(88vw,460px); background:linear-gradient(180deg,#1a2116,#0d120a);
-  border:1px solid var(--line); border-radius:20px; padding:16px 18px 22px; box-shadow:0 24px 60px rgba(0,0,0,.6); }
-.lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;
-  font-size:15px; font-weight:700; font-family:'Playfair Display',serif; color:var(--gold-lt); }
-.lm-photos-empty{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:36px 0;
-  color:var(--muted); font-size:13px; letter-spacing:.02em; }
-@keyframes fadein{ from{opacity:0} to{opacity:1} }
-
+.lm-photos-overlay{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; background:rgba(6,9,6,.6); }
+.lm-photos-modal{ width:min(88vw,460px); background:#151d0f; border:1px solid var(--line); border-radius:20px; padding:16px 18px 22px; }
+.lm-photos-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; font-size:15px; font-weight:700; font-family:'Playfair Display',serif; color:var(--gold-lt); }
+.lm-photos-empty{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:36px 0; color:var(--muted); font-size:13px; }
 .lm-photos-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:60vh; overflow-y:auto; padding:2px; }
 .lm-photo-cell{ position:relative; aspect-ratio:1; border:none; border-radius:12px; overflow:hidden; cursor:pointer; background:#000; padding:0; }
 .lm-photo-cell img, .lm-photo-cell video{ width:100%; height:100%; object-fit:cover; display:block; }
-.lm-photo-cell:active{ transform:scale(.97); }
 .lm-photo-play{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.28); }
-.lm-lightbox{ position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center;
-  background:rgba(0,0,0,.92); backdrop-filter:blur(4px); animation:fadein .2s ease; }
+.lm-lightbox{ position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.92); }
 .lm-lightbox-inner{ max-width:92vw; max-height:82vh; display:flex; flex-direction:column; align-items:center; gap:12px; }
-.lm-lightbox-media{ max-width:92vw; max-height:76vh; border-radius:12px; object-fit:contain; box-shadow:0 20px 60px rgba(0,0,0,.6); }
+.lm-lightbox-media{ max-width:92vw; max-height:76vh; border-radius:12px; object-fit:contain; }
 .lm-lightbox-cap{ color:#f3f6ee; font-size:14px; text-align:center; max-width:80vw; }
 .lm-lightbox-close{ position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); right:16px; z-index:2;
   width:42px; height:42px; border-radius:12px; border:1px solid var(--line); background:rgba(20,24,16,.7); color:#fff;
@@ -1358,45 +1092,39 @@ const css = `
 .lm-ctrl{ position:absolute; right:calc(env(safe-area-inset-right,0px) + 14px);
   bottom:calc(env(safe-area-inset-bottom,0px) + 92px); z-index:8;
   display:flex; flex-direction:column; gap:1px; border-radius:16px; overflow:hidden;
-  border:1px solid var(--line); background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-  box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  border:1px solid var(--line); background:var(--glass); }
 .lm-ctrl button{ width:48px; height:48px; border:none; background:transparent; color:var(--gold);
   display:flex; align-items:center; justify-content:center; cursor:pointer;
-  border-bottom:1px solid rgba(212,171,84,.14); transition:background .15s; }
+  border-bottom:1px solid rgba(212,171,84,.14); }
 .lm-ctrl button:last-child{ border-bottom:none; }
-.lm-ctrl button.lm-ctrl-on{ background:linear-gradient(180deg,#2a3550,#1a2338); color:#ffd76a; }
+.lm-ctrl button.lm-ctrl-on{ background:#1a2338; color:#ffd76a; }
 .lm-ctrl button:hover{ background:rgba(212,171,84,.1); }
 .lm-ctrl button:active{ background:rgba(212,171,84,.2); }
 
 .lm-hint{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 74px); left:50%; transform:translateX(-50%);
   z-index:7; background:var(--glass); border:1px solid var(--line); color:var(--txt); font-size:12px;
-  padding:9px 18px; border-radius:999px; backdrop-filter:blur(14px); white-space:nowrap; pointer-events:none;
-  box-shadow:0 8px 24px rgba(0,0,0,.4); animation:fade 6s ease forwards; }
+  padding:9px 18px; border-radius:999px; white-space:nowrap; pointer-events:none;
+  animation:fade 6s ease forwards; }
 @keyframes fade{ 0%,70%{opacity:1;} 100%{opacity:0;} }
 
 .lm-panel{ position:absolute; left:0; right:0; bottom:0; z-index:20;
-  background:linear-gradient(180deg,rgba(24,30,20,.96),rgba(11,15,10,.98));
-  border-top:1px solid var(--line); border-radius:24px 24px 0 0;
+  background:#121810; border-top:1px solid var(--line); border-radius:24px 24px 0 0;
   padding:8px 20px calc(env(safe-area-inset-bottom,0px) + 22px);
-  transform:translateY(120%); transition:transform .4s cubic-bezier(.22,1,.36,1);
-  box-shadow:0 -24px 60px rgba(0,0,0,.6); backdrop-filter:blur(20px); }
+  transform:translateY(120%); transition:transform .35s ease; }
 .lm-panel.open{ transform:translateY(0); }
 .lm-panel::before{ content:""; display:block; width:44px; height:5px; border-radius:99px;
   background:rgba(212,171,84,.4); margin:2px auto 14px; }
 .lm-panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
 .lm-panel-kicker{ font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); font-weight:600; }
-.lm-panel-title{ font-size:30px; font-weight:800; font-family:'Playfair Display',serif; line-height:1; margin-top:2px;
-  background:linear-gradient(180deg,#fdf6e2,#d4ab54); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.lm-panel-title{ font-size:30px; font-weight:800; font-family:'Playfair Display',serif; line-height:1; margin-top:2px; color:var(--gold-lt); }
 .lm-close{ width:38px; height:38px; border-radius:12px; border:1px solid var(--line); background:transparent; color:var(--muted);
-  display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
-.lm-close:hover{ background:rgba(255,255,255,.05); }
+  display:flex; align-items:center; justify-content:center; cursor:pointer; }
 .lm-diagram{ display:flex; justify-content:center; margin:6px 0 18px; }
 .lm-dimbox{ position:relative; width:190px; height:110px; margin:22px 30px; }
 .lm-dimbox-inner{ position:absolute; inset:0; border:2px solid var(--gold); border-radius:8px;
-  background:rgba(212,171,84,.07); box-shadow:inset 0 0 22px rgba(212,171,84,.12);
+  background:rgba(212,171,84,.07);
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
-.lm-dim-compass{ opacity:.9; }
-.lm-dim-facing{ color:var(--gold-lt); font-weight:800; font-size:15px; letter-spacing:.01em; }
+.lm-dim-facing{ color:var(--gold-lt); font-weight:800; font-size:15px; }
 .lm-dim-facelbl{ color:var(--muted); font-size:8px; letter-spacing:.18em; }
 .lm-dim{ position:absolute; color:var(--gold-lt); font-size:11px; font-weight:600; white-space:nowrap; }
 .lm-dim-top{ top:-18px; left:50%; transform:translateX(-50%); }
@@ -1409,19 +1137,16 @@ const css = `
 .lm-row-l{ font-size:11.5px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
 .lm-row-v{ font-size:14.5px; font-weight:700; text-align:right; }
 
-.lm-status-badge{ font-size:12.5px; font-weight:800; letter-spacing:.02em; padding:5px 14px; border-radius:999px;
-  border:1px solid transparent; }
+.lm-status-badge{ font-size:12.5px; font-weight:800; padding:5px 14px; border-radius:999px; border:1px solid transparent; }
 .lm-status-available{ background:rgba(86,134,54,.18); color:#8fd257; border-color:rgba(86,134,54,.5); }
 .lm-status-reserved{ background:rgba(245,185,66,.16); color:#ffcf72; border-color:rgba(245,185,66,.5); }
 .lm-status-sold{ background:rgba(224,80,74,.16); color:#ff8079; border-color:rgba(224,80,74,.5); }
 
 .lm-cta-row{ display:flex; gap:10px; }
 .lm-cta{ flex:1; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
-  padding:14px; border:none; border-radius:14px; cursor:pointer; color:#fff; font-weight:800; font-size:15px;
-  transition:transform .12s, filter .15s; }
-.lm-cta-wa{ background:linear-gradient(180deg,#2fc463,#1faa4f); box-shadow:0 10px 26px rgba(37,180,80,.35); }
-.lm-cta-call{ background:linear-gradient(180deg,#4a91e2,#2f6fc4); box-shadow:0 10px 26px rgba(47,111,196,.35); }
-.lm-cta:hover{ transform:translateY(-1px); filter:brightness(1.05); }
+  padding:14px; border:none; border-radius:14px; cursor:pointer; color:#fff; font-weight:800; font-size:15px; }
+.lm-cta-wa{ background:#25b450; }
+.lm-cta-call{ background:#2f6fc4; }
 .lm-cta:active{ transform:translateY(1px); }
 
 @media (min-width:640px){
