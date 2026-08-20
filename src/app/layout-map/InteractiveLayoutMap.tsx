@@ -5,12 +5,14 @@ import { createClient } from "@/lib/supabase/client"; // adjust path to your cli
 
 /**
  * Basava Ganguru — Interactive Master Layout (flat 2D)
- * - Camera auto-fits the plotted layout and stays centered on load/resize
- * - Flat, lightweight 2D styling (no drop-shadow "3D" filters, no texture fills)
- * - Real loading gate: waits for data + fonts (with a safety timeout) before
- *   the map is revealed, instead of a fixed-length splash timer
- * - Same performance approach as before: camera state lives in refs, a single
- *   RAF pump drives both eased animation and direct-manipulation painting
+ *
+ * Centering fix: the previous version let the <svg viewBox> handle scaling
+ * ("preserveAspectRatio=meet"), which silently letterboxes whichever axis
+ * doesn't match the container's aspect ratio — on a tall phone that pushed
+ * the whole layout down/right with a big dead zone above it. This version
+ * sizes the viewBox to the stage's own pixel box every render, so there is
+ * no hidden browser-side offset — ALL centering/zoom/pan math is ours, in
+ * plain pixels, and the map is always framed around its content center.
  */
 
 type Plot = {
@@ -114,14 +116,16 @@ const ROADS = {
     path: { x: 118, y: 648, w: 384, h: 42 },
 };
 
-type ViewBox = { x: number; y: number; w: number; h: number };
+type Box = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
 
-// The natural drawing canvas for all coordinates above.
-const BASE_VB: ViewBox = { x: 60, y: 190, w: 1130, h: 1010 };
+// The natural drawing canvas all coordinates above are authored in.
+const BASE_VB: Box = { x: 60, y: 190, w: 1130, h: 1010 };
 
-// Tight bounds around the actual layout (used to auto-fit + center the camera).
-const CONTENT_BOUNDS: ViewBox = { x: 108, y: 174, w: 902, h: 796 };
+// Tight bounds around the actual plotted layout — this (not the huge
+// decorative canvas around it) is what the camera fits/centers on.
+const CONTENT_BOUNDS: Box = { x: 108, y: 174, w: 902, h: 796 };
+const CONTENT_CENTER: Point = { x: CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2, y: CONTENT_BOUNDS.y + CONTENT_BOUNDS.h / 2 };
 
 const centroid = (pts: string): Point => {
     const n = pts.split(/[ ,]+/).map(Number);
@@ -131,23 +135,32 @@ const centroid = (pts: string): Point => {
 };
 
 // ---------------------------------------------------------------------------
-// Flat decorative props — no drop shadows, no gradients, precomputed once.
+// Flat, lightweight 2D greenery — no filters, just a couple of solid shapes
+// per item so it reads as trees/bushes without any heavy rendering cost.
 // ---------------------------------------------------------------------------
 
 const Tree = React.memo(function Tree({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
-    const fill = ["#3c6624", "#436f2c", "#345c20"][v % 3];
+    const canopy = ["#3f6b28", "#4a7830", "#376022"][v % 3];
+    const hi = ["#6fa43f", "#7cb84a", "#5f9636"][v % 3];
     return (
         <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
-            <circle cx="0" cy="0" r="11" fill={fill} />
-            <circle cx="-3" cy="-3" r="4" fill="#6fa43f" opacity="0.5" />
+            <rect x="-1" y="1" width="2" height="6" fill="#5a4326" />
+            <circle cx="0" cy="0" r="8.5" fill={canopy} />
+            <circle cx="3.4" cy="1.6" r="6.2" fill={canopy} />
+            <circle cx="-3" cy="2" r="6" fill={canopy} />
+            <circle cx="-2.4" cy="-2.6" r="4" fill={hi} opacity="0.7" />
         </g>
     );
 });
 
-const StreetLight = React.memo(function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
+const Bush = React.memo(function Bush({ x, y, s = 1, v = 0 }: { x: number; y: number; s?: number; v?: number }) {
+    const c1 = ["#4a7830", "#537f36", "#3f6e2a"][v % 3];
+    const c2 = ["#6fa43f", "#78ad48", "#659b3a"][v % 3];
     return (
-        <g transform={`translate(${x},${y})`} pointerEvents="none">
-            <circle r={night ? 5 : 3.5} fill="#ffdd93" opacity={night ? 0.9 : 0.4} />
+        <g transform={`translate(${x},${y}) scale(${s})`} pointerEvents="none">
+            <ellipse cx="-3.2" cy="0.5" rx="4.2" ry="3" fill={c1} />
+            <ellipse cx="3.2" cy="0.5" rx="4.2" ry="3" fill={c1} />
+            <ellipse cx="0" cy="-1" rx="4.6" ry="3.4" fill={c2} />
         </g>
     );
 });
@@ -158,13 +171,16 @@ const Stone = React.memo(function Stone({ x, y, s = 1 }: { x: number; y: number;
 
 type DecoItem = [number, number, number];
 
-function generateDecorations(): { trees: DecoItem[]; stones: DecoItem[] } {
+function generateDecorations(): { trees: DecoItem[]; bushes: DecoItem[]; stones: DecoItem[] } {
     const trees: DecoItem[] = [];
+    const bushes: DecoItem[] = [];
     const stones: DecoItem[] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
-    for (let g = 0; g < 18; g++) {
+
+    // Tree clusters scattered around the site (outside the plotted core).
+    for (let g = 0; g < 20; g++) {
         const gx = -120 + rnd() * 1440;
         const gy = -60 + rnd() * 1420;
         const count = 4 + Math.floor(rnd() * 5);
@@ -177,16 +193,38 @@ function generateDecorations(): { trees: DecoItem[]; stones: DecoItem[] } {
             trees.push([x, y, 1 + rnd() * 0.6]);
         }
     }
-    for (let i = 0; i < 24; i++) {
+
+    // Low bush clusters, denser near the boundary of the site for a hedge feel.
+    const bx = BOUNDARY.split(" ").map((p) => p.split(",").map(Number));
+    for (let i = 0; i < bx.length - 1; i++) {
+        const [x1, y1] = bx[i], [x2, y2] = bx[i + 1];
+        const steps = 10;
+        for (let k = 0; k < steps; k++) {
+            const t = k / steps;
+            const x = x1 + (x2 - x1) * t + (rnd() - 0.5) * 14;
+            const y = y1 + (y2 - y1) * t + (rnd() - 0.5) * 14;
+            if (inCore(x, y)) continue;
+            if (rnd() < 0.55) bushes.push([x, y, 0.9 + rnd() * 0.5]);
+        }
+    }
+    for (let i = 0; i < 26; i++) {
+        const x = -100 + rnd() * 1400;
+        const y = -60 + rnd() * 1420;
+        if (inCore(x, y)) continue;
+        bushes.push([x, y, 0.9 + rnd() * 0.5]);
+    }
+
+    for (let i = 0; i < 22; i++) {
         const x = -100 + rnd() * 1400;
         const y = -60 + rnd() * 1420;
         if (inCore(x, y)) continue;
         stones.push([x, y, 1 + rnd() * 1.1]);
     }
-    return { trees, stones };
+
+    return { trees, bushes, stones };
 }
 
-const { trees: TREES, stones: STONES } = generateDecorations();
+const { trees: TREES, bushes: BUSHES, stones: STONES } = generateDecorations();
 
 const STREET_LIGHT_POS: [number, number][] = [
     [180, 223], [430, 223], [680, 223], [930, 223], [1060, 223],
@@ -195,14 +233,23 @@ const STREET_LIGHT_POS: [number, number][] = [
     [150, 499], [340, 499],
 ];
 
+const StreetLight = React.memo(function StreetLight({ x, y, night = false }: { x: number; y: number; night?: boolean }) {
+    return (
+        <g transform={`translate(${x},${y})`} pointerEvents="none">
+            <circle r={night ? 5 : 3.5} fill="#ffdd93" opacity={night ? 0.9 : 0.4} />
+        </g>
+    );
+});
+
 // ---------------------------------------------------------------------------
-// Camera
+// Camera — all math in real stage pixels. cam.s is an absolute px-per-unit
+// scale (not a multiplier), cam.tx/ty are absolute px translate, pivoted on
+// CONTENT_CENTER. No SVG-side letterboxing is involved anywhere.
 // ---------------------------------------------------------------------------
 
 type Cam = { s: number; tx: number; ty: number; rot: number };
 type StageRect = { left: number; top: number; width: number; height: number };
 
-const S_MIN = 0.35, S_MAX = 14;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 export default function LayoutMap() {
@@ -217,6 +264,10 @@ export default function LayoutMap() {
     const [ready, setReady] = useState(false);
     const [loadPct, setLoadPct] = useState(6);
     const [dataLoaded, setDataLoaded] = useState(false);
+
+    // The <svg viewBox> tracks the stage's own pixel size exactly, so there is
+    // never a browser-computed letterbox offset to fight against.
+    const [vb, setVb] = useState({ w: 360, h: 640 });
 
     const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
     const [filter, setFilter] = useState<Status | "all">("all");
@@ -237,7 +288,6 @@ export default function LayoutMap() {
         }
     };
 
-    // Lock page scroll while the map is on screen so nothing shifts underneath it.
     useEffect(() => {
         const prevBody = document.body.style.overflow;
         const prevHtml = document.documentElement.style.overflow;
@@ -298,9 +348,6 @@ export default function LayoutMap() {
         return () => { alive = false; };
     }, [projectId, supabase]);
 
-    // Drive the loading bar from real signals: data fetch, web fonts, and a
-    // short minimum so it never just flashes. A hard cap prevents it from
-    // ever hanging if something stalls.
     useEffect(() => {
         let cancelled = false;
         const minDelay = new Promise((res) => setTimeout(res, 500));
@@ -339,7 +386,7 @@ export default function LayoutMap() {
     const pendingPaint = useRef(false);
 
     const stageRectRef = useRef<StageRect>({ left: 0, top: 0, width: 0, height: 0 });
-    const baseScaleRef = useRef(1);
+    const fitScaleRef = useRef(1); // the "100% / default" px-per-unit scale for the current stage size
     const hasFitRef = useRef(false);
 
     const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -354,11 +401,8 @@ export default function LayoutMap() {
     const paintNow = useCallback(() => {
         const c = camRef.current;
         if (camGroupRef.current) {
-            const bs = baseScaleRef.current || 1;
-            const cx = BASE_VB.x + BASE_VB.w / 2;
-            const cy = BASE_VB.y + BASE_VB.h / 2;
             camGroupRef.current.style.transform =
-                `translate(${c.tx / bs}px,${c.ty / bs}px) scale(${c.s}) translate(${cx}px,${cy}px) rotate(${c.rot}deg) translate(${-cx}px,${-cy}px)`;
+                `translate(${c.tx}px,${c.ty}px) scale(${c.s}) translate(${CONTENT_CENTER.x}px,${CONTENT_CENTER.y}px) rotate(${c.rot}deg) translate(${-CONTENT_CENTER.x}px,${-CONTENT_CENTER.y}px)`;
         }
         if (compassRef.current) compassRef.current.style.transform = `rotate(${-c.rot}deg)`;
     }, []);
@@ -399,7 +443,7 @@ export default function LayoutMap() {
         ensureLoop();
     }, [ensureLoop]);
 
-    const animateTo = useCallback((to: Cam, dur = 180) => {
+    const animateTo = useCallback((to: Cam, dur = 220) => {
         animRef.current = { from: { ...camRef.current }, to, start: performance.now(), dur };
         ensureLoop();
     }, [ensureLoop]);
@@ -418,36 +462,44 @@ export default function LayoutMap() {
         idleTimer.current = window.setTimeout(() => { setFastMode(false); idleTimer.current = null; }, delay);
     };
 
-    const computeBaseScale = () => {
-        const r = stageRectRef.current;
-        if (!r.width || !r.height) return 1;
-        return Math.min(r.width / BASE_VB.w, r.height / BASE_VB.h) || 1;
-    };
     const refreshStageRect = () => {
         const el = wrapRef.current; if (!el) return;
         const r = el.getBoundingClientRect();
         stageRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
     };
 
+    // The scale that fits CONTENT_BOUNDS to ~92% of the current stage.
+    const computeFitScale = () => {
+        const r = stageRectRef.current;
+        if (!r.width || !r.height) return 1;
+        return Math.min((r.width * 0.92) / CONTENT_BOUNDS.w, (r.height * 0.92) / CONTENT_BOUNDS.h);
+    };
+
+    const sMin = () => fitScaleRef.current * 0.4;
+    const sMax = () => fitScaleRef.current * 16;
+
     const clampPan = (c: Cam, elastic = false): Cam => {
         const r = stageRectRef.current;
-        const bs = baseScaleRef.current || 1;
-        const contentW = BASE_VB.w * bs * c.s;
-        const contentH = BASE_VB.h * bs * c.s;
-        const slackX = r.width * 0.18, slackY = r.height * 0.18;
-        const minTx = r.width - contentW - slackX, maxTx = slackX;
-        const minTy = r.height - contentH - slackY, maxTy = slackY;
+        const contentW = CONTENT_BOUNDS.w * c.s;
+        const contentH = CONTENT_BOUNDS.h * c.s;
+        const slackX = r.width * 0.35, slackY = r.height * 0.35;
+        // Content-space center maps to screen at: stageOrigin + c.tx (see paintNow).
+        // Keep that mapped center within the stage bounds (+ slack) either way.
+        const centerScreenX = c.tx; // because translate already carries the pivot cancellation at rot 0
+        const centerScreenY = c.ty;
+        const minX = -contentW / 2 - slackX, maxX = r.width + contentW / 2 + slackX;
+        const minY = -contentH / 2 - slackY, maxY = r.height + contentH / 2 + slackY;
         const soft = (val: number, lo: number, hi: number) => {
-            if (lo > hi) { const mid = (lo + hi) / 2; return mid; }
+            if (lo > hi) return (lo + hi) / 2;
             if (val < lo) return elastic ? lo - (lo - val) * 0.35 : lo;
             if (val > hi) return elastic ? hi + (val - hi) * 0.35 : hi;
             return val;
         };
-        return { ...c, tx: soft(c.tx, minTx, maxTx), ty: soft(c.ty, minTy, maxTy) };
+        return { ...c, tx: soft(centerScreenX, minX, maxX), ty: soft(centerScreenY, minY, maxY) };
     };
 
     const zoomAt = (base: Cam, factor: number, cx: number, cy: number): Cam => {
-        const ns = Math.min(S_MAX, Math.max(S_MIN, base.s * factor));
+        const ns = Math.min(sMax(), Math.max(sMin(), base.s * factor));
         const f = ns / base.s;
         return { s: ns, tx: cx - f * (cx - base.tx), ty: cy - f * (cy - base.ty), rot: base.rot };
     };
@@ -458,26 +510,17 @@ export default function LayoutMap() {
     };
 
     const settle = useCallback(() => {
-        const c = clampPan({ ...camRef.current, s: Math.min(S_MAX, Math.max(S_MIN, camRef.current.s)) }, false);
+        const c = clampPan({ ...camRef.current, s: Math.min(sMax(), Math.max(sMin(), camRef.current.s)) }, false);
         animateTo(c, 180);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [animateTo]);
 
-    // ---- Fit-to-content camera: keeps the layout centered, at a sensible zoom ----
+    // The default, centered camera: content center at stage center, at fitScale.
     const computeFitCam = useCallback((): Cam => {
         const r = stageRectRef.current;
-        const bs = baseScaleRef.current || 1;
         if (!r.width || !r.height) return { s: 1, tx: 0, ty: 0, rot: 0 };
-        const contentCx = (CONTENT_BOUNDS.x + CONTENT_BOUNDS.w / 2 - BASE_VB.x) * bs;
-        const contentCy = (CONTENT_BOUNDS.y + CONTENT_BOUNDS.h / 2 - BASE_VB.y) * bs;
-        const stageCx = r.width / 2;
-        const stageCy = r.height / 2;
-        const fitScale = Math.min(
-            (r.width * 0.92) / (CONTENT_BOUNDS.w * bs),
-            (r.height * 0.92) / (CONTENT_BOUNDS.h * bs)
-        );
-        const s = Math.min(S_MAX, Math.max(S_MIN, fitScale));
-        return { s, tx: stageCx - s * contentCx, ty: stageCy - s * contentCy, rot: 0 };
+        const s = computeFitScale();
+        return { s, tx: r.width / 2, ty: r.height / 2, rot: 0 };
     }, []);
 
     const fitToContent = useCallback((animated: boolean) => {
@@ -565,15 +608,17 @@ export default function LayoutMap() {
         const c = clampPan(zoomAt(camRef.current, f, r.width / 2, r.height / 2), false);
         animateTo(c, 180);
     };
-    const rotate = () => { animateTo({ ...camRef.current, rot: camRef.current.rot + 45 }, 200); };
+    const rotate = () => { animateTo({ ...camRef.current, rot: camRef.current.rot + 45 }, 220); };
 
-    // ---- Mount / resize wiring: always re-fits so the map stays centered ----
+    // ---- Mount / resize wiring: viewBox always matches the stage, camera always re-fits ----
     useEffect(() => {
         const el = wrapRef.current; if (!el) return;
 
         const recalc = (animated: boolean) => {
             refreshStageRect();
-            baseScaleRef.current = computeBaseScale();
+            const r = stageRectRef.current;
+            if (r.width && r.height) setVb({ w: r.width, h: r.height });
+            fitScaleRef.current = computeFitScale();
             if (!hasFitRef.current) {
                 hasFitRef.current = true;
                 fitToContent(false);
@@ -659,7 +704,7 @@ export default function LayoutMap() {
                 onPointerCancel={endPointer}
                 onPointerLeave={(e) => { if (pointers.current.has(e.pointerId)) endPointer(e); }}
             >
-                <svg ref={svgRef} viewBox={`${BASE_VB.x} ${BASE_VB.y} ${BASE_VB.w} ${BASE_VB.h}`} preserveAspectRatio="xMidYMid meet" className="lm-svg">
+                <svg ref={svgRef} viewBox={`0 0 ${vb.w} ${vb.h}`} className="lm-svg">
                     <defs>
                         <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
                             <stop offset="0" stopColor="#f6e6b0" /><stop offset="1" stopColor="#a9822f" />
@@ -735,6 +780,7 @@ export default function LayoutMap() {
                             })}
 
                             <g>
+                                {BUSHES.map(([x, y, s], i) => <Bush key={`b${i}`} x={x} y={y} s={s} v={i % 3} />)}
                                 {TREES.map(([x, y, s], i) => <Tree key={i} x={x} y={y} s={s} v={i % 3} />)}
                                 {STONES.map(([x, y, s], i) => <Stone key={`s${i}`} x={x} y={y} s={s} />)}
                             </g>
@@ -996,7 +1042,7 @@ const css = `
   overflow:hidden; background:#6b5c32; contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
 .lm-svg{ display:block; width:100%; height:100%; }
-.lm-camera{ transform-box:view-box; transform-origin:0 0; will-change:transform; }
+.lm-camera{ transform-box:fill-box; transform-origin:0 0; will-change:transform; }
 
 .lm-filterwrap{ position:relative; }
 .lm-actbtn.lm-filterbtn.lm-fchip-available{ border-color:#5fa538; }
