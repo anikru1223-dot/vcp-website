@@ -202,56 +202,119 @@ const Stone = React.memo(function Stone({ x, y, s = 1 }: { x: number; y: number;
 });
 
 type DecoItem = [number, number, number];
+type Pt = [number, number];
 
+const parsePolygon = (pts: string): Pt[] => {
+    const n = pts.split(/[ ,]+/).map(Number);
+    const out: Pt[] = [];
+    for (let i = 0; i < n.length; i += 2) out.push([n[i], n[i + 1]]);
+    return out;
+};
+
+// Places items evenly along a single line segment, offset perpendicular to
+// its direction by `offset` (sign depends on the segment's own direction —
+// callers pick the sign that lands them where there's actually open ground).
+function lineDecorations(
+    p1: Pt, p2: Pt,
+    opts: { spacing: number; offset: number; jitter?: number; seed?: number }
+): Pt[] {
+    const { spacing, offset, jitter = 5, seed = 1 } = opts;
+    let s = seed;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const [x1, y1] = p1, [x2, y2] = p2;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return [];
+    const nx = -dy / len, ny = dx / len;
+    const steps = Math.max(1, Math.round(len / spacing));
+    const out: Pt[] = [];
+    for (let i = 0; i < steps; i++) {
+        const t = (i + 0.5) / steps;
+        const px = x1 + dx * t, py = y1 + dy * t;
+        const jx = (rnd() - 0.5) * jitter, jy = (rnd() - 0.5) * jitter;
+        out.push([px + nx * offset + jx, py + ny * offset + jy]);
+    }
+    return out;
+}
+
+// Places items along every edge of a closed polygon, offset outward (away
+// from the polygon's own centroid) for a positive `offset`, or inward for
+// a negative one — used to plant a ring just inside/outside a shape rather
+// than scattering across the whole canvas.
+function polygonRingDecorations(
+    poly: Pt[],
+    opts: { spacing: number; offset: number; jitter?: number; seed?: number }
+): Pt[] {
+    const { spacing, offset, jitter = 5, seed = 1 } = opts;
+    let s = seed;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
+    const cy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
+    const out: Pt[] = [];
+    for (let i = 0; i < poly.length; i++) {
+        const [x1, y1] = poly[i];
+        const [x2, y2] = poly[(i + 1) % poly.length];
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) continue;
+        let nx = -dy / len, ny = dx / len;
+        const mx = x1 + dx / 2, my = y1 + dy / 2;
+        if (nx * (cx - mx) + ny * (cy - my) > 0) { nx = -nx; ny = -ny; } // keep normal pointing outward
+        const steps = Math.max(1, Math.round(len / spacing));
+        for (let k = 0; k < steps; k++) {
+            const t = (k + 0.5) / steps;
+            const px = x1 + dx * t, py = y1 + dy * t;
+            const jx = (rnd() - 0.5) * jitter, jy = (rnd() - 0.5) * jitter;
+            out.push([px + nx * offset + jx, py + ny * offset + jy]);
+        }
+    }
+    return out;
+}
+
+// Landscaping is deliberately restricted to three zones, matching the
+// reference screenshot: a tree-lined avenue along the property boundary,
+// a planted ring around KARAB (park + lake), and a small buffer along CA.
+// No more full-canvas random scatter — the rest of the background stays
+// open/plain, same as the reference image.
 function generateDecorations(): { trees: DecoItem[]; bushes: DecoItem[]; stones: DecoItem[] } {
     const trees: DecoItem[] = [];
     const bushes: DecoItem[] = [];
     const stones: DecoItem[] = [];
     let seed = 7;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const inCore = (x: number, y: number) => x > 108 && x < 1010 && y > 174 && y < 970;
 
-    // Tree clusters scattered around the site (outside the plotted core).
-    for (let g = 0; g < 20; g++) {
-        const gx = -120 + rnd() * 1440;
-        const gy = -60 + rnd() * 1420;
-        const count = 4 + Math.floor(rnd() * 5);
-        const spread = 55 + rnd() * 90;
-        for (let j = 0; j < count; j++) {
-            const ox = (rnd() + rnd() - 1) * spread;
-            const oy = (rnd() + rnd() - 1) * spread;
-            const x = gx + ox, y = gy + oy;
-            if (inCore(x, y)) continue;
-            trees.push([x, y, 1 + rnd() * 0.6]);
-        }
-    }
+    const boundaryPoly = parsePolygon(BOUNDARY);
+    const karabPoly = parsePolygon(KARAB);
 
-    // Low bush clusters, denser near the boundary of the site for a hedge feel.
-    const bx = BOUNDARY.split(" ").map((p) => p.split(",").map(Number));
-    for (let i = 0; i < bx.length - 1; i++) {
-        const [x1, y1] = bx[i], [x2, y2] = bx[i + 1];
-        const steps = 10;
-        for (let k = 0; k < steps; k++) {
-            const t = k / steps;
-            const x = x1 + (x2 - x1) * t + (rnd() - 0.5) * 14;
-            const y = y1 + (y2 - y1) * t + (rnd() - 0.5) * 14;
-            if (inCore(x, y)) continue;
-            if (rnd() < 0.55) bushes.push([x, y, 0.9 + rnd() * 0.5]);
-        }
-    }
-    for (let i = 0; i < 26; i++) {
-        const x = -100 + rnd() * 1400;
-        const y = -60 + rnd() * 1420;
-        if (inCore(x, y)) continue;
-        bushes.push([x, y, 0.9 + rnd() * 0.5]);
-    }
+    // --- Property boundary: a tree-lined avenue just outside the site edge,
+    // echoing the planted border along the entry road in the reference image.
+    polygonRingDecorations(boundaryPoly, { spacing: 32, offset: 24, jitter: 6, seed: 3 })
+        .forEach((p) => trees.push([p[0], p[1], 1 + rnd() * 0.5]));
+    polygonRingDecorations(boundaryPoly, { spacing: 30, offset: 11, jitter: 5, seed: 5 })
+        .forEach((p) => { if (rnd() < 0.7) bushes.push([p[0], p[1], 0.85 + rnd() * 0.4]); });
+    polygonRingDecorations(boundaryPoly, { spacing: 56, offset: 30, jitter: 8, seed: 9 })
+        .forEach((p) => { if (rnd() < 0.5) stones.push([p[0], p[1], 1 + rnd() * 0.8]); });
 
-    for (let i = 0; i < 22; i++) {
-        const x = -100 + rnd() * 1400;
-        const y = -60 + rnd() * 1420;
-        if (inCore(x, y)) continue;
-        stones.push([x, y, 1 + rnd() * 1.1]);
-    }
+    // --- KARAB (park + lake): a ring of trees/bushes just inside its own
+    // edge, kept clear of the lake and the pathway that runs above it.
+    polygonRingDecorations(karabPoly, { spacing: 28, offset: -22, jitter: 8, seed: 21 })
+        .forEach((p) => {
+            const d = Math.hypot(p[0] - KARAB_LAKE.cx, p[1] - KARAB_LAKE.cy);
+            if (d > KARAB_LAKE.rx * 0.72) trees.push([p[0], p[1], 0.9 + rnd() * 0.5]);
+        });
+    polygonRingDecorations(karabPoly, { spacing: 22, offset: -9, jitter: 6, seed: 33 })
+        .forEach((p) => {
+            const d = Math.hypot(p[0] - KARAB_LAKE.cx, p[1] - KARAB_LAKE.cy);
+            if (d > KARAB_LAKE.rx * 0.58 && rnd() < 0.75) bushes.push([p[0], p[1], 0.85 + rnd() * 0.4]);
+        });
+
+    // --- CA (civic amenity): a light planted buffer along its one edge that
+    // actually has open ground next to it (the property-boundary side) —
+    // the other three edges sit flush against roads/plots, so no trees there.
+    lineDecorations([140, 262], [140, 470], { spacing: 24, offset: 13, jitter: 4, seed: 41 })
+        .forEach((p) => trees.push([p[0], p[1], 0.85 + rnd() * 0.35]));
+    lineDecorations([140, 262], [140, 470], { spacing: 18, offset: 6, jitter: 3, seed: 51 })
+        .forEach((p) => { if (rnd() < 0.7) bushes.push([p[0], p[1], 0.8 + rnd() * 0.3]); });
 
     return { trees, bushes, stones };
 }
