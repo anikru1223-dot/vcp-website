@@ -229,7 +229,7 @@ type StageRect = { left: number; top: number; width: number; height: number };
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
-export default function LayoutMap() {
+function LayoutMapInner() {
     const [selected, setSelected] = useState<string | null>(null);
     const [tiqOpen, setTiqOpen] = useState(false);
     const [photosOpen, setPhotosOpen] = useState(false);
@@ -1064,6 +1064,62 @@ export default function LayoutMap() {
 
             {!sel && ready && mapCameraReady && <div className="lm-hint">Tap a plot · pinch to zoom · twist to rotate</div>}
         </div>
+    );
+}
+
+// Diagnostic error boundary. If LayoutMapInner throws during render (which
+// would otherwise leave a fully-painted but completely unresponsive page —
+// exactly the "nothing is clickable" symptom, since React would have
+// unmounted its event handlers after the crash but the last-rendered DOM
+// stays visible), this shows the actual error message instead of silence.
+// If you're seeing "nothing clickable" and this box never appears, the
+// crash isn't happening in this component at all — look outside it (a
+// global overlay, a stale build, something in the surrounding page).
+class LayoutMapErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { error: Error | null }
+> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { error: null };
+    }
+    static getDerivedStateFromError(error: Error) {
+        return { error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+        // eslint-disable-next-line no-console
+        console.error("LayoutMap crashed:", error, info.componentStack);
+    }
+    render() {
+        if (this.state.error) {
+            return (
+                <div style={{
+                    position: "fixed", inset: 0, background: "#1c2317", color: "#f3f6ee",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    fontFamily: "monospace", padding: 24, textAlign: "center", gap: 12,
+                }}>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>Map crashed</div>
+                    <div style={{ maxWidth: 640, fontSize: 13, opacity: 0.85, whiteSpace: "pre-wrap" }}>
+                        {this.state.error.message}
+                    </div>
+                    <button
+                        onClick={() => this.setState({ error: null })}
+                        style={{ marginTop: 8, padding: "8px 16px", borderRadius: 8, border: "1px solid #d4ab54", background: "transparent", color: "#f2dd9a", cursor: "pointer" }}
+                    >
+                        Retry
+                    </button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+export default function LayoutMap() {
+    return (
+        <LayoutMapErrorBoundary>
+            <LayoutMapInner />
+        </LayoutMapErrorBoundary>
     );
 }
 
