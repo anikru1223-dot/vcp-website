@@ -593,7 +593,31 @@ function LayoutMapInner() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [setCameraImmediate]);
 
+    // FIX (mobile — action row / zoom / rotate / center / photos buttons not
+    // responding to taps): onPointerDown below is bound to the whole `.lm-stage`
+    // wrapper (for pan/zoom/pinch), and it was unconditionally calling
+    // `setPointerCapture()` and `preventDefault()`-ing pointermove — for EVERY
+    // pointer that landed anywhere inside the stage, including on the real
+    // HTML `<button>`/`<a>` UI controls that are rendered as overlay children
+    // of that same wrapper (ALL/MAPS/PHOTOS, zoom +/-, rotate, center, night
+    // toggle, filter menu, photo grid, lightbox nav, Train IQ badge). Capturing
+    // the pointer to the stage container redirects the subsequent pointerup
+    // away from the button element, which is exactly the condition mobile
+    // Safari/Chrome use to decide whether to fire the button's synthetic
+    // "click" — so on touch devices the tap was silently swallowed by the map's
+    // drag handling instead of activating the button (desktop mouse was mostly
+    // fine, which is why this only showed up on mobile). The fix: detect when
+    // the gesture actually started on a real interactive control and bail out
+    // of all the camera pan/zoom/tap bookkeeping for that pointer entirely, so
+    // the browser handles the tap on the button exactly like it would anywhere
+    // else on the page.
+    const isInteractiveTarget = (target: EventTarget | null) => {
+        if (!(target instanceof Element)) return false;
+        return !!target.closest("button, a, input, select, textarea");
+    };
+
     const onPointerDown = (e: React.PointerEvent) => {
+        if (isInteractiveTarget(e.target)) return;
         (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
         refreshStageRect();
         beginInteraction();
@@ -646,6 +670,12 @@ function LayoutMapInner() {
     };
 
     const endPointer = (e: React.PointerEvent) => {
+        // If this pointer was never registered (because onPointerDown bailed
+        // out early for a tap that landed on a real UI button/link/input — see
+        // isInteractiveTarget above), there's nothing to end: don't run
+        // settle()/idle-restore for a gesture the map was never tracking.
+        if (!pointers.current.has(e.pointerId)) return;
+
         // Snapshot whether this release completes a genuine tap/click BEFORE
         // mutating the pointers map below.
         const wasSinglePointerTap = pointers.current.size === 1 && !!tapStartRef.current && !tapMovedRef.current;
@@ -1204,6 +1234,15 @@ const css = `
 .lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
   overflow:hidden; background:#6b5c32; contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
+/* The stage sets touch-action:none so panning/pinching the map never
+   triggers the browser's own scroll/zoom gestures. The overlay buttons
+   (action row, zoom/rotate/center, filter menu, photos, lightbox, Train IQ
+   badge) live inside that same stage element, so without this override they
+   silently inherited touch-action:none too — opting them out of the
+   browser's normal fast-tap handling on mobile. Giving them their own
+   touch-action restores normal, immediate tap behavior on touch devices. */
+.lm-actionrow, .lm-ctrl, .lm-tiq-wrap, .lm-filtermenu, .lm-photos-overlay,
+.lm-lightbox, .lm-filterbackdrop{ touch-action: manipulation; }
 .lm-svg{ display:block; width:100%; height:100%; }
 .lm-camera{ }
 
