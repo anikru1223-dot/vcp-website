@@ -487,20 +487,20 @@ function LayoutMapInner() {
         stageRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
     };
 
-    // The scale used at default zoom. COVER (not contain): sized so the
-    // master-plan IMAGE fills the entire stage with no gaps on any edge —
-    // previously this fit CONTENT_BOUNDS at 92% "contain", which on many
-    // screen aspect ratios left the plain background color showing between
-    // the header and the top of the image, and between the bottom of the
-    // image and the footer/controls. Fitting against IMAGE_BOUNDS with
-    // Math.max guarantees the image itself always covers the full stage at
-    // the default zoom, so there's never a mismatched gap of bare background
-    // around it. The small 1.02 multiplier is just a safety margin so
-    // sub-pixel rounding never leaves a hairline gap at the edge.
+    // The scale used at default zoom. CONTAIN (not cover): sized so the
+    // ENTIRE master-plan IMAGE is always visible inside the stage at the
+    // default zoom — previously this fit in "cover" mode (Math.max), which
+    // guaranteed no background bleed but, on stage aspect ratios that
+    // differ a lot from the image's own aspect ratio (a short/wide desktop
+    // browser window, for example), cropped a large chunk of the image
+    // off-screen — the user only ever saw part of the map on load. Math.min
+    // guarantees the whole image fits inside the stage; the 0.94 multiplier
+    // leaves a small margin around it so the map doesn't touch the
+    // header/footer/controls.
     const computeFitScale = () => {
         const r = stageRectRef.current;
         if (!r.width || !r.height) return 1;
-        return Math.max(r.width / IMAGE_BOUNDS.w, r.height / IMAGE_BOUNDS.h) * 1.02;
+        return Math.min(r.width / IMAGE_BOUNDS.w, r.height / IMAGE_BOUNDS.h) * 0.94;
     };
 
     const sMin = () => fitScaleRef.current * 0.4;
@@ -1358,7 +1358,15 @@ const css = `
 
 @media (min-width:640px){
   .lm-brand-name{ font-size:24px; }
-  .lm-panel{ max-width:420px; left:auto; right:22px; bottom:22px; border-radius:20px; }
+  .lm-panel{
+    max-width:400px; left:auto; right:22px; bottom:22px;
+    border-radius:20px;
+    padding:18px 22px 22px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);
+    border:1px solid var(--line);
+  }
+  .lm-panel::before{ display:none; }
+  .lm-photos-modal{ box-shadow:0 20px 60px rgba(0,0,0,.5); }
 }
 @media (prefers-reduced-motion:reduce){
   .lm-panel, .lm-plot-shape{ transition:none; }
