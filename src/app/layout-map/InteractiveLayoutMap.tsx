@@ -864,6 +864,14 @@ function LayoutMapInner() {
                 onPointerCancel={endPointer}
                 onPointerLeave={(e) => { if (pointers.current.has(e.pointerId)) endPointer(e); }}
             >
+                {/* Fixed surrounding-landscape background. This is a plain HTML
+                element sitting OUTSIDE the SVG's camera-transformed <g>, so it
+                is completely unaffected by pan/zoom/pinch/rotate — it always
+                fills the stage edge-to-edge and never moves, exactly like a
+                page background would. The interactive map (SVG below) is
+                layered on top of it. */}
+                <div className="lm-bg-fixed" aria-hidden="true" />
+
                 <svg ref={svgRef} viewBox={`0 0 ${vb.w} ${vb.h}`} className="lm-svg">
                     <defs>
                         <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
@@ -872,7 +880,14 @@ function LayoutMapInner() {
                     </defs>
 
                     <g ref={camGroupRef} className="lm-camera">
-                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="#8a794e" />
+                        {/* This rect used to be an opaque tan fill standing in for a
+                background. Now that a real fixed background photo sits behind
+                the whole stage (see .lm-bg-fixed below, rendered OUTSIDE this
+                camera-transformed group so it never pans/zooms/rotates with
+                the map), this rect is transparent — it's kept only as an
+                invisible hit-target so drags/pans starting on empty canvas
+                still register. */}
+                        <rect x={BASE_VB.x - 900} y={BASE_VB.y - 900} width={BASE_VB.w + 1800} height={BASE_VB.h + 1800} fill="transparent" />
 
                         {/* Master-plan image — the primary visual layer. Lives in the
                 exact same SVG coordinate system (and the same camera-
@@ -1234,6 +1249,14 @@ const css = `
 .lm-stage{ position:absolute; top:0; left:0; right:0; bottom:0; touch-action:none; user-select:none; cursor:grab;
   overflow:hidden; background:#6b5c32; contain:layout size; }
 .lm-stage:active{ cursor:grabbing; }
+/* Fixed surrounding-landscape photo. Plain CSS background on a static,
+   unpositioned element — never touched by the SVG camera transform, so it
+   can never pan, zoom, or rotate no matter what the user does to the map.
+   cover+center keeps it filling the stage edge-to-edge on any screen size. */
+.lm-bg-fixed{ position:absolute; inset:0; z-index:0;
+  background:#6b5c32 url('/images/basava-ganguru-surround.png') center center / cover no-repeat;
+  pointer-events:none; }
+
 /* The stage sets touch-action:none so panning/pinching the map never
    triggers the browser's own scroll/zoom gestures. The overlay buttons
    (action row, zoom/rotate/center, filter menu, photos, lightbox, Train IQ
@@ -1243,7 +1266,7 @@ const css = `
    touch-action restores normal, immediate tap behavior on touch devices. */
 .lm-actionrow, .lm-ctrl, .lm-tiq-wrap, .lm-filtermenu, .lm-photos-overlay,
 .lm-lightbox, .lm-filterbackdrop{ touch-action: manipulation; }
-.lm-svg{ display:block; width:100%; height:100%; }
+.lm-svg{ display:block; width:100%; height:100%; position:relative; z-index:1; background:transparent; }
 .lm-camera{ }
 
 .lm-filterwrap{ position:relative; }
