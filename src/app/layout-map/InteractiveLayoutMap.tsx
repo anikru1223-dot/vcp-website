@@ -70,10 +70,10 @@ type Status = "available" | "reserved" | "sold";
 
 type MediaItem = { id: string; type: "image" | "video"; url: string; caption: string | null };
 
-const STATUS_META: Record<Status, { label: string; fill: string; sel: string }> = {
-    available: { label: "Available", fill: "#4d7a34", sel: "#6dbf46" },
-    reserved: { label: "Reserved", fill: "#d98a1f", sel: "#f5b942" },
-    sold: { label: "Sold", fill: "#a52a24", sel: "#e0504a" },
+const STATUS_META: Record<Status, { label: string; fill: string; sel: string; dark: string }> = {
+    available: { label: "Available", fill: "#4d7a34", sel: "#6dbf46", dark: "#1f3a10" },
+    reserved: { label: "Reserved", fill: "#d98a1f", sel: "#f5b942", dark: "#6b3f08" },
+    sold: { label: "Sold", fill: "#a52a24", sel: "#e0504a", dark: "#4f110d" },
 };
 
 const PLOTS: Plot[] = [
@@ -923,7 +923,13 @@ function LayoutMapInner() {
                                 const shown: Status = filter === "all" ? "available" : effective;
                                 const meta = STATUS_META[shown];
                                 const dimmed = filter !== "all" && effective !== filter;
-                                const fillOpacity = isSel ? 0.4 : 0.2;
+                                // A filter chip (Sold / Reserved / Available) is active AND
+                                // this plot matches it — give it a bold, dark color wash so
+                                // it reads clearly against the master-plan image instead of
+                                // the faint default tint used in the unfiltered "All" view.
+                                const activeMatch = filter !== "all" && effective === filter;
+                                const fillColor = isSel ? meta.sel : activeMatch ? meta.dark : meta.fill;
+                                const fillOpacity = isSel ? 0.45 : activeMatch ? 0.78 : 0.2;
                                 return (
                                     <g key={p.id} className="lm-plot" data-plot-id={p.id}
                                         onClick={(e) => { e.stopPropagation(); setSelected(p.id); }}
@@ -931,7 +937,7 @@ function LayoutMapInner() {
                                         style={{ opacity: dimmed ? 0.25 : 1, transition: "opacity .25s ease" }}
                                         onKeyDown={(e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && setSelected(p.id)}>
                                         <polygon points={p.pts} data-plot-id={p.id} className="lm-plot-shape" pointerEvents="visiblePainted"
-                                            fill={isSel ? meta.sel : meta.fill}
+                                            fill={fillColor}
                                             fillOpacity={fillOpacity} />
                                     </g>
                                 );
@@ -950,6 +956,17 @@ function LayoutMapInner() {
                         <text y="-24" textAnchor="middle" fill="#e7cd85" fontSize="12" fontWeight="800">N</text>
                     </g>
                 </svg>
+
+                {/* Fixed decorative frame. A plain HTML overlay, sibling to the SVG
+                (not inside it), so — like the fixed background — panning,
+                zooming, pinching, or rotating the map can never move, scale,
+                or distort it. It always frames the stage edges in place. */}
+                <div className="lm-frame" aria-hidden="true">
+                    <span className="lm-frame-corner lm-frame-tl" />
+                    <span className="lm-frame-corner lm-frame-tr" />
+                    <span className="lm-frame-corner lm-frame-bl" />
+                    <span className="lm-frame-corner lm-frame-br" />
+                </div>
 
                 <div className="lm-actionrow">
                     <div className="lm-filterwrap">
@@ -1276,6 +1293,32 @@ const css = `
 .lm-actionrow, .lm-ctrl, .lm-tiq-wrap, .lm-filtermenu, .lm-photos-overlay,
 .lm-lightbox, .lm-filterbackdrop{ touch-action: manipulation; }
 .lm-svg{ display:block; width:100%; height:100%; position:relative; z-index:1; background:transparent; }
+
+/* Fixed gold picture-frame around the whole map viewport. Sits above the
+   background photo and the SVG map (z-index 2) but below the floating UI
+   buttons/panels, and — being outside the camera-transformed SVG group
+   entirely — never pans, zooms, or rotates with the map content. The inset
+   border plus four L-shaped corner brackets give it a deliberate, premium
+   "framed" look rather than a plain rectangle outline. */
+.lm-frame{ position:absolute; inset:0; z-index:2; pointer-events:none; }
+.lm-frame::before{ content:""; position:absolute; inset:14px;
+  border:1px solid rgba(212,171,84,.4);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.4), inset 0 0 70px rgba(0,0,0,.4);
+  border-radius:6px; }
+.lm-frame::after{ content:""; position:absolute; inset:20px;
+  border:1px solid rgba(212,171,84,.16); border-radius:3px; }
+.lm-frame-corner{ position:absolute; width:30px; height:30px; border:2px solid var(--gold); opacity:.9; }
+.lm-frame-tl{ top:14px; left:14px; border-right:none; border-bottom:none; border-top-left-radius:6px; }
+.lm-frame-tr{ top:14px; right:14px; border-left:none; border-bottom:none; border-top-right-radius:6px; }
+.lm-frame-bl{ bottom:14px; left:14px; border-right:none; border-top:none; border-bottom-left-radius:6px; }
+.lm-frame-br{ bottom:14px; right:14px; border-left:none; border-top:none; border-bottom-right-radius:6px; }
+@media (max-width:640px){
+  .lm-frame::before{ inset:8px; }
+  .lm-frame::after{ inset:13px; }
+  .lm-frame-corner{ width:22px; height:22px; }
+  .lm-frame-tl{ top:8px; left:8px; } .lm-frame-tr{ top:8px; right:8px; }
+  .lm-frame-bl{ bottom:8px; left:8px; } .lm-frame-br{ bottom:8px; right:8px; }
+}
 .lm-camera{ }
 
 .lm-filterwrap{ position:relative; }
@@ -1328,7 +1371,7 @@ const css = `
   font-size:10px; letter-spacing:.1em; color:#6b7358; }
 
 .lm-plot{ cursor:pointer; }
-.lm-plot-shape{ transition:filter .18s ease; }
+.lm-plot-shape{ transition:filter .18s ease, fill .22s ease, fill-opacity .22s ease; }
 .lm-plot:hover .lm-plot-shape{ filter:brightness(1.08); }
 .lm-plot:focus{ outline:none; }
 .lm-plot:focus-visible .lm-plot-shape{ filter:brightness(1.15); }
