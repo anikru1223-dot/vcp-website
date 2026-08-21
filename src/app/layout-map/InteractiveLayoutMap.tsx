@@ -1252,9 +1252,18 @@ const css = `
 /* Fixed surrounding-landscape photo. Plain CSS background on a static,
    unpositioned element — never touched by the SVG camera transform, so it
    can never pan, zoom, or rotate no matter what the user does to the map.
-   cover+center keeps it filling the stage edge-to-edge on any screen size. */
+   cover+center keeps it filling the stage edge-to-edge on any screen size.
+   filter darkens/desaturates the raw bright-green photo so it reads as part
+   of the same moody dark theme as the header/footer/panel instead of
+   clashing with them; the gradient ::after adds extra darkening toward the
+   top and bottom edges so it blends smoothly under the header's own dark
+   gradient and the bottom control bar. */
 .lm-bg-fixed{ position:absolute; inset:0; z-index:0;
-  background:#6b5c32 url('/images/basava-ganguru-surround.png') center center / cover no-repeat;
+  background:#0e130a url('/images/basava-ganguru-surround.png') center center / cover no-repeat;
+  filter: brightness(0.42) saturate(0.75) contrast(1.05);
+  pointer-events:none; }
+.lm-bg-fixed::after{ content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(6,9,5,.55) 0%, rgba(6,9,5,.15) 22%, rgba(6,9,5,.15) 70%, rgba(6,9,5,.6) 100%);
   pointer-events:none; }
 
 /* The stage sets touch-action:none so panning/pinching the map never
