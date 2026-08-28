@@ -96,6 +96,15 @@ ul{list-style:none;}
 h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;letter-spacing:-0.02em;}
 .container{max-width:var(--container);margin:0 auto;padding:0 32px;}
 :focus-visible{outline:2px solid var(--brass);outline-offset:3px;}
+.sr-only{
+  position:absolute;
+  width:1px;height:1px;
+  padding:0;margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
 @media (prefers-reduced-motion: reduce){
   *{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important;scroll-behavior:auto !important;}
 }
@@ -340,6 +349,10 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   font-size:clamp(38px,5.4vw,74px);
   color:var(--linen);
   margin-bottom:26px;
+  font-family:var(--font-display);
+  font-weight:600;
+  line-height:1.05;
+  letter-spacing:-0.02em;
 }
 .hero-title .accent{
   color:var(--brass-light);
@@ -1059,8 +1072,9 @@ function Navigation() {
             onClick={() => scrollToSection('home')}
             className="nav-logo"
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            aria-label="Vijayalaxmi C Patil Developers & Promoters home"
           >
-            <svg className="nav-logo-mark" viewBox="0 0 24 24">
+            <svg className="nav-logo-mark" viewBox="0 0 24 24" role="img" aria-label="VCP Developers logo">
               <rect x="2" y="16" width="20" height="2" fill="#B8894A" />
               <rect x="3" y="8" width="4" height="8" fill="none" stroke="#B8894A" strokeWidth="1.2" />
               <line x1="5" y1="8" x2="5" y2="16" stroke="#B8894A" strokeWidth="0.8" />
@@ -1145,6 +1159,12 @@ function HeroSection() {
     <section id="home" className="hero">
       <div className="container hero-grid">
         <div className="hero-copy">
+          {/* SEO H1 — describes the page for search engines & screen readers */}
+          <h1 className="sr-only">
+            Vijayalaxmi C Patil Developers &amp; Promoters — Residential Plots &amp;
+            Property Development in Shivamogga, Karnataka
+          </h1>
+
           <motion.div
             className="eyebrow"
             initial={{ opacity: 0, y: 14 }}
@@ -1154,7 +1174,7 @@ function HeroSection() {
             Shivamogga &middot; Karnataka
           </motion.div>
 
-          <motion.h1
+          <motion.p
             className="hero-title"
             initial={{ opacity: 0, y: 22 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1162,7 +1182,7 @@ function HeroSection() {
           >
             Building Dreams.
             <span className="accent">Creating Communities.</span>
-          </motion.h1>
+          </motion.p>
 
           <motion.p
             className="hero-sub"
@@ -1212,7 +1232,7 @@ function HeroSection() {
         </div>
 
         <div className="hero-visual">
-          <svg viewBox="0 0 900 600">
+          <svg viewBox="0 0 900 600" role="img" aria-label="Illustrative residential layout site plan">
             <defs>
               <clipPath id="clipPlot5">
                 <polygon points="286,188 492,190 476,368 272,364" />
@@ -1347,12 +1367,12 @@ function AboutSection() {
           <img
             className="about-img-main"
             src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=75"
-            alt="Modern residential development by VCP Developers"
+            alt="Completed residential home in a Vijayalaxmi C Patil Developers layout in Shivamogga"
           />
           <img
             className="about-img-accent"
             src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=700&q=75"
-            alt="Construction team building a VCP Developers layout"
+            alt="House under construction at a residential layout in Shivamogga"
           />
           <div className="about-badge">
             <span className="about-badge-num">28+</span>
@@ -1364,22 +1384,22 @@ function AboutSection() {
           <div className="eyebrow">Our Story</div>
           <Reveal>
             <h2 className="section-title">
-              Trusted Real Estate <em>Excellence</em> in Shivamogga
+              About <em>Vijayalaxmi C Patil Developers</em> in Shivamogga
             </h2>
           </Reveal>
           <Reveal delay={0.1}>
             <p>
               Vijayalaxmi C. Patil Developers &amp; Promoters is a trusted real
-              estate developer specializing in developing premium residential
-              layouts, converting large land parcels into well-planned
+              estate developer in Shivamogga, Karnataka, specializing in premium
+              residential layouts, converting large land parcels into well-planned
               residential sites, and delivering complete key-in-hand solutions.
             </p>
           </Reveal>
           <Reveal delay={0.18}>
             <p>
-              Our mission is to make home ownership simple by offering
-              everything from purchasing a plot to delivering a fully
-              completed dream home.
+              Our mission is to make home ownership simple by offering everything
+              from purchasing a residential plot to delivering a fully completed
+              dream home &mdash; all in and around Shivamogga (Shimoga).
             </p>
           </Reveal>
 
@@ -1415,13 +1435,13 @@ function ProjectsSection() {
           <Reveal>
             <div className="eyebrow">Live Inventory</div>
             <h2 className="section-title" style={{ marginBottom: 0 }}>
-              Our <em>Projects</em>
+              Our Residential <em>Projects</em> in Shivamogga
             </h2>
           </Reveal>
           <Reveal delay={0.1}>
             <p className="section-lede">
-              Every layout, mapped and interactive. Open a project to explore its
-              plots in real time.
+              Explore our residential layouts in Shivamogga &mdash; mapped and
+              interactive. Open a project to see its plots in real time.
             </p>
           </Reveal>
         </div>
@@ -1433,11 +1453,12 @@ function ProjectsSection() {
               onClick={() => router.push('/project/basava-ganguru')}
               role="button"
               tabIndex={0}
+              aria-label="Explore the Basava Ganguru residential layout in Shivamogga"
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && router.push('/project/basava-ganguru')}
             >
               <img
                 src="/basava-ganguru-layout.png"
-                alt="Basava Ganguru residential layout master plan"
+                alt="Basava Ganguru residential layout master plan in Shivamogga, Karnataka"
               />
               <div className="pf-inner">
                 <span className="pf-badge">Live now</span>
@@ -1460,9 +1481,10 @@ function ProjectsSection() {
             </Reveal>
             <Reveal delay={0.08}>
               <p>
-                No more static PDFs. Our projects come alive as interactive maps
-                drawn straight from the sanctioned survey &mdash; pan, zoom, and tap
-                any plot to see its size, facing, and current status.
+                No more static PDFs. Our residential layouts in Shivamogga come
+                alive as interactive maps drawn straight from the sanctioned
+                survey &mdash; pan, zoom, and tap any plot to see its size, facing,
+                and current status.
               </p>
             </Reveal>
 
@@ -1507,7 +1529,7 @@ function ServicesSection() {
           <Reveal>
             <div className="eyebrow">What We Do</div>
             <h2 className="section-title" style={{ marginBottom: 0 }}>
-              Our <em>Services</em>
+              Our Real Estate <em>Services</em> in Shivamogga
             </h2>
           </Reveal>
           <Reveal delay={0.1}>
@@ -1685,12 +1707,12 @@ function StatisticsSection() {
 // Gallery
 // ---------------------------------------------------------------------------
 const GALLERY_ITEMS = [
-  { tag: 'Layout', title: 'Residential Layouts', img: 'https://images.unsplash.com/photo-1499631507243-7290571550ed', span: 'g-span-2c g-span-2r' },
-  { tag: 'Construction', title: 'Construction Phase', img: 'https://images.unsplash.com/photo-1508450859948-4e04fabaa4ea', span: '' },
-  { tag: 'Infrastructure', title: 'Modern Infrastructure', img: 'https://images.unsplash.com/photo-1499310392581-322cec0355a6', span: 'g-span-2r' },
-  { tag: 'Completed', title: 'Completed Homes', img: 'https://images.unsplash.com/photo-1721815693498-cc28507c0ba2', span: '' },
-  { tag: 'Drone', title: 'Aerial View', img: 'https://images.unsplash.com/photo-1524813686514-a57563d77965', span: 'g-span-2c' },
-  { tag: 'Community', title: 'Community Spaces', img: 'https://images.unsplash.com/photo-1780732658907-33c2e90a902c', span: '' },
+  { tag: 'Layout', title: 'Residential Layouts', img: 'https://images.unsplash.com/photo-1499631507243-7290571550ed', span: 'g-span-2c g-span-2r', alt: 'Aerial view of a planned residential layout with roads and plots' },
+  { tag: 'Construction', title: 'Construction Phase', img: 'https://images.unsplash.com/photo-1508450859948-4e04fabaa4ea', span: '', alt: 'House under construction at a residential site' },
+  { tag: 'Infrastructure', title: 'Modern Infrastructure', img: 'https://images.unsplash.com/photo-1499310392581-322cec0355a6', span: 'g-span-2r', alt: 'Paved internal roads and infrastructure in a residential layout' },
+  { tag: 'Completed', title: 'Completed Homes', img: 'https://images.unsplash.com/photo-1721815693498-cc28507c0ba2', span: '', alt: 'Completed independent house in a residential community' },
+  { tag: 'Drone', title: 'Aerial View', img: 'https://images.unsplash.com/photo-1524813686514-a57563d77965', span: 'g-span-2c', alt: 'Drone view over a residential neighbourhood layout' },
+  { tag: 'Community', title: 'Community Spaces', img: 'https://images.unsplash.com/photo-1780732658907-33c2e90a902c', span: '', alt: 'Open community space within a residential layout' },
 ];
 
 function GallerySection() {
@@ -1723,7 +1745,7 @@ function GallerySection() {
               style={{ cursor: 'pointer' }}
             >
               <div onClick={() => setSelected(i)}>
-                <img src={`${item.img}?auto=format&fit=crop&w=900&q=75`} alt={item.title} />
+                <img src={`${item.img}?auto=format&fit=crop&w=900&q=75`} alt={item.alt} />
                 <div className="gallery-caption">
                   <span className="g-tag">{item.tag}</span>
                   <h4>{item.title}</h4>
@@ -1743,13 +1765,13 @@ function GallerySection() {
             exit={{ opacity: 0 }}
             onClick={() => setSelected(null)}
           >
-            <button className="lightbox-close" onClick={() => setSelected(null)}>
+            <button className="lightbox-close" onClick={() => setSelected(null)} aria-label="Close image">
               <X size={18} color="#F5F1E6" />
             </button>
             <motion.img
               key={selected}
               src={`${GALLERY_ITEMS[selected].img}?auto=format&fit=crop&w=1400&q=80`}
-              alt={GALLERY_ITEMS[selected].title}
+              alt={GALLERY_ITEMS[selected].alt}
               initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.3 }}
@@ -1877,7 +1899,7 @@ function ContactSection() {
         <Reveal>
           <div className="eyebrow on-dark">Get In Touch</div>
           <h2 className="section-title on-dark">
-            Let&rsquo;s Talk <em>Plots &amp; Plans</em>
+            Enquire About a <em>Plot or Project</em>
           </h2>
 
           <div style={{ marginTop: 12 }}>
@@ -1915,7 +1937,7 @@ function ContactSection() {
               src="https://www.google.com/maps?q=Shivamogga,Karnataka,India&output=embed"
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
-              title="Shivamogga, Karnataka map"
+              title="Map of Shivamogga, Karnataka"
             />
           </div>
         </Reveal>
@@ -1992,7 +2014,6 @@ function ContactSection() {
 // Footer
 // ---------------------------------------------------------------------------
 function Footer() {
-  const router = useRouter();
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -2002,7 +2023,7 @@ function Footer() {
         <div className="footer-grid">
           <Reveal>
             <div className="footer-logo">
-              <svg className="footer-logo-mark" viewBox="0 0 24 24">
+              <svg className="footer-logo-mark" viewBox="0 0 24 24" role="img" aria-label="VCP Developers logo">
                 <rect x="2" y="16" width="20" height="2" fill="#B8894A" />
                 <rect x="3" y="8" width="4" height="8" fill="none" stroke="#B8894A" strokeWidth="1.2" />
                 <line x1="5" y1="8" x2="5" y2="16" stroke="#B8894A" strokeWidth="0.8" />
@@ -2017,14 +2038,14 @@ function Footer() {
               </svg>
               VCP <span>Developers</span>
             </div>
-            <p>Premium residential layouts and complete home construction solutions in Shivamogga.</p>
+            <p>Premium residential layouts, plot sales and complete home construction solutions in Shivamogga, Karnataka.</p>
           </Reveal>
           <Reveal delay={0.1}>
             <h5>Explore</h5>
             <ul>
               <li><button onClick={() => scrollToSection('home')} style={{ textTransform: 'capitalize' }}>Home</button></li>
               <li><button onClick={() => scrollToSection('about')} style={{ textTransform: 'capitalize' }}>About</button></li>
-              <li><button onClick={() => router.push('/projects')}>Projects</button></li>
+              <li><button onClick={() => scrollToSection('projects')} style={{ textTransform: 'capitalize' }}>Residential Projects</button></li>
               <li><button onClick={() => scrollToSection('services')} style={{ textTransform: 'capitalize' }}>Services</button></li>
               <li><button onClick={() => scrollToSection('contact')} style={{ textTransform: 'capitalize' }}>Contact</button></li>
             </ul>
@@ -2056,7 +2077,7 @@ function FloatingButtons() {
         target="_blank"
         rel="noopener noreferrer"
         className="fab fab-wa"
-        aria-label="WhatsApp us"
+        aria-label="Chat with us on WhatsApp"
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
         transition={{ delay: 0.6, type: 'spring' }}
