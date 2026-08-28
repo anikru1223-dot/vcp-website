@@ -645,55 +645,6 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
 .why-item h3{font-size:17px;color:var(--linen);margin-bottom:6px;}
 .why-item p{font-size:14px;color:rgba(245,241,230,0.55);line-height:1.55;}
 
-/* ============ PROCESS ============ */
-.process-desktop{position:relative;padding-top:20px;}
-.process-line{
-  position:absolute;
-  top:64px;left:60px;right:60px;
-  height:1px;
-  background:repeating-linear-gradient(90deg, var(--brass) 0 8px, transparent 8px 16px);
-  opacity:0.5;
-}
-.process-row{
-  display:grid;
-  grid-template-columns:repeat(6,1fr);
-  gap:16px;
-  position:relative;
-}
-.process-step{display:flex;flex-direction:column;align-items:center;text-align:center;}
-.process-num{
-  width:88px;height:88px;
-  border-radius:50%;
-  background:var(--paper);
-  border:2px solid var(--brass);
-  display:flex;align-items:center;justify-content:center;
-  flex-direction:column;
-  margin-bottom:20px;
-  position:relative;
-  z-index:2;
-  transition:transform 0.35s cubic-bezier(.22,.98,.28,1), box-shadow 0.35s ease;
-}
-.process-step:hover .process-num{transform:scale(1.08);box-shadow:0 16px 30px -12px rgba(184,137,74,0.5);}
-.process-num-index{font-family:var(--font-mono);font-size:11px;color:var(--brass-dark);position:absolute;top:9px;}
-.process-num svg{color:var(--brass-dark);margin-top:6px;}
-.process-step h3{font-size:15px;color:var(--ink);font-weight:700;}
-.process-mobile{display:none;flex-direction:column;gap:0;position:relative;}
-.process-mobile::before{
-  content:'';
-  position:absolute;left:29px;top:10px;bottom:10px;
-  width:1px;
-  background:repeating-linear-gradient(180deg, var(--brass) 0 6px, transparent 6px 12px);
-  opacity:0.5;
-}
-.process-mobile-item{display:flex;align-items:center;gap:20px;padding:18px 0;position:relative;z-index:1;}
-.process-mobile-num{
-  width:60px;height:60px;border-radius:50%;
-  background:var(--paper);border:2px solid var(--brass);
-  display:flex;align-items:center;justify-content:center;
-  color:var(--brass-dark);flex-shrink:0;
-}
-.process-mobile-item h3{font-size:16px;color:var(--ink);}
-
 /* ============ STATISTICS ============ */
 .stats-grid{
   display:grid;
@@ -972,9 +923,6 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:600;line-height:1.05;let
   .projects-showcase{grid-template-columns:1fr;gap:44px;}
   .projects-feature{min-height:380px;}
   .why-grid{grid-template-columns:repeat(2,1fr);}
-  .process-row{display:none;}
-  .process-line{display:none;}
-  .process-mobile{display:flex;}
   .stats-grid{grid-template-columns:repeat(2,1fr);}
   .gallery-grid{grid-template-columns:repeat(2,1fr);}
   .g-span-2c{grid-column:span 2;}
@@ -1082,8 +1030,8 @@ function Magnetic({
 const NAV_ITEMS = [
   { label: 'Home', id: 'home' },
   { label: 'About', id: 'about' },
-  { label: 'Services', id: 'services' },
   { label: 'Projects', id: 'projects' },
+  { label: 'Services', id: 'services' },
   { label: 'Why Choose Us', id: 'why-choose-us' },
   { label: 'Contact', id: 'contact' },
 ];
@@ -1249,11 +1197,11 @@ function HeroSection() {
             transition={{ duration: 0.7, delay: 0.45 }}
           >
             <div className="hero-stat">
-              <span className="hero-stat-num">15+</span>
+              <span className="hero-stat-num">28+</span>
               <span className="hero-stat-label">Years Experience</span>
             </div>
             <div className="hero-stat">
-              <span className="hero-stat-num">45+</span>
+              <span className="hero-stat-num">22+</span>
               <span className="hero-stat-label">Projects Done</span>
             </div>
             <div className="hero-stat">
@@ -1407,7 +1355,7 @@ function AboutSection() {
             alt="Construction team building a VCP Developers layout"
           />
           <div className="about-badge">
-            <span className="about-badge-num">15+</span>
+            <span className="about-badge-num">28+</span>
             <span className="about-badge-label">Years&nbsp;Trusted</span>
           </div>
         </Reveal>
@@ -1443,57 +1391,6 @@ function AboutSection() {
               </Reveal>
             ))}
           </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Services
-// ---------------------------------------------------------------------------
-const SERVICES = [
-  { icon: LandPlot, tag: 'SVC · 01', title: 'Residential Layout Development', desc: 'Premium residential layouts with modern infrastructure and planning' },
-  { icon: HomeIcon, tag: 'SVC · 02', title: 'Residential Site Sales', desc: 'Prime residential plots in well-planned communities' },
-  { icon: Hammer, tag: 'SVC · 03', title: 'House Construction', desc: 'Complete construction from foundation to finish' },
-  { icon: DollarSign, tag: 'SVC · 04', title: 'Housing Loan Assistance', desc: 'Expert guidance for housing loan approvals' },
-  { icon: FileText, tag: 'SVC · 05', title: 'Legal Documentation', desc: 'Complete documentation and compliance support' },
-  { icon: KeyIcon, tag: 'SVC · 06', title: 'End-to-End Key Handover', desc: 'From plot purchase to key handover solutions' },
-];
-
-function ServicesSection() {
-  return (
-    <section id="services" className="section section-mist">
-      <div className="container">
-        <div className="section-head">
-          <Reveal>
-            <div className="eyebrow">What We Do</div>
-            <h2 className="section-title" style={{ marginBottom: 0 }}>
-              Our <em>Services</em>
-            </h2>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <p className="section-lede">
-              From the first survey line to the final key in hand &mdash; every
-              step of the journey, handled in-house.
-            </p>
-          </Reveal>
-        </div>
-
-        <div className="services-grid">
-          {SERVICES.map((s, i) => {
-            const Icon = s.icon;
-            return (
-              <Reveal key={s.title} delay={(i % 3) * 0.1} className="service-card">
-                <span className="service-tag">{s.tag}</span>
-                <div className="service-icon">
-                  <Icon size={24} />
-                </div>
-                <h3>{s.title}</h3>
-                <p>{s.desc}</p>
-              </Reveal>
-            );
-          })}
         </div>
       </div>
     </section>
@@ -1591,6 +1488,57 @@ function ProjectsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Services
+// ---------------------------------------------------------------------------
+const SERVICES = [
+  { icon: LandPlot, tag: 'SVC · 01', title: 'Residential Layout Development', desc: 'Premium residential layouts with modern infrastructure and planning' },
+  { icon: HomeIcon, tag: 'SVC · 02', title: 'Residential Site Sales', desc: 'Prime residential plots in well-planned communities' },
+  { icon: Hammer, tag: 'SVC · 03', title: 'House Construction', desc: 'Complete construction from foundation to finish' },
+  { icon: DollarSign, tag: 'SVC · 04', title: 'Housing Loan Assistance', desc: 'Expert guidance for housing loan approvals' },
+  { icon: FileText, tag: 'SVC · 05', title: 'Legal Documentation', desc: 'Complete documentation and compliance support' },
+  { icon: KeyIcon, tag: 'SVC · 06', title: 'End-to-End Key Handover', desc: 'From plot purchase to key handover solutions' },
+];
+
+function ServicesSection() {
+  return (
+    <section id="services" className="section section-mist">
+      <div className="container">
+        <div className="section-head">
+          <Reveal>
+            <div className="eyebrow">What We Do</div>
+            <h2 className="section-title" style={{ marginBottom: 0 }}>
+              Our <em>Services</em>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <p className="section-lede">
+              From the first survey line to the final key in hand &mdash; every
+              step of the journey, handled in-house.
+            </p>
+          </Reveal>
+        </div>
+
+        <div className="services-grid">
+          {SERVICES.map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <Reveal key={s.title} delay={(i % 3) * 0.1} className="service-card">
+                <span className="service-tag">{s.tag}</span>
+                <div className="service-icon">
+                  <Icon size={24} />
+                </div>
+                <h3>{s.title}</h3>
+                <p>{s.desc}</p>
+              </Reveal>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Why Choose Us
 // ---------------------------------------------------------------------------
 const WHY_REASONS = [
@@ -1615,7 +1563,7 @@ function WhyChooseUsSection() {
           </Reveal>
           <Reveal delay={0.1}>
             <p className="section-lede on-dark">
-              Fifteen years of the same promise: clear terms, solid
+              Twenty-eight years of the same promise: clear terms, solid
               construction, and a team that answers the phone.
             </p>
           </Reveal>
@@ -1634,74 +1582,6 @@ function WhyChooseUsSection() {
                   <p>{r.desc}</p>
                 </div>
               </Reveal>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Process
-// ---------------------------------------------------------------------------
-const PROCESS_STEPS = [
-  { icon: LandPlot, title: 'Choose Plot' },
-  { icon: FileText, title: 'Documentation' },
-  { icon: DollarSign, title: 'Loan Approval' },
-  { icon: Hammer, title: 'Construction' },
-  { icon: HomeIcon, title: 'Final Finish' },
-  { icon: KeyIcon, title: 'Key Handover' },
-];
-
-function ProcessSection() {
-  return (
-    <section id="process" className="section section-linen">
-      <div className="container">
-        <div className="section-head">
-          <Reveal>
-            <div className="eyebrow">The Journey</div>
-            <h2 className="section-title" style={{ marginBottom: 0 }}>
-              Our <em>Process</em>
-            </h2>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <p className="section-lede">
-              Six steps, in order, from choosing a plot to holding the keys.
-            </p>
-          </Reveal>
-        </div>
-
-        <div className="process-desktop">
-          <div className="process-line" />
-          <div className="process-row">
-            {PROCESS_STEPS.map((step, i) => {
-              const Icon = step.icon;
-              return (
-                <Reveal key={step.title} delay={i * 0.08} className="process-step">
-                  <div className="process-num">
-                    <span className="process-num-index">{String(i + 1).padStart(2, '0')}</span>
-                    <Icon size={26} />
-                  </div>
-                  <h3>{step.title}</h3>
-                </Reveal>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="process-mobile">
-          {PROCESS_STEPS.map((step, i) => {
-            const Icon = step.icon;
-            return (
-              <div className="process-mobile-item" key={step.title}>
-                <div className="process-mobile-num">
-                  <Icon size={22} />
-                </div>
-                <h3>
-                  {String(i + 1).padStart(2, '0')} &middot; {step.title}
-                </h3>
-              </div>
             );
           })}
         </div>
@@ -1783,8 +1663,8 @@ function StatCard({
 
 function StatisticsSection() {
   const stats = [
-    { icon: Briefcase, value: 15, label: 'Years of Experience', ring: 72 },
-    { icon: Building2, value: 45, label: 'Projects Completed', ring: 60 },
+    { icon: Briefcase, value: 28, label: 'Years of Experience', ring: 72 },
+    { icon: Building2, value: 22, label: 'Projects Completed', ring: 60 },
     { icon: Users, value: 2800, label: 'Happy Families', ring: 95 },
     { icon: LandPlot, value: 1200, label: 'Residential Sites Sold', ring: 85 },
   ];
@@ -2144,8 +2024,8 @@ function Footer() {
             <ul>
               <li><button onClick={() => scrollToSection('home')} style={{ textTransform: 'capitalize' }}>Home</button></li>
               <li><button onClick={() => scrollToSection('about')} style={{ textTransform: 'capitalize' }}>About</button></li>
-              <li><button onClick={() => scrollToSection('services')} style={{ textTransform: 'capitalize' }}>Services</button></li>
               <li><button onClick={() => router.push('/projects')}>Projects</button></li>
+              <li><button onClick={() => scrollToSection('services')} style={{ textTransform: 'capitalize' }}>Services</button></li>
               <li><button onClick={() => scrollToSection('contact')} style={{ textTransform: 'capitalize' }}>Contact</button></li>
             </ul>
           </Reveal>
@@ -2451,10 +2331,9 @@ export default function Home() {
           <Navigation />
           <HeroSection />
           <AboutSection />
-          <ServicesSection />
           <ProjectsSection />
+          <ServicesSection />
           <WhyChooseUsSection />
-          <ProcessSection />
           <StatisticsSection />
           <GallerySection />
           <LeadershipSection />
