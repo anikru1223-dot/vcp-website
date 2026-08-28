@@ -19,24 +19,27 @@ export const metadata: Metadata = {
   ),
 
   title: {
-    default: "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
-    template: "%s | Vijayalaxmi C Patil Developers & Promoters",
+    default:
+      "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
+    template:
+      "%s | Vijayalaxmi C Patil Developers & Promoters",
   },
 
   description:
-    "Vijayalaxmi C Patil Developers & Promoters offers residential layouts, premium plots, home loans and complete house construction services in Shivamogga, Karnataka.",
+    "Premium residential layout development, plot sales, home loans and complete house construction services in Shivamogga, Karnataka.",
 
   keywords: [
     "Vijayalaxmi C Patil Developers",
     "Vijayalaxmi C Patil Developers and Promoters",
-    "real estate developers Shivamogga",
+    "plots for sale in Shivamogga",
+    "sites for sale in Shivamogga",
     "residential plots Shivamogga",
-    "plots for sale Shivamogga",
-    "residential layout Shivamogga",
-    "property developers Shivamogga",
+    "layout developers Shivamogga",
+    "real estate Shivamogga",
+    "property Shivamogga",
     "house construction Shivamogga",
     "home loans Shivamogga",
-    "real estate Karnataka",
+    "Karnataka real estate",
   ],
 
   authors: [
@@ -46,10 +49,12 @@ export const metadata: Metadata = {
   ],
 
   creator: "Vijayalaxmi C Patil Developers & Promoters",
+
   publisher: "Vijayalaxmi C Patil Developers & Promoters",
 
   alternates: {
-    canonical: "/",
+    canonical:
+      "https://vijayalaxmicpatildevelopersandpromoters.com/",
   },
 
   robots: {
@@ -69,14 +74,16 @@ export const metadata: Metadata = {
     locale: "en_IN",
     url: "https://vijayalaxmicpatildevelopersandpromoters.com/",
     siteName: "Vijayalaxmi C Patil Developers & Promoters",
-    title: "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
+    title:
+      "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
     description:
       "Premium residential layouts, plots, home loans and complete house construction services in Shivamogga, Karnataka.",
   },
 
   twitter: {
     card: "summary_large_image",
-    title: "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
+    title:
+      "Vijayalaxmi C Patil Developers & Promoters | Shivamogga",
     description:
       "Premium residential layouts, plots, home loans and complete house construction services in Shivamogga, Karnataka.",
   },
@@ -95,12 +102,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="en-IN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}
 
+        {/* Google Analytics */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-6DEW5S7VTN"
           strategy="afterInteractive"
@@ -109,7 +117,11 @@ export default function RootLayout({
         <Script id="google-analytics" strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
-            function gtag(){window.dataLayer.push(arguments);}
+
+            function gtag() {
+              window.dataLayer.push(arguments);
+            }
+
             gtag('js', new Date());
 
             gtag('config', 'G-6DEW5S7VTN');
