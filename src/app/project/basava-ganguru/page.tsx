@@ -64,7 +64,7 @@ const PROJECTS: Project[] = [
         roads: '40/30 ft',
         accent: 'emerald',
         icon: Trees,
-        layoutRoute: '/basava-ganguru/layout-map',
+        layoutRoute: '/basava-ganguru-map',
         waMessage: "Hi, I'm interested in the Basava Ganguru Residential Layout. Please share details.",
     },
 ];
