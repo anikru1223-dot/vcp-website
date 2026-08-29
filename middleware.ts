@@ -5,11 +5,12 @@ export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
 
     // -------------------------
-    // STATIC PUBLIC FILES (images, etc. in /public)
-    // Anything with a file extension (.png, .jpg, .svg, .ico, .css, .js...) is a
-    // static asset and must NEVER be gated behind login — otherwise images break.
+    // STATIC PUBLIC FILES
     // -------------------------
-    const isStaticFile = /\.(png|jpe?g|gif|svg|webp|avif|ico|css|js|txt|xml|woff2?|ttf|otf|mp4|webm)$/i.test(pathname);
+    const isStaticFile =
+        /\.(png|jpe?g|gif|svg|webp|avif|ico|css|js|txt|xml|woff2?|ttf|otf|mp4|webm)$/i.test(
+            pathname
+        );
 
     // -------------------------
     // PUBLIC ROUTES
@@ -17,12 +18,21 @@ export async function middleware(request: NextRequest) {
     const isPublic =
         pathname === "/" ||
         pathname === "/login" ||
+
+        // Existing Koushik Enclave map
         pathname === "/layout-map" ||
+
+        // NEW: Basava Ganguru map
+        pathname === "/basava-ganguru-map" ||
+
+        // Projects
         pathname === "/projects" ||
         pathname.startsWith("/projects/") ||
+
         // Basava Ganguru Public Website
         pathname === "/project/basava-ganguru" ||
         pathname.startsWith("/project/basava-ganguru/") ||
+
         // Next.js assets
         pathname.startsWith("/_next") ||
         pathname.startsWith("/api") ||
@@ -30,16 +40,22 @@ export async function middleware(request: NextRequest) {
         pathname.startsWith("/images") ||
         pathname.startsWith("/fonts");
 
-    // Static files are always public — skip auth entirely (also avoids a needless
-    // Supabase call on every image request).
+    // -------------------------
+    // STATIC FILES / PUBLIC ROUTES
+    // -------------------------
     if (isStaticFile || isPublic) {
-        // Still allow logged-in users to be bounced away from /login below,
-        // so only short-circuit for the truly public, non-/login cases.
+        // Keep /login going through auth so logged-in users
+        // can still be redirected to /projects.
         if (pathname !== "/login") {
-            return NextResponse.next({ request });
+            return NextResponse.next({
+                request,
+            });
         }
     }
 
+    // -------------------------
+    // SUPABASE SERVER CLIENT
+    // -------------------------
     let response = NextResponse.next({
         request,
     });
@@ -52,6 +68,7 @@ export async function middleware(request: NextRequest) {
                 get(name) {
                     return request.cookies.get(name)?.value;
                 },
+
                 set(name, value, options) {
                     response.cookies.set({
                         name,
@@ -59,6 +76,7 @@ export async function middleware(request: NextRequest) {
                         ...options,
                     });
                 },
+
                 remove(name, options) {
                     response.cookies.set({
                         name,
@@ -71,19 +89,24 @@ export async function middleware(request: NextRequest) {
         }
     );
 
+    // -------------------------
+    // GET CURRENT USER
+    // -------------------------
     const {
         data: { user },
     } = await supabase.auth.getUser();
 
     // -------------------------
-    // NOT LOGGED IN → protected route → send to login
+    // NOT LOGGED IN
+    // → protected route → login
     // -------------------------
     if (!user && !isPublic && !isStaticFile) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
     // -------------------------
-    // ALREADY LOGGED IN → visiting /login → send to projects
+    // ALREADY LOGGED IN
+    // → /login → projects
     // -------------------------
     if (user && pathname === "/login") {
         return NextResponse.redirect(new URL("/projects", request.url));
@@ -92,6 +115,9 @@ export async function middleware(request: NextRequest) {
     return response;
 }
 
+// -------------------------
+// MIDDLEWARE MATCHER
+// -------------------------
 export const config = {
     matcher: [
         "/((?!_next/static|_next/image|favicon.ico).*)",
