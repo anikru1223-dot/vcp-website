@@ -755,9 +755,39 @@ body.lit .gplang.on{background:rgba(45,105,70,.16);border-color:rgba(45,105,70,.
   body.has-detail #gearpop{pointer-events:none}
 }
 
+/* IQ info button + popup card */
+#iqwrap{pointer-events:auto;position:relative}
+#iqbtn{width:38px;height:38px;display:grid;place-items:center;cursor:pointer;color:var(--txt-dim);
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;letter-spacing:.02em;transition:.15s}
+#iqbtn:hover,#iqbtn.on{color:var(--acc)}
+#iqpop{position:absolute;top:calc(100% + 8px);right:0;z-index:33;width:260px;padding:18px 18px 16px;
+  transform-origin:top right;transform:scale(.96) translateY(-6px);opacity:0;pointer-events:none;transition:.2s}
+#iqpop.show{transform:none;opacity:1;pointer-events:auto}
+#iqhead{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+#iqicon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(135deg,rgba(95,227,200,.22),rgba(95,227,200,.06));color:var(--acc)}
+#iqicon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#iqclose{width:22px;height:22px;display:grid;place-items:center;cursor:pointer;color:var(--txt-mute);
+  font-size:16px;line-height:1;border-radius:7px;transition:.15s}
+#iqclose:hover{color:var(--txt);background:rgba(255,255,255,.08)}
+#iqtitle{font-family:'Sora',sans-serif;font-weight:700;font-size:15px;color:var(--txt);margin-bottom:2px}
+#iqsub{font-size:8.5px;letter-spacing:1.1px;color:var(--txt-mute);text-transform:uppercase;margin-bottom:10px}
+#iqdesc{font-size:12px;line-height:1.55;color:var(--txt-dim);margin:0 0 14px}
+#iqlinkbtn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  padding:10px 14px;border-radius:12px;background:var(--acc);color:#04211a;font-weight:700;font-size:12.5px;
+  text-decoration:none;transition:.18s;cursor:pointer;border:none}
+#iqlinkbtn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+body.lit #iqlinkbtn{color:#04241a}
+body.iq-open #pcluster,body.iq-open #tools,body.iq-open #miq{opacity:0;pointer-events:none;transition:opacity .2s}
+@media(max-width:1119px){
+  #iqbtn{width:36px;height:36px;font-size:11px}
+  #iqpop{width:230px}
+  body.has-detail #iqbtn,body.has-detail #iqpop{opacity:0;pointer-events:none;transition:opacity .2s}
+}
+
 /* ===== liquid glass micro-interactions ===== */
 /* interactive glass controls lift on hover, press with spring */
-#layerbtn,#sharebtn,#compass,#gear,.tbtn,.pbtn,.nv,#miq,#b-fit{
+#layerbtn,#sharebtn,#compass,#gear,#iqbtn,.tbtn,.pbtn,.nv,#miq,#b-fit{
   transition:transform .35s cubic-bezier(.34,1.56,.64,1),color .2s,background .2s,box-shadow .35s cubic-bezier(.34,1.56,.64,1)}
 #compass:hover,#gear:hover,.pbtn:hover,#miq:hover{transform:translateY(-2px) scale(1.015)}
 #compass:active,#gear:active,.pbtn:active,.tbtn:active{transform:scale(.94)}
@@ -1023,6 +1053,19 @@ body.lit .sovitem:hover,body.lit .sovitem.sel{background:rgba(45,105,70,.1);bord
   <div id="sharewrap">
     <div id="sharebtn" class="glass" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" title="Share this map">
       <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.3 10.7 7.4-4.3M8.3 13.3l7.4 4.3"/></svg><span data-i18n="share">Share</span>
+    </div>
+  </div>
+  <div id="iqwrap">
+    <div id="iqbtn" class="glass" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" title="About this map">IQ</div>
+    <div id="iqpop" class="glass" role="dialog" aria-label="TrainIQ">
+      <div id="iqhead">
+        <div id="iqicon"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <div id="iqclose" role="button" tabindex="0" aria-label="Close">×</div>
+      </div>
+      <div id="iqtitle">TrainIQ</div>
+      <div id="iqsub">Interactive maps &amp; digital products</div>
+      <p id="iqdesc">This interactive map was designed and built by TrainIQ — we craft interactive layouts, websites, apps and CRM systems for real&#8209;estate and beyond.</p>
+      <a id="iqlinkbtn" href="https://trainiq.in" target="_blank" rel="noopener">Visit trainiq.in ↗</a>
     </div>
   </div>
 
@@ -2339,7 +2382,21 @@ document.querySelectorAll('.nv').forEach(n=>{
   n.addEventListener('click',e=>{e.stopPropagation();navAction(n.dataset.nav);});
   n.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();navAction(n.dataset.nav);}});
 });
-addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();openContact(false);closeLocationConfirm();openShare(false);}});
+/* TrainIQ info popup */
+const iqbtn=$('#iqbtn'), iqpop=$('#iqpop');
+function openIQ(v){
+  iqpop.classList.toggle('show',v);
+  iqbtn.classList.toggle('on',v);
+  iqbtn.setAttribute('aria-expanded',v);
+  document.body.classList.toggle('iq-open',v);
+}
+iqbtn.addEventListener('click',()=>openIQ(!iqpop.classList.contains('show')));
+iqbtn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();iqbtn.click();}});
+$('#iqclose').addEventListener('click',()=>openIQ(false));
+$('#iqclose').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openIQ(false);}});
+document.addEventListener('click',e=>{ if(!e.target.closest('#iqpop')&&!e.target.closest('#iqbtn'))openIQ(false); });
+
+addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();openContact(false);closeLocationConfirm();openShare(false);openIQ(false);}});
 
 
 /* MapIQ badge */
