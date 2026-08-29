@@ -4,10 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bricolage_Grotesque, Manrope, IBM_Plex_Mono } from 'next/font/google';
 import {
-    MapPin, Phone, MessageCircle, ArrowLeft, Compass,
+    MapPin, Phone, MessageCircle, Compass, ArrowRight,
     Route, Trees, Landmark, Droplets, Zap, ShieldCheck, Waves,
     GraduationCap, Cross, Train, Building2, TrendingUp,
-    Home as HomeIcon, Sparkles,
+    Home as HomeIcon, Sparkles, Layers,
 } from 'lucide-react';
 
 const display = Bricolage_Grotesque({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-display' });
@@ -16,8 +16,57 @@ const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], 
 
 const PHONE = '+919980061727';
 const PHONE_DISPLAY = '+91 99800 61727';
-const MAPS_URL = 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw';
-const WA_URL = `https://wa.me/919980061727?text=${encodeURIComponent("Hi, I'm interested in the Basava Ganguru Residential Layout. Please share details.")}`;
+
+function waUrl(message: string) {
+    return `https://wa.me/919980061727?text=${encodeURIComponent(message)}`;
+}
+
+/* ============ PROJECTS ============ */
+type Project = {
+    id: string;
+    name: string;
+    tagline: string;
+    location: string;
+    mapsUrl: string;
+    price: string;
+    plots: number;
+    approval: string;
+    roads: string;
+    image: string;
+    layoutRoute: string;
+    waMessage: string;
+};
+
+const PROJECTS: Project[] = [
+    {
+        id: 'koushik-enclave',
+        name: 'Koushik Enclave',
+        tagline: 'A premium gated layout for a modern lifestyle.',
+        location: 'Shivamogga, Karnataka',
+        mapsUrl: 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw',
+        price: '2,300',
+        plots: 32,
+        approval: 'SBUDA',
+        roads: '40/30 ft',
+        image: '/koushik-enclave-layout.png',
+        layoutRoute: '/koushik-enclave/layout-map',
+        waMessage: "Hi, I'm interested in the Koushik Enclave Residential Layout. Please share details.",
+    },
+    {
+        id: 'basava-ganguru',
+        name: 'Basava Ganguru',
+        tagline: 'Wide roads, green spaces, and a growing corridor.',
+        location: 'Shivamogga, Karnataka',
+        mapsUrl: 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw',
+        price: '2,300',
+        plots: 32,
+        approval: 'SBUDA',
+        roads: '40/30 ft',
+        image: '/basava-ganguru-layout.png',
+        layoutRoute: '/basava-ganguru/layout-map',
+        waMessage: "Hi, I'm interested in the Basava Ganguru Residential Layout. Please share details.",
+    },
+];
 
 const HIGHLIGHTS = [
     { icon: Route, title: 'Wide Roads', desc: 'Well-planned 40ft & 30ft internal roads for smooth movement and easy access.' },
@@ -87,9 +136,15 @@ function Reveal({ children, delay = 0, className, style }: { children: React.Rea
     );
 }
 
-export default function BasavaGanguruPage() {
+function scrollToId(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+export default function ProjectsPage() {
     const router = useRouter();
     const maxVal = Math.max(...APPRECIATION.map((a) => a.value));
+    const totalPlots = PROJECTS.reduce((sum, p) => sum + p.plots, 0);
+    const generalWa = waUrl("Hi, I'm interested in your residential layouts in Shivamogga. Please share details.");
 
     return (
         <main className={`${display.variable} ${body.variable} ${mono.variable} bg-root`}>
@@ -99,9 +154,6 @@ export default function BasavaGanguruPage() {
             <section className="bg-hero">
                 <div className="bg-hero-glow" aria-hidden="true" />
                 <div className="bg-hero-topbar">
-                    <button className="bg-back" onClick={() => router.push('/')}>
-                        <ArrowLeft size={15} /> Back
-                    </button>
                     <div className="bg-brand">
                         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                             <rect x="2" y="16" width="20" height="2" fill="#e3be86" />
@@ -110,29 +162,28 @@ export default function BasavaGanguruPage() {
                         </svg>
                         <span>Vijayalaxmi C Patil</span>
                     </div>
+                    <nav className="bg-nav">
+                        <button onClick={() => scrollToId('projects')}>Projects</button>
+                        <button onClick={() => scrollToId('location')}>Location</button>
+                        <button onClick={() => scrollToId('invest')}>Invest</button>
+                        <button onClick={() => scrollToId('contact')}>Contact</button>
+                    </nav>
                 </div>
 
                 <Reveal className="bg-hero-inner">
-                    <div className="bg-eyebrow on-dark">Premium Residential Layout</div>
-                    <h1 className="bg-hero-title">Basava Ganguru</h1>
-                    <div className="bg-hero-loc">
-                        <MapPin size={15} /> Shivamogga, Karnataka
-                    </div>
+                    <div className="bg-eyebrow on-dark">Developers &amp; Promoters · Shivamogga</div>
+                    <h1 className="bg-hero-title">Two Layouts.<br />One Trusted Name.</h1>
                     <p className="bg-hero-lede">
-                        Build your dream home in Shivamogga. An SBUDA-approved gated community of 32
-                        premium plots — wide roads, landscaped park, and every approval in place.
+                        Koushik Enclave and Basava Ganguru — SBUDA-approved residential layouts in
+                        Shivamogga&rsquo;s fastest-growing corridor. Wide roads, landscaped parks, and
+                        every approval in place, ready for immediate registration.
                     </p>
 
-                    <div className="bg-price">
-                        <span className="bg-price-label">Plots starting from</span>
-                        <span className="bg-price-val">&#8377;2,300 <em>/ sq.ft</em></span>
-                    </div>
-
                     <div className="bg-cta-row">
-                        <button className="bg-btn bg-btn-primary" onClick={() => router.push('/layout-map')}>
-                            <Compass size={17} /> View Map
+                        <button className="bg-btn bg-btn-primary" onClick={() => scrollToId('projects')}>
+                            <Layers size={17} /> View Projects
                         </button>
-                        <a className="bg-btn bg-btn-wa" href={WA_URL} target="_blank" rel="noopener noreferrer">
+                        <a className="bg-btn bg-btn-wa" href={generalWa} target="_blank" rel="noopener noreferrer">
                             <MessageCircle size={17} /> WhatsApp
                         </a>
                         <a className="bg-btn bg-btn-call" href={`tel:${PHONE}`}>
@@ -141,38 +192,73 @@ export default function BasavaGanguruPage() {
                     </div>
 
                     <div className="bg-hero-stats">
-                        <div><b>32</b><span>Plots</span></div>
+                        <div><b>2</b><span>Projects</span></div>
+                        <div><b>{totalPlots}+</b><span>Plots</span></div>
                         <div><b>SBUDA</b><span>Approved</span></div>
                         <div><b>40/30 ft</b><span>Roads</span></div>
                     </div>
                 </Reveal>
             </section>
 
-            {/* ============ MASTER PLAN (light paper) ============ */}
-            <section className="bg-sec bg-sec-paper">
+            {/* ============ PROJECTS (light paper) ============ */}
+            <section className="bg-sec bg-sec-paper" id="projects">
                 <div className="bg-wrap">
                     <Reveal>
-                        <div className="bg-sec-head">
-                            <div>
-                                <div className="bg-eyebrow">Master Layout Plan</div>
-                                <h2 className="bg-h2">Well planned. Well connected.</h2>
-                            </div>
-                            <button className="bg-btn bg-btn-primary bg-btn-sm bg-hide-sm" onClick={() => router.push('/layout-map')}>
-                                <Compass size={16} /> Open Layout
-                            </button>
-                        </div>
+                        <div className="bg-eyebrow">Our Projects</div>
+                        <h2 className="bg-h2">Choose Your Plot</h2>
+                        <p className="bg-lede">
+                            Two thoughtfully planned layouts, each SBUDA-approved and ready for registration.
+                            Explore the interactive map for either project below.
+                        </p>
                     </Reveal>
-                    <Reveal delay={0.08}>
-                        <button className="bg-plan-img" onClick={() => router.push('/layout-map')} aria-label="Open interactive layout map">
-                            <img src="/basava-ganguru-layout.png" alt="Basava Ganguru master layout plan with 32 plots" />
-                            <span className="bg-plan-hint"><Compass size={15} /> Tap to explore plot by plot</span>
-                        </button>
-                    </Reveal>
-                    <Reveal delay={0.12}>
-                        <button className="bg-btn bg-btn-primary bg-btn-full bg-show-sm" onClick={() => router.push('/layout-map')}>
-                            <Compass size={17} /> Open Interactive Layout
-                        </button>
-                    </Reveal>
+
+                    <div className="pc-grid">
+                        {PROJECTS.map((p, i) => (
+                            <Reveal key={p.id} delay={i * 0.08} className="pc-card">
+                                <button
+                                    className="pc-media"
+                                    onClick={() => router.push(p.layoutRoute)}
+                                    aria-label={`Open interactive layout map for ${p.name}`}
+                                >
+                                    <img src={p.image} alt={`${p.name} master layout plan`} />
+                                    <span className="pc-media-badge"><MapPin size={12} /> {p.location}</span>
+                                    <span className="pc-media-hint"><Compass size={14} /> Tap to explore</span>
+                                </button>
+
+                                <div className="pc-body">
+                                    <h3 className="pc-name">{p.name}</h3>
+                                    <p className="pc-tagline">{p.tagline}</p>
+
+                                    <div className="pc-stats">
+                                        <div><b>{p.plots}</b><span>Plots</span></div>
+                                        <div><b>{p.approval}</b><span>Approved</span></div>
+                                        <div><b>{p.roads}</b><span>Roads</span></div>
+                                    </div>
+
+                                    <div className="pc-price">
+                                        <span>Plots starting from</span>
+                                        <strong>&#8377;{p.price} <em>/ sq.ft</em></strong>
+                                    </div>
+
+                                    <div className="pc-actions">
+                                        <button className="bg-btn bg-btn-primary bg-btn-sm" onClick={() => router.push(p.layoutRoute)}>
+                                            <Compass size={15} /> View Map
+                                        </button>
+                                        <a className="bg-btn bg-btn-wa bg-btn-sm" href={waUrl(p.waMessage)} target="_blank" rel="noopener noreferrer">
+                                            <MessageCircle size={15} /> WhatsApp
+                                        </a>
+                                        <a className="bg-btn bg-btn-call bg-btn-sm" href={`tel:${PHONE}`}>
+                                            <Phone size={15} /> Call
+                                        </a>
+                                    </div>
+
+                                    <a className="pc-directions" href={p.mapsUrl} target="_blank" rel="noopener noreferrer">
+                                        <MapPin size={13} /> Get directions on Google Maps <ArrowRight size={13} />
+                                    </a>
+                                </div>
+                            </Reveal>
+                        ))}
+                    </div>
                 </div>
             </section>
 
@@ -182,6 +268,7 @@ export default function BasavaGanguruPage() {
                     <Reveal>
                         <div className="bg-eyebrow on-dark center">Key Highlights</div>
                         <h2 className="bg-h2 on-dark center">Crafted for a Better Lifestyle</h2>
+                        <p className="bg-lede center on-dark">Every layout — Koushik Enclave and Basava Ganguru alike — is built to the same high standard.</p>
                     </Reveal>
                     <div className="bg-grid">
                         {HIGHLIGHTS.map((h, i) => {
@@ -199,13 +286,13 @@ export default function BasavaGanguruPage() {
             </section>
 
             {/* ============ LOCATION (light mist) ============ */}
-            <section className="bg-sec bg-sec-mist">
+            <section className="bg-sec bg-sec-mist" id="location">
                 <div className="bg-wrap">
                     <Reveal>
                         <div className="bg-eyebrow">Location Advantages</div>
                         <h2 className="bg-h2">Everything, minutes away</h2>
                         <p className="bg-lede">
-                            Strategically located in the fast-growing corridor of Shivamogga, with
+                            Both layouts sit in the fast-growing corridor of Shivamogga, with
                             unmatched connectivity to universities, hospitals and transport hubs.
                         </p>
                     </Reveal>
@@ -225,16 +312,18 @@ export default function BasavaGanguruPage() {
                         })}
                     </div>
 
-                    <Reveal delay={0.1}>
-                        <a className="bg-btn bg-btn-primary bg-btn-full-mob bg-maps-btn" href={MAPS_URL} target="_blank" rel="noopener noreferrer">
-                            <MapPin size={17} /> Open Location in Google Maps
-                        </a>
+                    <Reveal delay={0.1} className="bg-maps-row">
+                        {PROJECTS.map((p) => (
+                            <a key={p.id} className="bg-btn bg-btn-primary bg-maps-btn" href={p.mapsUrl} target="_blank" rel="noopener noreferrer">
+                                <MapPin size={16} /> {p.name} on Google Maps
+                            </a>
+                        ))}
                     </Reveal>
                 </div>
             </section>
 
             {/* ============ INVESTMENT (dark ink) ============ */}
-            <section className="bg-sec bg-sec-ink">
+            <section className="bg-sec bg-sec-ink" id="invest">
                 <div className="bg-wrap">
                     <Reveal>
                         <div className="bg-eyebrow on-dark center">Invest Today, Profit Tomorrow</div>
@@ -273,29 +362,26 @@ export default function BasavaGanguruPage() {
             </section>
 
             {/* ============ CONTACT (light paper) ============ */}
-            <section className="bg-sec bg-sec-paper bg-contact">
+            <section className="bg-sec bg-sec-paper bg-contact" id="contact">
                 <div className="bg-wrap">
                     <Reveal className="bg-contact-inner">
                         <Sparkles size={24} className="bg-contact-spark" />
                         <h2 className="bg-h2 center">Your Dream Home Awaits</h2>
                         <p className="bg-lede center">
-                            Walk in, explore, and reserve your plot at Basava Ganguru. We&rsquo;re here to
+                            Walk in, explore either layout, and reserve your plot. We&rsquo;re here to
                             help you build your future.
                         </p>
                         <div className="bg-cta-row bg-cta-center">
-                            <button className="bg-btn bg-btn-primary" onClick={() => router.push('/layout-map')}>
-                                <Compass size={17} /> View Map
+                            <button className="bg-btn bg-btn-primary" onClick={() => scrollToId('projects')}>
+                                <Layers size={17} /> View Projects
                             </button>
-                            <a className="bg-btn bg-btn-wa" href={WA_URL} target="_blank" rel="noopener noreferrer">
+                            <a className="bg-btn bg-btn-wa" href={generalWa} target="_blank" rel="noopener noreferrer">
                                 <MessageCircle size={17} /> WhatsApp
                             </a>
                             <a className="bg-btn bg-btn-call" href={`tel:${PHONE}`}>
                                 <Phone size={17} /> Call
                             </a>
                         </div>
-                        <a className="bg-contact-maps" href={MAPS_URL} target="_blank" rel="noopener noreferrer">
-                            <MapPin size={14} /> Get directions on Google Maps
-                        </a>
                         <div className="bg-contact-num">{PHONE_DISPLAY}</div>
                     </Reveal>
                 </div>
@@ -308,7 +394,7 @@ export default function BasavaGanguruPage() {
 
             {/* Floating quick actions */}
             <div className="bg-fab">
-                <a className="bg-fab-btn bg-fab-wa" href={WA_URL} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
+                <a className="bg-fab-btn bg-fab-wa" href={generalWa} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
                     <MessageCircle size={22} />
                 </a>
                 <a className="bg-fab-btn bg-fab-call" href={`tel:${PHONE}`} aria-label="Call">
@@ -341,6 +427,7 @@ function Styles() {
 .bg-root img{max-width:100%;display:block;}
 .bg-root h1,.bg-root h2,.bg-root h3{font-family:var(--font-display);font-weight:700;letter-spacing:-0.01em;line-height:1.08;}
 .bg-root :focus-visible{outline:2px solid var(--brass);outline-offset:3px;}
+.bg-root button{font-family:inherit;}
 
 /* eyebrow / headings */
 .bg-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.18em;text-transform:uppercase;
@@ -351,8 +438,9 @@ function Styles() {
 .bg-h2{font-size:clamp(24px,6vw,38px);color:var(--ink);margin-bottom:16px;}
 .bg-h2.on-dark{color:var(--linen);}
 .bg-h2.center{text-align:center;margin-left:auto;margin-right:auto;max-width:640px;}
-.bg-lede{font-size:15.5px;line-height:1.68;color:var(--graphite-soft);max-width:520px;}
+.bg-lede{font-size:15.5px;line-height:1.68;color:var(--graphite-soft);max-width:560px;}
 .bg-lede.center{text-align:center;margin:0 auto;color:var(--graphite-soft);}
+.bg-lede.on-dark{color:var(--muted-dark);}
 .bg-h2.center + .bg-lede,.bg-eyebrow.center{margin-bottom:16px;}
 
 /* sections — mobile first: generous vertical padding, tight sides */
@@ -376,22 +464,17 @@ function Styles() {
   background:radial-gradient(circle,rgba(184,137,74,0.16),transparent 65%);pointer-events:none;}
 .bg-hero-topbar{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;
   padding:18px 20px;max-width:1100px;margin:0 auto;}
-.bg-back{display:inline-flex;align-items:center;gap:7px;background:none;border:none;cursor:pointer;
-  font-family:var(--font-mono);font-size:12px;letter-spacing:0.04em;color:var(--muted-dark);transition:color .25s;}
-.bg-back:hover{color:var(--brass-light);}
 .bg-brand{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--brass-light);font-family:var(--font-display);}
+.bg-nav{display:none;}
+.bg-nav button{background:none;border:none;cursor:pointer;color:var(--muted-dark);font-size:13px;font-weight:600;
+  letter-spacing:0.01em;transition:color .2s;}
+.bg-nav button:hover{color:var(--brass-light);}
 .bg-hero-inner{position:relative;z-index:2;max-width:1100px;margin:0 auto;padding:14px 20px 0;}
-.bg-hero-title{font-size:clamp(40px,12vw,74px);line-height:0.98;margin-bottom:12px;
+.bg-hero-title{font-size:clamp(34px,10vw,64px);line-height:1.02;margin-bottom:14px;
   background:linear-gradient(180deg,#fbf3dd,#e3be86 55%,#b8894a);
   -webkit-background-clip:text;background-clip:text;color:transparent;}
-.bg-hero-loc{display:inline-flex;align-items:center;gap:7px;color:var(--brass-light);font-size:13.5px;font-weight:600;margin-bottom:18px;}
-.bg-hero-lede{font-size:15.5px;line-height:1.7;color:var(--muted-dark);max-width:540px;margin-bottom:24px;}
-.bg-price{display:inline-flex;flex-direction:column;gap:2px;padding:14px 22px;margin-bottom:24px;
-  border:1px solid var(--line-dark);border-radius:14px;background:rgba(19,27,48,0.55);}
-.bg-price-label{font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted-dark);}
-.bg-price-val{font-family:var(--font-display);font-size:28px;font-weight:800;color:var(--brass-light);}
-.bg-price-val em{font-style:normal;font-size:14px;font-weight:600;color:var(--muted-dark);}
-.bg-hero-stats{display:flex;gap:0;margin-top:28px;}
+.bg-hero-lede{font-size:15.5px;line-height:1.7;color:var(--muted-dark);max-width:560px;margin-bottom:24px;}
+.bg-hero-stats{display:flex;gap:0;margin-top:28px;flex-wrap:wrap;row-gap:14px;}
 .bg-hero-stats > div{padding:0 18px;border-left:1px solid var(--line-dark);display:flex;flex-direction:column;gap:2px;}
 .bg-hero-stats > div:first-child{padding-left:0;border-left:none;}
 .bg-hero-stats b{font-family:var(--font-mono);font-size:19px;font-weight:600;color:var(--brass-light);}
@@ -404,7 +487,7 @@ function Styles() {
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bg-btn svg{flex-shrink:0;}
 .bg-btn:active{transform:scale(.97);}
-.bg-btn-sm{padding:10px 18px;font-size:13px;}
+.bg-btn-sm{padding:10px 16px;font-size:12.5px;}
 .bg-btn-primary{background:linear-gradient(135deg,var(--brass-light),var(--brass) 55%,var(--brass-dark));color:#1a1305;
   box-shadow:0 10px 26px -10px rgba(184,137,74,0.6);}
 .bg-btn-wa{background:var(--wa);color:#fff;box-shadow:0 10px 26px -12px rgba(37,211,102,0.55);}
@@ -413,16 +496,7 @@ function Styles() {
 .bg-cta-row .bg-btn{flex:1 1 0;min-width:0;padding-left:12px;padding-right:12px;}
 .bg-cta-center{justify-content:center;}
 
-/* MASTER PLAN */
-.bg-plan-img{position:relative;display:block;width:100%;border:1px solid var(--line-light);border-radius:16px;overflow:hidden;
-  cursor:pointer;background:#060a16;padding:0;box-shadow:0 20px 50px -26px rgba(43,42,38,0.5);transition:border-color .3s;}
-.bg-plan-img:hover{border-color:rgba(184,137,74,0.5);}
-.bg-plan-img img{width:100%;height:auto;display:block;}
-.bg-plan-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:7px;
-  background:rgba(10,16,36,0.84);border:1px solid var(--line-dark);color:var(--brass-light);font-size:12px;font-weight:600;
-  padding:8px 15px;border-radius:999px;white-space:nowrap;}
-
-/* card grid — mobile: 2 cols compact */
+/* card grid (highlights / invest) — mobile: 2 cols compact */
 .bg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:26px;}
 .bg-card{background:rgba(19,27,48,0.5);border:1px solid var(--line-dark);border-radius:14px;padding:20px 16px;
   transition:transform .3s cubic-bezier(.22,.98,.28,1), border-color .3s, background .3s;}
@@ -432,6 +506,41 @@ function Styles() {
 .bg-card:hover .bg-card-icon{background:var(--brass);color:#1a1305;transform:scale(1.06);}
 .bg-card h3{font-size:15px;color:var(--linen);margin-bottom:6px;}
 .bg-card p{font-size:12.5px;line-height:1.55;color:var(--muted-dark);}
+
+/* PROJECT CARDS */
+.pc-grid{display:grid;grid-template-columns:1fr;gap:22px;margin-top:30px;}
+.pc-card{background:#fff;border:1px solid var(--line-light);border-radius:20px;overflow:hidden;
+  box-shadow:0 20px 50px -30px rgba(43,42,38,0.4);transition:transform .3s cubic-bezier(.22,.98,.28,1), box-shadow .3s;}
+.pc-card:hover{transform:translateY(-4px);box-shadow:0 26px 60px -28px rgba(43,42,38,0.5);}
+.pc-media{position:relative;display:block;width:100%;aspect-ratio:16/10;border:none;padding:0;cursor:pointer;
+  background:#060a16;overflow:hidden;}
+.pc-media img{width:100%;height:100%;object-fit:cover;transition:transform .5s cubic-bezier(.22,.98,.28,1);}
+.pc-media:hover img{transform:scale(1.05);}
+.pc-media::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(6,10,22,0.55));}
+.pc-media-badge{position:absolute;top:12px;left:12px;z-index:2;display:inline-flex;align-items:center;gap:5px;
+  background:rgba(10,16,36,0.72);backdrop-filter:blur(4px);color:var(--brass-light);font-size:11px;font-weight:600;
+  padding:6px 11px;border-radius:999px;}
+.pc-media-hint{position:absolute;bottom:12px;left:12px;z-index:2;display:inline-flex;align-items:center;gap:6px;
+  background:rgba(10,16,36,0.72);backdrop-filter:blur(4px);color:var(--linen);font-size:11.5px;font-weight:600;
+  padding:6px 12px;border-radius:999px;}
+.pc-body{padding:22px 20px 24px;}
+.pc-name{font-size:22px;color:var(--ink);margin-bottom:4px;}
+.pc-tagline{font-size:13px;color:var(--graphite-soft);line-height:1.5;margin-bottom:18px;}
+.pc-stats{display:flex;gap:0;margin-bottom:18px;}
+.pc-stats > div{padding:0 16px;border-left:1px solid var(--line-light);display:flex;flex-direction:column;gap:2px;}
+.pc-stats > div:first-child{padding-left:0;border-left:none;}
+.pc-stats b{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--brass-dark);}
+.pc-stats span{font-size:10.5px;color:var(--graphite-soft);text-transform:uppercase;letter-spacing:0.04em;}
+.pc-price{display:flex;flex-direction:column;gap:2px;margin-bottom:18px;padding:12px 16px;border-radius:12px;
+  background:var(--linen);border:1px solid var(--line-light);}
+.pc-price span{font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--graphite-soft);}
+.pc-price strong{font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--ink);}
+.pc-price strong em{font-style:normal;font-size:13px;font-weight:600;color:var(--graphite-soft);}
+.pc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.pc-actions .bg-btn{flex:1 1 0;min-width:0;}
+.pc-directions{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--brass-dark);
+  text-decoration:none;transition:gap .2s;}
+.pc-directions:hover{gap:9px;}
 
 /* LOCATION */
 .bg-loc-list{display:flex;flex-direction:column;gap:10px;margin:24px 0;}
@@ -443,6 +552,7 @@ function Styles() {
 .bg-loc-text{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bg-loc-text b{font-family:var(--font-mono);font-size:14.5px;color:var(--brass-dark);font-weight:600;}
 .bg-loc-text span{font-size:12.5px;line-height:1.35;color:var(--graphite-soft);}
+.bg-maps-row{display:flex;flex-direction:column;gap:10px;}
 .bg-maps-btn{width:100%;}
 
 /* INVESTMENT chart */
@@ -467,10 +577,7 @@ function Styles() {
   box-shadow:0 24px 50px -30px rgba(43,42,38,0.4);}
 .bg-contact-spark{color:var(--brass);margin-bottom:14px;}
 .bg-contact-inner .bg-cta-row{margin:26px 0 16px;width:100%;}
-.bg-contact-maps{display:inline-flex;align-items:center;gap:6px;color:var(--graphite-soft);font-size:13px;font-weight:600;
-  text-decoration:none;transition:color .25s;}
-.bg-contact-maps:hover{color:var(--brass-dark);}
-.bg-contact-num{margin-top:14px;font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--ink);letter-spacing:0.01em;}
+.bg-contact-num{margin-top:6px;font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--ink);letter-spacing:0.01em;}
 
 /* footer */
 .bg-foot{text-align:center;padding:34px 20px;background:#080c18;color:var(--muted-dark);font-size:12.5px;line-height:1.6;}
@@ -484,11 +591,6 @@ function Styles() {
 .bg-fab-wa{background:var(--wa);}
 .bg-fab-call{background:var(--call);}
 
-/* show/hide helpers */
-.bg-show-sm{display:flex;width:100%;margin-top:14px;}
-.bg-hide-sm{display:none;}
-.bg-btn-full,.bg-btn-full-mob{width:100%;}
-
 /* ============ TABLET / DESKTOP ============ */
 @media (min-width:680px){
   .bg-sec{padding:80px 0;}
@@ -496,13 +598,14 @@ function Styles() {
   .bg-hero{padding-bottom:70px;}
   .bg-hero-inner{padding:20px 32px 0;}
   .bg-hero-topbar{padding:20px 32px;}
-  .bg-hero-lede,.bg-hero-title{max-width:620px;}
+  .bg-nav{display:flex;gap:26px;}
+  .bg-hero-lede,.bg-hero-title{max-width:640px;}
   .bg-cta-row .bg-btn{flex:0 0 auto;}
   .bg-grid{grid-template-columns:repeat(4,1fr);gap:16px;}
+  .pc-grid{grid-template-columns:1fr 1fr;gap:24px;}
   .bg-loc-list{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .bg-maps-btn{width:auto;}
-  .bg-show-sm{display:none;}
-  .bg-hide-sm{display:inline-flex;}
+  .bg-maps-row{flex-direction:row;}
+  .bg-maps-btn{width:auto;flex:1 1 0;}
   .bg-appr-chart{height:210px;gap:14px;}
   .bg-appr-val{font-size:13px;}
   .bg-appr-bar{max-width:70px;}
@@ -513,12 +616,12 @@ function Styles() {
   .bg-hero-stats b{font-size:22px;}
 }
 @media (min-width:980px){
-  .bg-hero-title{font-size:80px;}
+  .bg-hero-title{font-size:70px;}
   .bg-loc-list{grid-template-columns:1fr 1fr 1fr;}
 }
 @media (prefers-reduced-motion:reduce){
   .bg-appr-bar{animation:none;}
-  .bg-btn,.bg-card,.bg-fab-btn{transition:none;}
+  .bg-btn,.bg-card,.pc-card,.pc-media img,.bg-fab-btn{transition:none;}
 }
     `}</style>
     );

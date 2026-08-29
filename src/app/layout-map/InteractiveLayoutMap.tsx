@@ -4,18 +4,18 @@ import { useEffect, useRef } from "react";
 /*
  * KoushikEnclaveMap
  * -----------------
- * Auto-converted from the standalone interactive-map HTML.
- * The original page was built with vanilla JS that queries the DOM by id/class
- * and toggles classes on <body> (for the light / realistic themes). To preserve
- * that behaviour exactly, this component:
+ * Auto-converted from the standalone interactive-map HTML (wrapper approach).
+ * The original page is vanilla JS that queries the DOM by id/class and toggles
+ * classes on <body> for its light / realistic themes. To preserve that behaviour
+ * exactly, this component:
  *   1. injects the original CSS + Google Font links into <head>,
- *   2. renders the original body markup into a container via dangerouslySetInnerHTML,
- *   3. runs the original script once on mount (guarded against React StrictMode's
- *      double-invoke), and adds the theme classes to document.body like the
- *      original <body class="lit real intro-active"> did.
+ *   2. renders the original body markup via dangerouslySetInnerHTML,
+ *   3. runs the original script once on mount (guarded against StrictMode's
+ *      double-invoke) inside a fresh function scope, and mirrors the original
+ *      <body class="lit real intro-active"> classes onto document.body.
  *
- * All logic (i18n, pan/zoom, plot selection, booking + contact modals, share)
- * is carried over unchanged.
+ * All logic (i18n, pan/zoom, plot selection, booking + contact modals, share,
+ * and the Train IQ credit popover) is carried over unchanged.
  */
 
 const FONT_HREF =
@@ -765,6 +765,44 @@ body.lit .gplang.on{background:rgba(45,105,70,.16);border-color:rgba(45,105,70,.
   body.has-detail #gearpop{pointer-events:none}
 }
 
+/* Train IQ credit button + popover */
+#iqwrap{pointer-events:auto;position:relative}
+#iqbtn{width:38px;height:38px;display:grid;place-items:center;cursor:pointer;color:var(--txt-dim);transition:.15s}
+#iqbtn .iqmark{font-family:'Sora',sans-serif;font-weight:700;font-size:14px;letter-spacing:-.02em;
+  background:linear-gradient(120deg,var(--acc) 10%,#7fd0ff 92%);-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;transition:filter .15s}
+body.lit #iqbtn .iqmark{background:linear-gradient(120deg,#0d6b52 10%,#1e5fa8 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#iqbtn:hover .iqmark,#iqbtn.on .iqmark{filter:brightness(1.2)}
+#iqbtn:hover,#iqbtn.on{color:var(--acc)}
+#iqpop{position:absolute;top:calc(100% + 8px);right:0;z-index:33;width:246px;padding:15px 15px 13px;
+  transform-origin:top right;transform:scale(.96) translateY(-6px);opacity:0;pointer-events:none;transition:.2s}
+#iqpop.show{transform:none;opacity:1;pointer-events:auto}
+#iqpop-head{padding-bottom:9px;margin-bottom:10px;border-bottom:1px solid var(--edge)}
+#iqpop-logo{font-family:'Sora',sans-serif;font-weight:700;font-size:18px;letter-spacing:-.02em;color:var(--txt)}
+#iqpop-logo span{background:linear-gradient(120deg,var(--acc) 10%,#7fd0ff 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+body.lit #iqpop-logo span{background:linear-gradient(120deg,#0d6b52 10%,#1e5fa8 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#iqpop-tag{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--txt-mute);margin-top:3px}
+#iqpop-body{font-size:11.5px;line-height:1.55;color:var(--txt-dim)}
+#iqpop-body b{color:var(--txt);font-weight:600}
+#iqpop-link{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:9px 12px;
+  border-radius:11px;background:rgba(95,227,200,.12);border:1px solid rgba(95,227,200,.32);
+  color:var(--acc);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;text-decoration:none;
+  cursor:pointer;transition:.15s}
+#iqpop-link:hover{background:rgba(95,227,200,.2);border-color:rgba(95,227,200,.5);transform:translateY(-1px)}
+#iqpop-link:active{transform:scale(.97)}
+#iqpop-link svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+body.lit #iqpop-link{background:rgba(45,105,70,.12);border-color:rgba(45,105,70,.32);color:#0d6b52}
+body.lit #iqpop-link:hover{background:rgba(45,105,70,.2);border-color:rgba(45,105,70,.5)}
+@media(max-width:1119px){
+  #iqbtn{width:36px;height:36px}
+  #iqpop{position:fixed;top:auto;right:var(--inx);left:auto;bottom:calc(var(--navh) + 148px);
+    width:min(248px, calc(100vw - 2*var(--inx)));z-index:47;transform-origin:bottom right;
+    transform:scale(.96) translateY(6px)}
+  #iqpop.show{transform:none}
+  body.has-detail #iqbtn,body.has-detail #iqpop{opacity:0;pointer-events:none;transition:opacity .2s}
+  body.has-detail #iqpop{pointer-events:none}
+}
+
 /* ===== liquid glass micro-interactions ===== */
 /* interactive glass controls lift on hover, press with spring */
 #layerbtn,#sharebtn,#compass,#gear,.tbtn,.pbtn,.nv,#miq,#b-fit{
@@ -1033,6 +1071,25 @@ const BODY_HTML = `
         <button class="gplang" data-lang="ta"><b>தமிழ்</b><small>Tamil</small></button>
         <button class="gplang" data-lang="hi"><b>हिन्दी</b><small>Hindi</small></button>
       </div>
+    </div>
+  </div>
+
+  <div id="iqwrap">
+    <div id="iqbtn" class="glass" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false" title="About Train IQ">
+      <span class="iqmark">IQ</span>
+    </div>
+    <div id="iqpop" class="glass" role="dialog" aria-label="Map designed by Train IQ">
+      <div id="iqpop-head">
+        <div id="iqpop-logo">Train<span>IQ</span></div>
+        <div id="iqpop-tag">Interactive maps &amp; digital products</div>
+      </div>
+      <div id="iqpop-body">
+        This interactive map was designed and built by <b>Train IQ</b> — we craft interactive layouts, websites, apps and CRM systems for real-estate and beyond.
+      </div>
+      <a id="iqpop-link" href="https://trainiq.in" target="_blank" rel="noopener">
+        <span>Visit trainiq.in</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+      </a>
     </div>
   </div>
 
@@ -1796,6 +1853,20 @@ sovinput.addEventListener('keydown',e=>{
   document.addEventListener('click',e=>{ if(!e.target.closest('#gearpop')&&!e.target.closest('#gear'))openGear(false); });
 })();
 
+/* Train IQ credit popover */
+(function(){
+  const btn=$('#iqbtn'), pop=$('#iqpop');
+  if(!btn||!pop) return;
+  function openIQ(v){
+    pop.classList.toggle('show',v); btn.classList.toggle('on',v);
+    btn.setAttribute('aria-expanded',v);
+  }
+  btn.addEventListener('click',e=>{e.stopPropagation();openIQ(!pop.classList.contains('show'));});
+  btn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();btn.click();}});
+  document.addEventListener('click',e=>{ if(!e.target.closest('#iqpop')&&!e.target.closest('#iqbtn'))openIQ(false); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape')openIQ(false); });
+})();
+
 /* + cluster (mobile) */
 function panBy(dx,dy){ V.x+=dx; V.y+=dy; apply(); }
 (function(){
@@ -2348,7 +2419,7 @@ $('#s-area').textContent=P.reduce((s,p)=>s+p.sqm,0).toFixed(0);
 
 /* liquid-glass click ripple on interactive glass elements */
 (function(){
-  const sel='.tbtn,#layerbtn,#sharebtn,#gear,#compass,#miq,.nv,.sw2,.lm,#b-fit';
+  const sel='.tbtn,#layerbtn,#sharebtn,#gear,#iqbtn,#compass,#miq,.nv,.sw2,.lm,#b-fit';
   document.addEventListener('pointerdown',e=>{
     const el=e.target.closest(sel);
     if(!el)return;
@@ -2571,11 +2642,10 @@ export default function KoushikEnclaveMap() {
     const ranRef = useRef(false);
 
     useEffect(() => {
-        // Guard so the imperative script only wires up once (StrictMode double-mounts).
         if (ranRef.current) return;
         ranRef.current = true;
 
-        // --- 1. fonts (preconnect + stylesheet) ---
+        // --- fonts ---
         const added: HTMLElement[] = [];
         const pre1 = document.createElement("link");
         pre1.rel = "preconnect";
@@ -2588,7 +2658,7 @@ export default function KoushikEnclaveMap() {
         font.rel = "stylesheet";
         font.href = FONT_HREF;
 
-        // --- 2. css ---
+        // --- css ---
         const style = document.createElement("style");
         style.setAttribute("data-koushik-map", "");
         style.textContent = CSS;
@@ -2598,19 +2668,13 @@ export default function KoushikEnclaveMap() {
             added.push(el);
         });
 
-        // --- 3. theme classes that used to live on <body> ---
+        // --- theme classes that used to live on <body> ---
         const bodyClasses = ["lit", "real", "intro-active"];
         bodyClasses.forEach((c) => document.body.classList.add(c));
 
-        // --- 4. run the original script against the now-rendered markup ---
-        // It relies on document.querySelector / getElementById with the unique ids
-        // present in BODY_HTML, so running it after render is sufficient.
+        // --- run the original imperative script against the rendered markup ---
         let cleanupResize: (() => void) | null = null;
         try {
-            // Expose a hook the original script's `addEventListener('resize', resize)`
-            // resolves to window; we capture resize via a wrapper so we can remove it.
-            // The script assigns a top-level `resize` function; we run everything in a
-            // fresh function scope and pull `resize` back out for cleanup.
             // eslint-disable-next-line no-new-func
             const runner = new Function(
                 "return (function(){\n" + SCRIPT_SRC + "\n; return typeof resize==='function'?resize:null; })();"
@@ -2620,7 +2684,6 @@ export default function KoushikEnclaveMap() {
                 cleanupResize = () => window.removeEventListener("resize", resizeFn);
             }
         } catch (err) {
-            // Surface script errors during development without breaking the app.
             // eslint-disable-next-line no-console
             console.error("KoushikEnclaveMap script error:", err);
         }
@@ -2637,7 +2700,6 @@ export default function KoushikEnclaveMap() {
         <div
             ref={hostRef}
             className="koushik-enclave-map-root"
-            // The markup is trusted (authored here), so dangerouslySetInnerHTML is safe.
             dangerouslySetInnerHTML={{ __html: BODY_HTML }}
         />
     );
