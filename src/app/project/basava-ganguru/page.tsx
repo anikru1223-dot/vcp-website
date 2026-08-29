@@ -28,11 +28,11 @@ type Project = {
     tagline: string;
     location: string;
     mapsUrl: string;
-    price: string;
     plots: number;
     approval: string;
     roads: string;
-    image: string;
+    accent: 'brass' | 'emerald';
+    icon: React.ElementType;
     layoutRoute: string;
     waMessage: string;
 };
@@ -44,12 +44,13 @@ const PROJECTS: Project[] = [
         tagline: 'A premium gated layout for a modern lifestyle.',
         location: 'Shivamogga, Karnataka',
         mapsUrl: 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw',
-        price: '2,300',
         plots: 32,
         approval: 'SBUDA',
         roads: '40/30 ft',
-        image: '/koushik-enclave-layout.png',
-        layoutRoute: '/koushik-enclave/layout-map',
+        accent: 'brass',
+        icon: Building2,
+        // Real interactive layout map lives at /layout-map (KoushikEnclaveMap)
+        layoutRoute: '/layout-map',
         waMessage: "Hi, I'm interested in the Koushik Enclave Residential Layout. Please share details.",
     },
     {
@@ -58,11 +59,11 @@ const PROJECTS: Project[] = [
         tagline: 'Wide roads, green spaces, and a growing corridor.',
         location: 'Shivamogga, Karnataka',
         mapsUrl: 'https://goo.gl/maps/JarvnMRnW7U7fYBp6?g_st=aw',
-        price: '2,300',
-        plots: 32,
+        plots: 103,
         approval: 'SBUDA',
         roads: '40/30 ft',
-        image: '/basava-ganguru-layout.png',
+        accent: 'emerald',
+        icon: Trees,
         layoutRoute: '/basava-ganguru/layout-map',
         waMessage: "Hi, I'm interested in the Basava Ganguru Residential Layout. Please share details.",
     },
@@ -140,6 +141,21 @@ function scrollToId(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/* A CSS-only "site plan" motif used in place of a photo — unique per project via its accent + icon. */
+function ProjectGraphic({ project }: { project: Project }) {
+    const Icon = project.icon;
+    return (
+        <div className={`pc-graphic pc-graphic-${project.accent}`}>
+            <div className="pc-graphic-plots" aria-hidden="true">
+                {Array.from({ length: 12 }).map((_, i) => (
+                    <span key={i} />
+                ))}
+            </div>
+            <Icon className="pc-graphic-icon" aria-hidden="true" />
+        </div>
+    );
+}
+
 export default function ProjectsPage() {
     const router = useRouter();
     const maxVal = Math.max(...APPRECIATION.map((a) => a.value));
@@ -172,11 +188,11 @@ export default function ProjectsPage() {
 
                 <Reveal className="bg-hero-inner">
                     <div className="bg-eyebrow on-dark">Developers &amp; Promoters · Shivamogga</div>
-                    <h1 className="bg-hero-title">Two Layouts.<br />One Trusted Name.</h1>
+                    <h1 className="bg-hero-title">Shivamogga&rsquo;s Most<br />Trusted Address</h1>
                     <p className="bg-hero-lede">
-                        Koushik Enclave and Basava Ganguru — SBUDA-approved residential layouts in
-                        Shivamogga&rsquo;s fastest-growing corridor. Wide roads, landscaped parks, and
-                        every approval in place, ready for immediate registration.
+                        From Koushik Enclave to Basava Ganguru, every layout we build carries the same
+                        promise — SBUDA-approved titles, wide roads and landscaped parks, in the heart
+                        of Shivamogga&rsquo;s fastest-growing corridor.
                     </p>
 
                     <div className="bg-cta-row">
@@ -220,7 +236,7 @@ export default function ProjectsPage() {
                                     onClick={() => router.push(p.layoutRoute)}
                                     aria-label={`Open interactive layout map for ${p.name}`}
                                 >
-                                    <img src={p.image} alt={`${p.name} master layout plan`} />
+                                    <ProjectGraphic project={p} />
                                     <span className="pc-media-badge"><MapPin size={12} /> {p.location}</span>
                                     <span className="pc-media-hint"><Compass size={14} /> Tap to explore</span>
                                 </button>
@@ -233,11 +249,6 @@ export default function ProjectsPage() {
                                         <div><b>{p.plots}</b><span>Plots</span></div>
                                         <div><b>{p.approval}</b><span>Approved</span></div>
                                         <div><b>{p.roads}</b><span>Roads</span></div>
-                                    </div>
-
-                                    <div className="pc-price">
-                                        <span>Plots starting from</span>
-                                        <strong>&#8377;{p.price} <em>/ sq.ft</em></strong>
                                     </div>
 
                                     <div className="pc-actions">
@@ -413,6 +424,7 @@ function Styles() {
   --ink:#0b1120; --ink-soft:#131b30;
   --paper:#faf7ef; --mist:#e7e1d2; --linen:#f5f1e6;
   --brass:#b8894a; --brass-light:#e3be86; --brass-dark:#8f6a38;
+  --emerald:#2d8c6e; --emerald-light:#7fd9b6; --emerald-dark:#1f6650;
   --graphite:#2b2a26; --graphite-soft:#57544c;
   --line-dark:rgba(184,137,74,0.28);
   --line-light:rgba(43,42,38,0.12);
@@ -470,7 +482,7 @@ function Styles() {
   letter-spacing:0.01em;transition:color .2s;}
 .bg-nav button:hover{color:var(--brass-light);}
 .bg-hero-inner{position:relative;z-index:2;max-width:1100px;margin:0 auto;padding:14px 20px 0;}
-.bg-hero-title{font-size:clamp(34px,10vw,64px);line-height:1.02;margin-bottom:14px;
+.bg-hero-title{font-size:clamp(34px,10vw,60px);line-height:1.05;margin-bottom:14px;
   background:linear-gradient(180deg,#fbf3dd,#e3be86 55%,#b8894a);
   -webkit-background-clip:text;background-clip:text;color:transparent;}
 .bg-hero-lede{font-size:15.5px;line-height:1.7;color:var(--muted-dark);max-width:560px;margin-bottom:24px;}
@@ -512,30 +524,40 @@ function Styles() {
 .pc-card{background:#fff;border:1px solid var(--line-light);border-radius:20px;overflow:hidden;
   box-shadow:0 20px 50px -30px rgba(43,42,38,0.4);transition:transform .3s cubic-bezier(.22,.98,.28,1), box-shadow .3s;}
 .pc-card:hover{transform:translateY(-4px);box-shadow:0 26px 60px -28px rgba(43,42,38,0.5);}
-.pc-media{position:relative;display:block;width:100%;aspect-ratio:16/10;border:none;padding:0;cursor:pointer;
-  background:#060a16;overflow:hidden;}
-.pc-media img{width:100%;height:100%;object-fit:cover;transition:transform .5s cubic-bezier(.22,.98,.28,1);}
-.pc-media:hover img{transform:scale(1.05);}
-.pc-media::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(6,10,22,0.55));}
-.pc-media-badge{position:absolute;top:12px;left:12px;z-index:2;display:inline-flex;align-items:center;gap:5px;
+.pc-media{position:relative;display:block;width:100%;aspect-ratio:16/9;border:none;padding:0;cursor:pointer;overflow:hidden;}
+
+/* unique decorative graphic per project, in place of a photo */
+.pc-graphic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pc-graphic-brass{background:
+    linear-gradient(160deg, rgba(184,137,74,0.55), rgba(11,17,32,0.96) 70%),
+    var(--ink);}
+.pc-graphic-emerald{background:
+    linear-gradient(160deg, rgba(45,140,110,0.55), rgba(11,17,32,0.96) 70%),
+    var(--ink);}
+.pc-graphic-plots{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(2,1fr);
+  gap:8px;padding:18px;opacity:0.5;}
+.pc-graphic-plots span{border-radius:4px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.18);}
+.pc-graphic-brass .pc-graphic-plots span{background:rgba(227,190,134,0.16);border-color:rgba(227,190,134,0.22);}
+.pc-graphic-emerald .pc-graphic-plots span{background:rgba(127,217,182,0.16);border-color:rgba(127,217,182,0.22);}
+.pc-graphic-icon{position:relative;z-index:2;width:56px;height:56px;color:rgba(255,255,255,0.85);}
+.pc-graphic-brass .pc-graphic-icon{color:var(--brass-light);}
+.pc-graphic-emerald .pc-graphic-icon{color:var(--emerald-light);}
+.pc-media-badge{position:absolute;top:12px;left:12px;z-index:3;display:inline-flex;align-items:center;gap:5px;
   background:rgba(10,16,36,0.72);backdrop-filter:blur(4px);color:var(--brass-light);font-size:11px;font-weight:600;
   padding:6px 11px;border-radius:999px;}
-.pc-media-hint{position:absolute;bottom:12px;left:12px;z-index:2;display:inline-flex;align-items:center;gap:6px;
+.pc-graphic-emerald ~ .pc-media-badge, .pc-media .pc-graphic-emerald + .pc-media-badge{color:var(--emerald-light);}
+.pc-media-hint{position:absolute;bottom:12px;left:12px;z-index:3;display:inline-flex;align-items:center;gap:6px;
   background:rgba(10,16,36,0.72);backdrop-filter:blur(4px);color:var(--linen);font-size:11.5px;font-weight:600;
-  padding:6px 12px;border-radius:999px;}
+  padding:6px 12px;border-radius:999px;transition:gap .25s;}
+.pc-media:hover .pc-media-hint{gap:9px;}
 .pc-body{padding:22px 20px 24px;}
 .pc-name{font-size:22px;color:var(--ink);margin-bottom:4px;}
 .pc-tagline{font-size:13px;color:var(--graphite-soft);line-height:1.5;margin-bottom:18px;}
-.pc-stats{display:flex;gap:0;margin-bottom:18px;}
+.pc-stats{display:flex;gap:0;margin-bottom:20px;}
 .pc-stats > div{padding:0 16px;border-left:1px solid var(--line-light);display:flex;flex-direction:column;gap:2px;}
 .pc-stats > div:first-child{padding-left:0;border-left:none;}
 .pc-stats b{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--brass-dark);}
 .pc-stats span{font-size:10.5px;color:var(--graphite-soft);text-transform:uppercase;letter-spacing:0.04em;}
-.pc-price{display:flex;flex-direction:column;gap:2px;margin-bottom:18px;padding:12px 16px;border-radius:12px;
-  background:var(--linen);border:1px solid var(--line-light);}
-.pc-price span{font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--graphite-soft);}
-.pc-price strong{font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--ink);}
-.pc-price strong em{font-style:normal;font-size:13px;font-weight:600;color:var(--graphite-soft);}
 .pc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
 .pc-actions .bg-btn{flex:1 1 0;min-width:0;}
 .pc-directions{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--brass-dark);
@@ -616,12 +638,12 @@ function Styles() {
   .bg-hero-stats b{font-size:22px;}
 }
 @media (min-width:980px){
-  .bg-hero-title{font-size:70px;}
+  .bg-hero-title{font-size:64px;}
   .bg-loc-list{grid-template-columns:1fr 1fr 1fr;}
 }
 @media (prefers-reduced-motion:reduce){
   .bg-appr-bar{animation:none;}
-  .bg-btn,.bg-card,.pc-card,.pc-media img,.bg-fab-btn{transition:none;}
+  .bg-btn,.bg-card,.pc-card,.bg-fab-btn,.pc-media-hint{transition:none;}
 }
     `}</style>
     );
