@@ -1366,13 +1366,13 @@ function AboutSection() {
         <Reveal className="about-visual">
           <img
             className="about-img-main"
-            src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=75"
-            alt="Completed residential home in a Vijayalaxmi C Patil Developers layout in Shivamogga"
+            src="/gallery/gallery-entrance-layout.png"
+            alt="Vijayalaxmi C Patil Developers layout entrance gate and signage in Shivamogga"
           />
           <img
             className="about-img-accent"
-            src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=700&q=75"
-            alt="House under construction at a residential layout in Shivamogga"
+            src="/gallery/gallery-fully-developed-plots.png"
+            alt="Fully developed residential plots at a Vijayalaxmi C Patil Developers layout"
           />
           <div className="about-badge">
             <span className="about-badge-num">28+</span>
