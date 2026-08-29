@@ -1707,12 +1707,11 @@ function StatisticsSection() {
 // Gallery
 // ---------------------------------------------------------------------------
 const GALLERY_ITEMS = [
-  { tag: 'Layout', title: 'Residential Layouts', img: 'https://images.unsplash.com/photo-1499631507243-7290571550ed', span: 'g-span-2c g-span-2r', alt: 'Aerial view of a planned residential layout with roads and plots' },
-  { tag: 'Construction', title: 'Construction Phase', img: 'https://images.unsplash.com/photo-1508450859948-4e04fabaa4ea', span: '', alt: 'House under construction at a residential site' },
-  { tag: 'Infrastructure', title: 'Modern Infrastructure', img: 'https://images.unsplash.com/photo-1499310392581-322cec0355a6', span: 'g-span-2r', alt: 'Paved internal roads and infrastructure in a residential layout' },
-  { tag: 'Completed', title: 'Completed Homes', img: 'https://images.unsplash.com/photo-1721815693498-cc28507c0ba2', span: '', alt: 'Completed independent house in a residential community' },
-  { tag: 'Drone', title: 'Aerial View', img: 'https://images.unsplash.com/photo-1524813686514-a57563d77965', span: 'g-span-2c', alt: 'Drone view over a residential neighbourhood layout' },
-  { tag: 'Community', title: 'Community Spaces', img: 'https://images.unsplash.com/photo-1780732658907-33c2e90a902c', span: '', alt: 'Open community space within a residential layout' },
+  { tag: 'Entrance', title: 'Layout Entrance & Signage', img: '/gallery/gallery-entrance-layout.png', span: 'g-span-2c g-span-2r', alt: 'Vijayalaxmi C Patil Developers layout entrance gate, signage and internal roads' },
+  { tag: 'Layout', title: 'Fully Developed Plots', img: '/gallery/gallery-fully-developed-plots.png', span: 'g-span-2c', alt: 'Aerial view of fully developed residential plots in Shivamogga, Karnataka' },
+  { tag: 'Roads & Plots', title: 'Plot-by-Plot Views', img: '/gallery/gallery-plot-views.png', span: 'g-span-2r', alt: 'Numbered residential plots and internal roads within the layout' },
+  { tag: 'Site', title: 'Site Development', img: '/gallery/gallery-site-development.jpg', span: '', alt: 'Residential layout at an earlier stage of site development' },
+  { tag: 'Plot', title: 'Plot Corner View', img: '/gallery/gallery-plot-corner.webp', span: '', alt: 'Individual residential plot with kerb stones and boundary marking' },
 ];
 
 function GallerySection() {
@@ -1745,7 +1744,7 @@ function GallerySection() {
               style={{ cursor: 'pointer' }}
             >
               <div onClick={() => setSelected(i)}>
-                <img src={`${item.img}?auto=format&fit=crop&w=900&q=75`} alt={item.alt} />
+                <img src={item.img} alt={item.alt} />
                 <div className="gallery-caption">
                   <span className="g-tag">{item.tag}</span>
                   <h4>{item.title}</h4>
@@ -1770,7 +1769,7 @@ function GallerySection() {
             </button>
             <motion.img
               key={selected}
-              src={`${GALLERY_ITEMS[selected].img}?auto=format&fit=crop&w=1400&q=80`}
+              src={GALLERY_ITEMS[selected].img}
               alt={GALLERY_ITEMS[selected].alt}
               initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
