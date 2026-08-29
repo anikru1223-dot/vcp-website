@@ -102,11 +102,11 @@ const INVEST_REASONS = [
 ];
 
 const APPRECIATION = [
-    { year: '2024', value: 1200 },
-    { year: '2025', value: 1800 },
-    { year: '2026', value: 2300 },
-    { year: '2027', value: 3300 },
-    { year: '2028', value: 3800 },
+    { year: '2024', value: 1800 },
+    { year: '2025', value: 2800 },
+    { year: '2026', value: 3300 },
+    { year: '2027', value: 4100 },
+    { year: '2028', value: 4800 },
 ];
 
 function Reveal({ children, delay = 0, className, style }: { children: React.ReactNode; delay?: number; className?: string; style?: React.CSSProperties }) {
