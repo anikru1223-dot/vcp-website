@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bricolage_Grotesque, Manrope, IBM_Plex_Mono } from 'next/font/google';
+import { Analytics } from "@vercel/analytics/next"
 import {
   Phone,
   MessageCircle,
